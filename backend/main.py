@@ -92,9 +92,9 @@ class CaseNoteCreate(BaseModel):
     note: str
 
 
-@app.get("/")
-def read_root():
-    return {"message": "PhysioTwin API is running"}
+@app.get("/api/health")
+def read_health():
+    return {"status": "ok", "message": "PhysioTwin API is running"}
 
 @app.post("/users/")
 def create_user(user: UserCreate, db: Session = Depends(get_db)):
