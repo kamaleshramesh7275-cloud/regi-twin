@@ -7,7 +7,7 @@ import {
 import {
   Activity, Camera, History, Clock, Brain, Settings, AlertTriangle, User,
   Dna, Scale, Sparkles, HeartPulse, Battery, Search, MessageSquare, Target, BarChart2,
-  Smartphone, Apple, Dumbbell, Stethoscope
+  Smartphone, Apple, Dumbbell, Stethoscope, ShieldAlert, ShieldCheck
 } from 'lucide-react';
 import { api } from "./api";
 import { useAuth } from "./context/AuthContext";
@@ -55,6 +55,7 @@ export default function Dashboard() {
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
   const [data, setData] = useState<any>(null);
   const [externalData, setExternalData] = useState<any[]>([]);
+  const [injuryRisk, setInjuryRisk] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [timelineIndex, setTimelineIndex] = useState(100);
   const [simulationOverride, setSimulationOverride] = useState<{ reserve: number, recovery: number } | null>(null);
@@ -79,16 +80,30 @@ export default function Dashboard() {
     async function loadData() {
       try {
         const uid = user?.uid || "test-user";
-        const [dashRes, extRes] = await Promise.all([
+        const [dashRes, extRes, riskRes] = await Promise.all([
           api.getDashboard(uid),
-          api.getExternalApps(uid)
+          api.getExternalApps(uid),
+          api.getInjuryRisk(uid).catch(() => null)
         ]);
         setData(dashRes);
         setExternalData(extRes);
+        setInjuryRisk(riskRes);
       } catch (e) {
         // fallback mock
         setData({ mobility: 85, stability: 55, quality: 92, cardio: 78, recovery: 88, reserve: 55, confidence: 'Low' });
         setExternalData([]);
+        setInjuryRisk({
+          risk_score: 28,
+          risk_level: "Low",
+          recommendation: "Training load is well-managed. Proceed with your planned program.",
+          contributing_factors: [
+            { factor: "Workload Spike (ACWR)", contribution: 8.5, value: "1.05x" },
+            { factor: "Subjective Pain", contribution: 5.0, value: "2.0/10" },
+            { factor: "Bilateral Asymmetry", contribution: 4.5, value: "85%" },
+            { factor: "Movement Fear (TSK)", contribution: 4.5, value: "22/44" },
+            { factor: "Sleep Deficit", contribution: 0.0, value: "7.5h" }
+          ]
+        });
       }
       setLoading(false);
     }
@@ -275,6 +290,47 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
+
+            {/* AI 7-Day Injury Risk Prediction Card */}
+            {injuryRisk && (
+              <div className="metric-card glass-panel pointer-events-auto border-t-2" style={{
+                borderColor: injuryRisk.risk_level === 'High' ? '#ef4444' : injuryRisk.risk_level === 'Moderate' ? '#f59e0b' : '#10b981'
+              }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    {injuryRisk.risk_level === 'High' ? (
+                      <ShieldAlert className="w-4 h-4 text-red-400" />
+                    ) : injuryRisk.risk_level === 'Moderate' ? (
+                      <AlertTriangle className="w-4 h-4 text-amber-400" />
+                    ) : (
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    )}
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">7-Day Injury Risk AI</span>
+                  </div>
+                  <span className={`badge text-[10px] font-bold ${
+                    injuryRisk.risk_level === 'High' ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                    injuryRisk.risk_level === 'Moderate' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                    'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  }`}>
+                    {injuryRisk.risk_level} Risk ({injuryRisk.risk_score}%)
+                  </span>
+                </div>
+
+                <p className="text-xs text-foreground/90 mb-3 leading-relaxed">
+                  {injuryRisk.recommendation}
+                </p>
+
+                <div className="space-y-1.5 pt-2 border-t border-border/40">
+                  <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Risk Contribution Factors</div>
+                  {injuryRisk.contributing_factors?.slice(0, 3).map((f: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between text-[11px]">
+                      <span className="text-muted-foreground">{f.factor}</span>
+                      <span className="font-mono font-semibold text-foreground">{f.value} (+{f.contribution}%)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Radar */}
             <div className="metric-card glass-panel pointer-events-auto cursor-pointer" onClick={() => setSelectedMetric('Fingerprint')}>

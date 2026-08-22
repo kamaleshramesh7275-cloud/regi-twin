@@ -454,3 +454,111 @@ def simulate_activity(user_id: str, activity_type: str, duration_mins: int, inte
         "cost": round(cost, 1)
     }
 
+
+def compute_injury_risk(user_id: str, db: Session) -> dict:
+    """
+    Multi-factor heuristic injury risk model.
+    Combines ACWR, pain scores, kinesiophobia, symmetry, and sleep to predict
+    injury probability for the next 7 days (0–100%).
+
+    Weights based on sports science literature:
+      - ACWR spike:           35%
+      - Subjective pain:      25%
+      - Kinesiophobia score:  15%
+      - Biomech asymmetry:    15%
+      - Sleep deficit:        10%
+    """
+    now = datetime.datetime.utcnow()
+
+    # ── 1. ACWR Component (35%) ────────────────────────────────────────────────
+    acute_sessions = db.query(models.VisionSession)\
+        .filter(models.VisionSession.user_id == user_id,
+                models.VisionSession.timestamp >= now - datetime.timedelta(days=7)).all()
+    chronic_sessions = db.query(models.VisionSession)\
+        .filter(models.VisionSession.user_id == user_id,
+                models.VisionSession.timestamp >= now - datetime.timedelta(days=28)).all()
+
+    acute_load = sum(s.rom or 0 for s in acute_sessions) / 7.0
+    chronic_load = sum(s.rom or 0 for s in chronic_sessions) / 28.0
+    acwr = acute_load / chronic_load if chronic_load > 0 else 1.0
+
+    # ACWR risk: 0 if in sweet-spot (0.8-1.3), scales to 100 at >=2.0
+    if acwr < 0.8:
+        acwr_risk = (0.8 - acwr) / 0.8 * 60  # under-training risk
+    elif acwr <= 1.3:
+        acwr_risk = 0
+    else:
+        acwr_risk = min(100, (acwr - 1.3) / 0.7 * 100)
+
+    # ── 2. Pain Score Component (25%) ─────────────────────────────────────────
+    recent_pain = db.query(models.PainLog)\
+        .filter(models.PainLog.user_id == user_id,
+                models.PainLog.timestamp >= now - datetime.timedelta(days=7)).all()
+    avg_pain = statistics.mean([p.score for p in recent_pain]) if recent_pain else 0
+    pain_risk = (avg_pain / 10.0) * 100  # normalize 0-10 to 0-100
+
+    # ── 3. Kinesiophobia Component (15%) ──────────────────────────────────────
+    tsk = db.query(models.KinesiophobiaRecord)\
+        .filter(models.KinesiophobiaRecord.user_id == user_id)\
+        .order_by(models.KinesiophobiaRecord.timestamp.desc()).first()
+    tsk_score = tsk.score if tsk else 22  # default mid-range
+    # TSK range 11-44; risk starts at 25+
+    kinesio_risk = max(0, (tsk_score - 11) / (44 - 11) * 100) if tsk else 30
+
+    # ── 4. Symmetry / Asymmetry Component (15%) ───────────────────────────────
+    recent_vs = db.query(models.VisionSession)\
+        .filter(models.VisionSession.user_id == user_id,
+                models.VisionSession.timestamp >= now - datetime.timedelta(days=14))\
+        .order_by(models.VisionSession.timestamp.desc()).limit(5).all()
+    avg_symmetry = statistics.mean([s.symmetry for s in recent_vs if s.symmetry]) if recent_vs else 75
+    # Lower symmetry → higher risk. Perfect = 100, risk = 100 - symmetry
+    asymmetry_risk = max(0, 100 - avg_symmetry)
+
+    # ── 5. Sleep Deficit Component (10%) ──────────────────────────────────────
+    recent_wearable = db.query(models.WearableSession)\
+        .filter(models.WearableSession.user_id == user_id,
+                models.WearableSession.timestamp >= now - datetime.timedelta(days=7)).all()
+    avg_sleep = statistics.mean([w.sleep_hours for w in recent_wearable if w.sleep_hours]) \
+        if recent_wearable else 7.0
+    # <7h is deficit; risk scales linearly
+    sleep_risk = max(0, (7.0 - avg_sleep) / 7.0 * 100) if avg_sleep < 7.0 else 0
+
+    # ── Composite Score ────────────────────────────────────────────────────────
+    raw_score = (
+        acwr_risk       * 0.35 +
+        pain_risk       * 0.25 +
+        kinesio_risk    * 0.15 +
+        asymmetry_risk  * 0.15 +
+        sleep_risk      * 0.10
+    )
+    risk_score = min(100, max(0, round(raw_score)))
+
+    if risk_score <= 30:
+        risk_level = "Low"
+        recommendation = "Training load is well-managed. Proceed with your planned program."
+    elif risk_score <= 60:
+        risk_level = "Moderate"
+        recommendation = "Consider reducing session intensity by 20% and prioritizing sleep."
+    else:
+        risk_level = "High"
+        recommendation = "High injury risk detected. Take an active rest day and consult your physio."
+
+    # Contributing factors (sorted by contribution)
+    factors = [
+        {"factor": "Workload Spike (ACWR)", "contribution": round(acwr_risk * 0.35, 1), "value": f"{round(acwr, 2)}x"},
+        {"factor": "Subjective Pain", "contribution": round(pain_risk * 0.25, 1), "value": f"{round(avg_pain, 1)}/10"},
+        {"factor": "Movement Fear (TSK)", "contribution": round(kinesio_risk * 0.15, 1), "value": f"{tsk_score}/44"},
+        {"factor": "Bilateral Asymmetry", "contribution": round(asymmetry_risk * 0.15, 1), "value": f"{round(avg_symmetry, 1)}%"},
+        {"factor": "Sleep Deficit", "contribution": round(sleep_risk * 0.10, 1), "value": f"{round(avg_sleep, 1)}h"},
+    ]
+    factors.sort(key=lambda x: x["contribution"], reverse=True)
+
+    return {
+        "risk_score": risk_score,
+        "risk_level": risk_level,
+        "recommendation": recommendation,
+        "contributing_factors": factors,
+        "acwr": round(acwr, 2),
+    }
+
+

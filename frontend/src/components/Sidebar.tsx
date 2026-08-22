@@ -2,7 +2,7 @@ import React from "react";
 import { Link, useLocation } from "wouter";
 import { 
   Activity, Camera, History, Clock, Brain, Settings, 
-  User, BarChart2, ClipboardList, LineChart, Users, Building,
+  User, BarChart2, ClipboardList, LineChart, Users, Building, UserCheck,
   Pill, HeartPulse, BrainCircuit, BookOpen, Trophy, Apple, Dumbbell
 } from "lucide-react";
 
@@ -56,6 +56,7 @@ export function Sidebar() {
         <NavSection title="Clinical & Community" />
         <NavItem icon={<ClipboardList className="w-5 h-5 md:w-5 md:h-5" />} label="Programs" href="/programs" active={location === '/programs'} />
         <NavItem icon={<Building className="w-5 h-5 md:w-5 md:h-5" />} label="Clinic" href="/clinic" active={location === '/clinic'} />
+        <NavItem icon={<UserCheck className="w-5 h-5 md:w-5 md:h-5" />} label="Roster" href="/clinic/roster" active={location === '/clinic/roster'} />
         <NavItem icon={<BarChart2 className="w-5 h-5 md:w-5 md:h-5" />} label="Benchmark" href="/leaderboard" active={location === '/leaderboard'} />
         <NavItem icon={<Users className="w-5 h-5 md:w-5 md:h-5" />} label="Community" href="/community" active={location === '/community'} />
         <NavItem icon={<Trophy className="w-5 h-5 md:w-5 md:h-5" />} label="Trophies" href="/achievements" active={location === '/achievements'} />

@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar";
-import { HeartPulse, TrendingUp, TrendingDown, Activity, Battery, Moon, Wifi, WifiOff, RefreshCcw } from "lucide-react";
+import { HeartPulse, TrendingUp, TrendingDown, Activity, Battery, Moon, Wifi, WifiOff, RefreshCcw, Upload } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer
 } from 'recharts';
 import { api } from "./api";
 import { useAuth } from "./context/AuthContext";
 import { Link } from "wouter";
+import WearableImportModal from "./WearableImportModal";
 
 const FALLBACK_HRV = [
   { date: 'Mon', hrv: 45 }, { date: 'Tue', hrv: 42 }, { date: 'Wed', hrv: 55 },
@@ -45,6 +46,7 @@ export default function VitalsPage() {
   const { user } = useAuth();
   const [vitals, setVitals] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showImport, setShowImport] = useState(false);
 
   const fetchVitals = async () => {
     setLoading(true);
@@ -95,6 +97,12 @@ export default function VitalsPage() {
               </span>
             )}
             <button
+              onClick={() => setShowImport(true)}
+              className="btn-secondary flex items-center gap-2 px-3 py-1.5 text-xs"
+            >
+              <Upload className="w-3.5 h-3.5" /> Import CSV
+            </button>
+            <button
               onClick={fetchVitals}
               className="btn-secondary flex items-center gap-2 px-3 py-1.5 text-xs"
             >
@@ -102,6 +110,14 @@ export default function VitalsPage() {
             </button>
           </div>
         </header>
+
+        {showImport && user && (
+          <WearableImportModal
+            userId={user.uid}
+            onClose={() => setShowImport(false)}
+            onSuccess={() => { setShowImport(false); fetchVitals(); }}
+          />
+        )}
 
         {/* Empty state */}
         {!loading && notSynced && (

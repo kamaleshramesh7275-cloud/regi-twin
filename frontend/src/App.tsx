@@ -153,6 +153,7 @@ import ProgramsPage from "./ProgramsPage";
 import AnalyticsPage from "./AnalyticsPage";
 import CommunityPage from "./CommunityPage";
 import ClinicPage from "./ClinicPage";
+import ClinicRosterPage from "./ClinicRosterPage";
 import MedicationPage from "./MedicationPage";
 import VitalsPage from "./VitalsPage";
 import MentalReadinessPage from "./MentalReadinessPage";
@@ -211,6 +212,7 @@ function AppContent() {
         <Route path="/programs"><ProtectedRoute component={ProgramsPage} /></Route>
         <Route path="/analytics"><ProtectedRoute component={AnalyticsPage} /></Route>
         <Route path="/community"><ProtectedRoute component={CommunityPage} /></Route>
+        <Route path="/clinic/roster"><ProtectedRoute component={ClinicRosterPage} /></Route>
         <Route path="/clinic"><ProtectedRoute component={ClinicPage} /></Route>
         <Route path="/meds"><ProtectedRoute component={MedicationPage} /></Route>
         <Route path="/vitals"><ProtectedRoute component={VitalsPage} /></Route>

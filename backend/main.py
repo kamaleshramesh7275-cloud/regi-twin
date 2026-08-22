@@ -8,7 +8,7 @@ import datetime
 
 from database import engine, get_db, Base
 import models
-from analytics import compute_capability_profile, generate_weekly_letter, generate_deep_insights, chat_with_twin, simulate_activity
+from analytics import compute_capability_profile, generate_weekly_letter, generate_deep_insights, chat_with_twin, simulate_activity, compute_injury_risk
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -1316,4 +1316,241 @@ def get_printable_report(user_id: str, db: Session = Depends(get_db)):
     </html>
     """
     return HTMLResponse(content=html_content, status_code=200)
+
+
+# ── Feature 2: Analytics Summary ─────────────────────────────────────────────
+
+@app.get("/analytics/summary/{user_id}")
+def get_analytics_summary(user_id: str, db: Session = Depends(get_db)):
+    """Return live analytics data: ROM trend, capability trend, pain overlay, zone heatmap."""
+    vision_sessions = db.query(models.VisionSession)\
+        .filter(models.VisionSession.user_id == user_id)\
+        .order_by(models.VisionSession.timestamp.asc())\
+        .limit(12).all()
+
+    rom_trend = [{
+        "date": vs.timestamp.strftime("%b %d"),
+        "rom": round(vs.rom or 0, 1),
+        "symmetry": round(vs.symmetry or 0, 1),
+        "stability": round(vs.stability or 0, 1),
+        "task": vs.task_type or "general",
+    } for vs in vision_sessions]
+
+    cap_profiles = db.query(models.CapabilityProfile)\
+        .filter(models.CapabilityProfile.user_id == user_id)\
+        .order_by(models.CapabilityProfile.timestamp.asc())\
+        .limit(8).all()
+
+    capability_trend = [{
+        "date": cp.timestamp.strftime("%b %d"),
+        "mobility": round(cp.mobility or 0, 1),
+        "stability": round(cp.stability or 0, 1),
+        "recovery": round(cp.recovery or 0, 1),
+        "quality": round(cp.movement_quality or 0, 1),
+    } for cp in cap_profiles]
+
+    pain_logs = db.query(models.PainLog)\
+        .filter(models.PainLog.user_id == user_id)\
+        .order_by(models.PainLog.timestamp.asc())\
+        .limit(10).all()
+
+    pain_trend = [{
+        "date": pl.timestamp.strftime("%b %d"),
+        "zone": pl.zone,
+        "score": pl.score,
+    } for pl in pain_logs]
+
+    zone_counts: dict = {}
+    for vs in vision_sessions:
+        t = vs.task_type or "general"
+        zone_counts[t] = zone_counts.get(t, 0) + 1
+    zone_heatmap = [{"zone": k, "sessions": v} for k, v in zone_counts.items()]
+
+    csv_rows = [{
+        "date": vs.timestamp.isoformat(),
+        "task": vs.task_type,
+        "rom": vs.rom,
+        "symmetry": vs.symmetry,
+        "stability": vs.stability,
+    } for vs in vision_sessions]
+
+    return {
+        "rom_trend": rom_trend,
+        "capability_trend": capability_trend,
+        "pain_trend": pain_trend,
+        "zone_heatmap": zone_heatmap,
+        "csv_rows": csv_rows,
+    }
+
+
+# ── Feature 4: CSV Wearable Import ────────────────────────────────────────────
+import csv as _csv
+import io as _io
+
+@app.post("/wearable/import-csv/{user_id}")
+async def import_wearable_csv(user_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Parse and import a CSV file exported from Garmin, Fitbit, or Apple Health."""
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    contents = await file.read()
+    text = contents.decode("utf-8", errors="ignore")
+    reader = _csv.DictReader(_io.StringIO(text))
+    headers = [h.strip().lower() for h in (reader.fieldnames or [])]
+
+    source = "generic"
+    if any("heart rate" in h for h in headers) and any("hrv" in h for h in headers):
+        source = "garmin"
+    elif any("datetime" in h for h in headers) and any("value" in h for h in headers):
+        source = "fitbit"
+    elif any("source name" in h for h in headers):
+        source = "apple_health"
+
+    imported = 0
+    skipped = 0
+    for row in reader:
+        keys = {k.strip().lower(): v.strip() for k, v in row.items()}
+        date_str = keys.get("date") or keys.get("datetime") or keys.get("starttime") or ""
+        try:
+            ts = datetime.datetime.fromisoformat(date_str.replace("Z", ""))
+        except Exception:
+            try:
+                ts = datetime.datetime.strptime(date_str[:10], "%Y-%m-%d")
+            except Exception:
+                skipped += 1
+                continue
+
+        existing = db.query(models.WearableSession)\
+            .filter(models.WearableSession.user_id == user_id,
+                    models.WearableSession.timestamp == ts).first()
+        if existing:
+            skipped += 1
+            continue
+
+        def _f(k):
+            try: return float(keys.get(k) or 0) or None
+            except: return None
+        def _i(k):
+            try: return int(float(keys.get(k) or 0)) or None
+            except: return None
+
+        session = models.WearableSession(
+            user_id=user_id, timestamp=ts, source=source,
+            heart_rate=_f("heart rate") or _f("restingheartrate") or _f("avg heart rate"),
+            hrv=_f("hrv") or _f("heart rate variability"),
+            spo2=_f("spo2") or _f("blood oxygen"),
+            steps=_i("steps") or _i("total steps"),
+            sleep_hours=_f("sleep") or _f("sleep hours"),
+            sleep_score=_i("sleep score") or _i("sleep quality"),
+            calories_burned=_i("calories") or _i("active calories"),
+            active_minutes=_i("active minutes"),
+        )
+        db.add(session)
+        imported += 1
+
+    db.commit()
+    return {"status": "success", "imported": imported, "skipped": skipped, "source": source}
+
+
+# ── Feature 8: Injury Risk Prediction ─────────────────────────────────────────
+from analytics import compute_injury_risk
+
+@app.get("/analytics/injury-risk/{user_id}")
+def get_injury_risk(user_id: str, db: Session = Depends(get_db)):
+    """Compute multi-factor injury risk score for the next 7 days."""
+    return compute_injury_risk(user_id, db)
+
+
+# ── Feature 9: Clinic Roster ───────────────────────────────────────────────────
+ADMIN_KEY = "physiotwin-admin-2026"
+
+@app.get("/clinic/roster")
+def get_clinic_roster(admin_key: str = "", db: Session = Depends(get_db)):
+    """Return summary of all patients for the therapist roster view."""
+    if admin_key != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Admin key required")
+
+    users = db.query(models.User).all()
+    roster = []
+    for u in users:
+        cp = db.query(models.CapabilityProfile)\
+            .filter(models.CapabilityProfile.user_id == u.user_id)\
+            .order_by(models.CapabilityProfile.timestamp.desc()).first()
+
+        now = datetime.datetime.utcnow()
+        acute_sessions = db.query(models.VisionSession)\
+            .filter(models.VisionSession.user_id == u.user_id,
+                    models.VisionSession.timestamp >= now - datetime.timedelta(days=7)).all()
+        chronic_sessions = db.query(models.VisionSession)\
+            .filter(models.VisionSession.user_id == u.user_id,
+                    models.VisionSession.timestamp >= now - datetime.timedelta(days=28)).all()
+        acute_load = sum(s.rom or 0 for s in acute_sessions) / 7.0
+        chronic_load = sum(s.rom or 0 for s in chronic_sessions) / 28.0
+        acwr = round(acute_load / chronic_load, 2) if chronic_load > 0 else 0.0
+
+        recent_pain = db.query(models.PainLog)\
+            .filter(models.PainLog.user_id == u.user_id,
+                    models.PainLog.timestamp >= now - datetime.timedelta(days=7)).all()
+        pain_max = max((p.score for p in recent_pain), default=0)
+
+        last_vs = db.query(models.VisionSession)\
+            .filter(models.VisionSession.user_id == u.user_id)\
+            .order_by(models.VisionSession.timestamp.desc()).first()
+
+        risk_data = compute_injury_risk(u.user_id, db)
+
+        roster.append({
+            "user_id": u.user_id,
+            "email": u.email,
+            "mode": u.mode,
+            "recovery_score": round(cp.recovery, 1) if cp else None,
+            "latest_acwr": acwr,
+            "pain_max": pain_max,
+            "risk_level": risk_data.get("risk_level", "Unknown"),
+            "risk_score": risk_data.get("risk_score", 0),
+            "last_session": last_vs.timestamp.isoformat() if last_vs else None,
+        })
+
+    return roster
+
+
+@app.get("/clinic/patient/{user_id}")
+def get_patient_summary(user_id: str, admin_key: str = "", db: Session = Depends(get_db)):
+    """Full patient detail for drill-down from the clinic roster."""
+    if admin_key != ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Admin key required")
+
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    cap_profiles = db.query(models.CapabilityProfile)\
+        .filter(models.CapabilityProfile.user_id == user_id)\
+        .order_by(models.CapabilityProfile.timestamp.desc()).limit(5).all()
+
+    pain_logs = db.query(models.PainLog)\
+        .filter(models.PainLog.user_id == user_id)\
+        .order_by(models.PainLog.timestamp.desc()).limit(10).all()
+
+    notes = db.query(models.TwinNote)\
+        .filter(models.TwinNote.user_id == user_id,
+                models.TwinNote.type == "system_flag")\
+        .order_by(models.TwinNote.timestamp.desc()).limit(5).all()
+
+    return {
+        "user": {"user_id": user.user_id, "email": user.email, "mode": user.mode, "age": user.age},
+        "capability_history": [
+            {"date": cp.timestamp.isoformat(), "mobility": cp.mobility,
+             "stability": cp.stability, "recovery": cp.recovery} for cp in cap_profiles
+        ],
+        "pain_logs": [
+            {"date": pl.timestamp.isoformat(), "zone": pl.zone, "score": pl.score} for pl in pain_logs
+        ],
+        "case_notes": [
+            {"date": n.timestamp.isoformat(), "note": n.content.replace("Casenote: ", "")} for n in notes
+        ],
+        "injury_risk": compute_injury_risk(user_id, db),
+    }
+
 

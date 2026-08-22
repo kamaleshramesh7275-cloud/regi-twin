@@ -279,8 +279,7 @@ export function HistoryPage() {
                         <LineChart data={painChartData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                           <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 9 }} />
-                          <YAxis tick={{ fill: '#94a3b8', fontSize: 9 }} domain={[1, 10]} />
-                          <Tooltip content={<CustomTooltip />} />
+                          <Tooltip contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '8px', color: '#f8fafc' }} />
                           <Line type="monotone" dataKey="score" stroke="#ef4444" strokeWidth={2.5} activeDot={{ r: 6 }} name="Pain Score" />
                         </LineChart>
                       </ResponsiveContainer>

@@ -82,9 +82,14 @@ export default function ClinicPage() {
             </h1>
             <p className="text-muted-foreground text-sm mt-1">Manage data sharing and import external medical records.</p>
           </div>
-          <button className="btn-primary flex items-center gap-2 px-4 py-2">
-            <Share2 className="w-4 h-4" /> Share Access
-          </button>
+          <div className="flex items-center gap-2">
+            <Link href="/clinic/roster" className="btn-secondary flex items-center gap-2 px-4 py-2 text-sm">
+              <UserCheck className="w-4 h-4" /> Patient Roster
+            </Link>
+            <button className="btn-primary flex items-center gap-2 px-4 py-2 text-sm">
+              <Share2 className="w-4 h-4" /> Share Access
+            </button>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -240,4 +240,45 @@ export const api = {
     if (!res.ok) throw new Error("Failed to create case note");
     return res.json();
   },
+
+  /** Feature 2: Get live analytics summary (ROM trend, capability trend, pain overlay, zone heatmap) */
+  async getAnalyticsSummary(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/summary/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch analytics summary");
+    return res.json();
+  },
+
+  /** Feature 8: Get injury risk prediction for next 7 days */
+  async getInjuryRisk(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/injury-risk/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch injury risk");
+    return res.json();
+  },
+
+  /** Feature 4: Upload a wearable CSV file (Garmin / Fitbit / Apple Health) */
+  async importWearableCsv(userId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE}/wearable/import-csv/${userId}`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) throw new Error("Failed to import wearable CSV");
+    return res.json();
+  },
+
+  /** Feature 9: Get clinic patient roster (therapist admin view) */
+  async getClinicRoster(adminKey = "physiotwin-admin-2026") {
+    const res = await fetchWithTimeout(`${API_BASE}/clinic/roster?admin_key=${adminKey}`);
+    if (!res.ok) throw new Error("Failed to fetch clinic roster");
+    return res.json();
+  },
+
+  /** Feature 9: Get detailed summary for one patient */
+  async getPatientSummary(userId: string, adminKey = "physiotwin-admin-2026") {
+    const res = await fetchWithTimeout(`${API_BASE}/clinic/patient/${userId}?admin_key=${adminKey}`);
+    if (!res.ok) throw new Error("Failed to fetch patient summary");
+    return res.json();
+  },
 };
+
