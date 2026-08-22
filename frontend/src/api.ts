@@ -1,4 +1,7 @@
-const API_BASE = `http://${window.location.hostname}:8000`;
+const isLocal = typeof window !== 'undefined' && 
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const API_BASE = isLocal ? `http://${window.location.hostname}:8000` : '';
 
 async function fetchWithTimeout(resource: string, options: RequestInit & { timeout?: number } = {}) {
   const { timeout = 10000 } = options;
