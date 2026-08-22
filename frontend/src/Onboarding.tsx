@@ -163,7 +163,7 @@ export default function Onboarding() {
                   <AlertTriangle className="text-yellow-400 w-6 h-6 shrink-0 mt-0.5" />
                   <div className="text-sm text-muted-foreground space-y-2">
                     <p><span className="text-foreground font-semibold">Not a medical device.</span> PhysioTwin provides estimates and screening signals only — not a clinical diagnosis or validated medical tool.</p>
-                    <p><span className="text-foreground font-semibold">Simulated sensors.</span> Wearable metrics are currently simulated until hardware is connected.</p>
+                    <p><span className="text-foreground font-semibold">Digital wearable sync.</span> Heart rate, HRV, sleep, and SpO₂ data is synced from your smartwatch or fitness band (Google Fit, Garmin, Fitbit, Apple Health) — no custom hardware required.</p>
                     <p><span className="text-foreground font-semibold">On-device AI.</span> Your camera data is processed locally and never uploaded.</p>
                   </div>
                 </div>

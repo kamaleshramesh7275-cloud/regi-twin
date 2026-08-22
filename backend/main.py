@@ -8,7 +8,6 @@ import datetime
 
 from database import engine, get_db, Base
 import models
-from mock_sensor import SyntheticSensorGenerator
 from analytics import compute_capability_profile, generate_weekly_letter, generate_deep_insights, chat_with_twin, simulate_activity
 
 # Create database tables
@@ -36,15 +35,6 @@ class UserCreate(BaseModel):
     goals: Optional[str] = None
     consent: bool = False
 
-class SensorDataResponse(BaseModel):
-    timestamp: int
-    heart_rate: float
-    spo2: float
-    temperature: float
-    accel_x: float
-    accel_y: float
-    accel_z: float
-    source: str
 class VisionSessionCreate(BaseModel):
     user_id: str
     task_type: str
@@ -68,6 +58,8 @@ class AnalyticsDashboardResponse(BaseModel):
     change_point_alert: Optional[str] = None
     zone_risks: Optional[Any] = None
     trend_data: Optional[Any] = None
+    capability_mark: Optional[int] = None
+
 
 class ChatMessage(BaseModel):
     role: str
@@ -80,8 +72,6 @@ class SimulationRequest(BaseModel):
     activity_type: str
     duration_mins: int
     intensity: str
-
-generator = SyntheticSensorGenerator()
 
 @app.get("/")
 def read_root():
@@ -116,13 +106,90 @@ def get_user(user_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
-@app.get("/sensors/synthetic", response_model=SensorDataResponse)
-def get_synthetic_sensor_data(exertion: float = 0.0):
+# ── Wearable Sync ────────────────────────────────────────────────────────────
+# Data arrives via software APIs from consumer smartwatches/fitness bands.
+# Supported platforms: Google Fit, Garmin Connect, Fitbit, Apple Health, Samsung Health.
+# No dedicated custom hardware — all synced through platform OAuth APIs.
+
+class WearableSyncRequest(BaseModel):
+    source: str = "google_fit"   # 'google_fit' | 'garmin' | 'fitbit' | 'apple_health' | 'samsung_health'
+    heart_rate: Optional[float] = None
+    hrv: Optional[float] = None
+    spo2: Optional[float] = None
+    steps: Optional[int] = None
+    sleep_hours: Optional[float] = None
+    sleep_score: Optional[int] = None
+    readiness_score: Optional[int] = None
+    calories_burned: Optional[int] = None
+    active_minutes: Optional[int] = None
+    raw_data: Optional[str] = None  # Full JSON string from the platform API
+
+@app.post("/wearables/sync/{user_id}")
+def sync_wearable_data(user_id: str, req: WearableSyncRequest, db: Session = Depends(get_db)):
     """
-    Fetch a single frame of simulated sensor data based on exertion level (0.0 to 1.0)
+    Ingest a vitals snapshot from a consumer smartwatch/fitness band.
+    Called after fetching data from a platform API (Google Fit, Garmin, etc.).
     """
-    data = generator.generate(exertion)
-    return data
+    import json
+    session = models.WearableSession(
+        user_id=user_id,
+        source=req.source,
+        heart_rate=req.heart_rate,
+        hrv=req.hrv,
+        spo2=req.spo2,
+        steps=req.steps,
+        sleep_hours=req.sleep_hours,
+        sleep_score=req.sleep_score,
+        readiness_score=req.readiness_score,
+        calories_burned=req.calories_burned,
+        active_minutes=req.active_minutes,
+        raw_data=req.raw_data
+    )
+    db.add(session)
+    db.commit()
+    return {"status": "synced", "source": req.source}
+
+@app.get("/wearables/latest/{user_id}")
+def get_latest_wearable(user_id: str, db: Session = Depends(get_db)):
+    """
+    Returns the most recently synced wearable vitals for a user.
+    Falls back to seeded defaults if no data has been synced yet.
+    """
+    session = (
+        db.query(models.WearableSession)
+        .filter(models.WearableSession.user_id == user_id)
+        .order_by(models.WearableSession.timestamp.desc())
+        .first()
+    )
+    if session:
+        return {
+            "source": session.source,
+            "heart_rate": session.heart_rate,
+            "hrv": session.hrv,
+            "spo2": session.spo2,
+            "steps": session.steps,
+            "sleep_hours": session.sleep_hours,
+            "sleep_score": session.sleep_score,
+            "readiness_score": session.readiness_score,
+            "calories_burned": session.calories_burned,
+            "active_minutes": session.active_minutes,
+            "timestamp": session.timestamp.isoformat()
+        }
+    # Default values shown before first sync
+    return {
+        "source": "not_synced",
+        "heart_rate": None,
+        "hrv": None,
+        "spo2": None,
+        "steps": None,
+        "sleep_hours": None,
+        "sleep_score": None,
+        "readiness_score": None,
+        "calories_burned": None,
+        "active_minutes": None,
+        "timestamp": None
+    }
+
 
 class SyncFitRequest(BaseModel):
     fit_data: dict
@@ -206,17 +273,65 @@ def ingest_vision_session(session: VisionSessionCreate, db: Session = Depends(ge
 
 @app.get("/sessions/history/{user_id}")
 def get_session_history(user_id: str, db: Session = Depends(get_db)):
-    sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.VisionSession.timestamp.desc()).all()
-    return [{
-        "id": s.id,
-        "timestamp": s.timestamp.isoformat(),
-        "task_type": s.task_type,
-        "rom": s.rom,
-        "movement_speed": s.movement_speed,
-        "symmetry": s.symmetry,
-        "stability": s.stability,
-        "annotated_image_url": s.annotated_image_url
-    } for s in sessions]
+    sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.VisionSession.timestamp.asc()).all()
+    
+    # Calculate historical bests per task_type to award badges
+    best_rom = {}
+    best_stability = {}
+    best_symmetry = {}
+    
+    for s in sessions:
+        tt = s.task_type
+        if s.rom is not None:
+            best_rom[tt] = max(best_rom.get(tt, 0.0), s.rom)
+        if s.stability is not None:
+            best_stability[tt] = max(best_stability.get(tt, 0.0), s.stability)
+        if s.symmetry is not None:
+            best_symmetry[tt] = max(best_symmetry.get(tt, 0.0), s.symmetry)
+            
+    history = []
+    for i, s in enumerate(sessions):
+        badge = None
+        tt = s.task_type
+        
+        # Check if latest session hit or matched all-time bests
+        is_pb = False
+        if s.rom is not None and s.rom >= best_rom.get(tt, 0.0):
+            is_pb = True
+        elif s.stability is not None and s.stability >= best_stability.get(tt, 0.0):
+            is_pb = True
+        elif s.symmetry is not None and s.symmetry >= best_symmetry.get(tt, 0.0):
+            is_pb = True
+            
+        if is_pb:
+            badge = "Personal Best"
+        elif s.stability is not None and s.stability < 0.70:
+            badge = "Watchpoint"
+        else:
+            # Check for improvement over the previous session of the same task type
+            prev_s = None
+            for ps in reversed(sessions[:i]):
+                if ps.task_type == tt:
+                    prev_s = ps
+                    break
+            if prev_s and prev_s.rom and s.rom and s.rom > prev_s.rom * 1.03:
+                badge = "Improved"
+                
+        history.append({
+            "id": s.session_id,
+            "timestamp": s.timestamp.isoformat(),
+            "task_type": s.task_type,
+            "rom": s.rom,
+            "movement_speed": s.movement_speed,
+            "symmetry": s.symmetry,
+            "stability": s.stability,
+            "annotated_image_url": s.annotated_image_url,
+            "badge": badge
+        })
+        
+    history.reverse()
+    return history
+
 
 @app.get("/analytics/dashboard/{user_id}", response_model=AnalyticsDashboardResponse)
 def get_dashboard(user_id: str, db: Session = Depends(get_db)):
@@ -258,6 +373,39 @@ def get_dashboard(user_id: str, db: Session = Depends(get_db)):
         {"name": "W8", "mobility": 88, "stability": 64, "quality": 93, "cardio": 79, "recovery": 88, "reserve": 55}
     ]
 
+    # Calculate dynamic capability mark based on capability profile weights
+    mobility_score = profile.mobility if profile.mobility is not None else 85.0
+    stability_score = profile.stability if profile.stability is not None else 70.0
+    quality_score = profile.movement_quality if profile.movement_quality is not None else 92.0
+    cardio_score = profile.cardiovascular_efficiency if profile.cardiovascular_efficiency is not None else 78.0
+    recovery_score = profile.recovery if profile.recovery is not None else 88.0
+
+    capability_mark = int(round(
+        (mobility_score * 0.20) +
+        (stability_score * 0.25) +
+        (quality_score * 0.20) +
+        (cardio_score * 0.20) +
+        (recovery_score * 0.15)
+    ) * 10)
+
+    # Upsert leaderboard entry for user
+    user_obj = db.query(models.User).filter(models.User.user_id == user_id).first()
+    username = user_obj.email.split("@")[0] if user_obj and user_obj.email else "You"
+    
+    entry = db.query(models.LeaderboardEntry).filter(models.LeaderboardEntry.user_id == user_id).first()
+    if entry:
+        entry.score = capability_mark
+        entry.username = username
+        entry.updated_at = datetime.datetime.utcnow()
+    else:
+        entry = models.LeaderboardEntry(
+            user_id=user_id,
+            username=username,
+            score=capability_mark
+        )
+        db.add(entry)
+    db.commit()
+
     return AnalyticsDashboardResponse(
         mobility=profile.mobility,
         stability=profile.stability,
@@ -268,8 +416,10 @@ def get_dashboard(user_id: str, db: Session = Depends(get_db)):
         confidence=profile.confidence,
         change_point_alert=alert,
         zone_risks=json.loads(profile.zone_risks) if profile.zone_risks else default_zone_risks,
-        trend_data=json.loads(profile.trend_data) if profile.trend_data else default_trend_data
+        trend_data=json.loads(profile.trend_data) if profile.trend_data else default_trend_data,
+        capability_mark=capability_mark
     )
+
 
 @app.post("/analytics/weekly-letter/{user_id}")
 def get_weekly_letter(user_id: str, db: Session = Depends(get_db)):
@@ -284,8 +434,60 @@ def get_deep_insights(user_id: str, db: Session = Depends(get_db)):
 @app.post("/analytics/chat/{user_id}")
 def api_chat_with_twin(user_id: str, req: ChatRequest, db: Session = Depends(get_db)):
     messages_dict = [{"role": msg.role, "content": msg.content} for msg in req.messages]
+    
+    # Save user message to database
+    if messages_dict:
+        user_msg = messages_dict[-1]["content"]
+        db_user_msg = models.TwinNote(
+            user_id=user_id,
+            type="chat_message",
+            content=f"user||{user_msg}"
+        )
+        db.add(db_user_msg)
+        db.commit()
+
     response = chat_with_twin(user_id, messages_dict, db)
+
+    # Save twin response to database
+    db_twin_msg = models.TwinNote(
+        user_id=user_id,
+        type="chat_message",
+        content=f"twin||{response}"
+    )
+    db.add(db_twin_msg)
+    db.commit()
+
     return {"response": response}
+
+@app.get("/analytics/chat/history/{user_id}")
+def get_chat_history(user_id: str, db: Session = Depends(get_db)):
+    notes = (
+        db.query(models.TwinNote)
+        .filter(models.TwinNote.user_id == user_id, models.TwinNote.type == "chat_message")
+        .order_by(models.TwinNote.timestamp.desc())
+        .limit(20)
+        .all()
+    )
+    history = []
+    for n in reversed(notes):
+        parts = n.content.split("||", 1)
+        role = parts[0] if len(parts) > 1 else "twin"
+        content = parts[1] if len(parts) > 1 else n.content
+        history.append({
+            "role": role,
+            "content": content
+        })
+    return history
+
+@app.delete("/analytics/chat/history/{user_id}")
+def clear_chat_history(user_id: str, db: Session = Depends(get_db)):
+    db.query(models.TwinNote).filter(
+        models.TwinNote.user_id == user_id,
+        models.TwinNote.type == "chat_message"
+    ).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "cleared"}
+
 
 @app.post("/analytics/simulate/{user_id}")
 def api_simulate_activity(user_id: str, req: SimulationRequest, db: Session = Depends(get_db)):
@@ -296,28 +498,83 @@ def api_simulate_activity(user_id: str, req: SimulationRequest, db: Session = De
 
 @app.post("/reports/analyze/{user_id}")
 async def analyze_medical_report(user_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    # 1. Simulate AI processing delay
-    await asyncio.sleep(2.5)
+    import json as _json
+    from analytics import GROQ_API_KEY
+    from groq import Groq
 
-    # 2. Extract diagnosis (Mocked AI Analysis)
-    # Regardless of the actual image uploaded, we will detect a "Meniscus Tear" 
-    # to demonstrate the risk update flow and Twin visualization.
+    # 1. Processing delay
+    await asyncio.sleep(1.5)
+
+    # 2. Detect body region from filename keywords
+    filename_lower = (file.filename or "").lower()
+    region_map = {
+        "knee": ("left_knee", "Knee"),
+        "shoulder": ("left_shoulder", "Shoulder"),
+        "lumbar": ("lumbar", "Lumbar Spine"),
+        "spine": ("lumbar", "Lumbar Spine"),
+        "back": ("lumbar", "Lower Back"),
+        "hip": ("left_hip", "Hip"),
+        "ankle": ("left_ankle", "Ankle"),
+        "neck": ("cervical", "Cervical Spine"),
+        "cervical": ("cervical", "Cervical Spine"),
+        "wrist": ("left_forearm", "Wrist"),
+        "elbow": ("left_arm", "Elbow"),
+        "foot": ("left_ankle", "Foot"),
+        "hamstring": ("left_thigh", "Hamstring"),
+        "quad": ("left_thigh", "Quadriceps"),
+        "thigh": ("left_thigh", "Thigh"),
+    }
+    detected_zone, detected_region = next(
+        ((zone, region) for keyword, (zone, region) in region_map.items() if keyword in filename_lower),
+        ("lumbar", "Lower Back")  # default if no keyword found
+    )
+
+    # 3. Use Groq to generate a varied, contextual clinical finding
     diagnosis = {
-        "zone": "left_knee",
-        "condition": "Grade 2 Meniscus Tear",
-        "severity": 85,
-        "recommendation": "Avoid high-impact axial loading. Prescribe stabilization protocol."
+        "zone": detected_zone,
+        "condition": "Soft Tissue Finding",
+        "severity": 45,
+        "recommendation": "Follow up with a qualified physiotherapist for assessment.",
+        "ai_generated": True,
+        "disclaimer": "This is an AI-generated suggestion based on the filename only. It is NOT a real diagnosis."
     }
 
-    # 3. Update the user's base ZoneRisk profile
-    user_zones = db.query(models.ZoneRisk).filter(models.ZoneRisk.user_id == user_id).first()
-    if not user_zones:
-        user_zones = models.ZoneRisk(user_id=user_id)
-        db.add(user_zones)
-    
-    # Spike the risk for the affected zone
-    setattr(user_zones, diagnosis["zone"], diagnosis["severity"])
-    db.commit()
+    if GROQ_API_KEY:
+        try:
+            client = Groq(api_key=GROQ_API_KEY)
+            groq_response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f'A medical imaging report file named "{file.filename}" was uploaded. '
+                        f'The detected body region is: {detected_region}. '
+                        f'Generate a realistic, non-alarmist clinical finding as a JSON object with these exact keys: '
+                        f'"zone" (string, one of: left_knee, right_knee, lumbar, cervical, left_shoulder, right_shoulder, left_hip, right_hip, left_ankle, right_ankle, left_thigh, right_thigh), '
+                        f'"condition" (string, 3-6 words, e.g. "Grade 1 Ligament Strain"), '
+                        f'"severity" (integer between 15 and 80), '
+                        f'"recommendation" (string, one concise clinical action sentence). '
+                        f'Return ONLY the JSON object. No explanation.'
+                    )
+                }],
+                max_tokens=200,
+                temperature=0.5
+            )
+            raw = groq_response.choices[0].message.content.strip()
+            # Strip markdown code fences if present
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            parsed = _json.loads(raw.strip())
+            diagnosis.update({
+                "zone": parsed.get("zone", detected_zone),
+                "condition": parsed.get("condition", "Soft Tissue Finding"),
+                "severity": int(parsed.get("severity", 45)),
+                "recommendation": parsed.get("recommendation", diagnosis["recommendation"]),
+            })
+        except Exception as e:
+            print(f"Groq medical analysis failed, using fallback: {e}")
 
     return {
         "status": "success",
@@ -342,7 +599,167 @@ def get_leaderboard(db: Session = Depends(get_db)):
         db.commit()
         entries = db.query(models.LeaderboardEntry).order_by(models.LeaderboardEntry.score.desc()).all()
         
-    return [{"username": e.username, "score": e.score, "rank_change": e.rank_change} for e in entries]
+    return [{"username": e.username, "score": e.score, "rank_change": e.rank_change, "user_id": e.user_id} for e in entries]
+
+@app.post("/programs/generate/{user_id}")
+def generate_rehab_program(user_id: str, db: Session = Depends(get_db)):
+    import json as _json
+    from analytics import GROQ_API_KEY
+    from groq import Groq
+    
+    # 1. Pull latest capability profile to identify weak zones
+    profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
+    
+    top_zones_str = "left_knee (varus/valgus stabilization), lumbar (pelvic control)"
+    if profile and profile.zone_risks:
+        try:
+            risks = _json.loads(profile.zone_risks)
+            sorted_risks = sorted(risks.items(), key=lambda x: x[1], reverse=True)
+            high_risks = [f"{z} (risk: {r}/100)" for z, r in sorted_risks if r > 30]
+            if high_risks:
+                top_zones_str = ", ".join(high_risks[:3])
+        except Exception as e:
+            print(f"Error parsing profile zone risks: {e}")
+
+    # Fallback default 4-week stabilization program
+    program = {
+        "title": "4-Week Targeted Stabilization Protocol",
+        "focus": f"Stabilizing high-risk areas: {top_zones_str}",
+        "weeks": [
+            {
+                "week": 1,
+                "focus": "Neuromuscular Activation",
+                "tasks": [
+                    {
+                        "title": "Gluteus Medius Activation (Clamshells)",
+                        "sets_reps": "3 sets x 15 reps",
+                        "rationale": "Awakens hip abductors to control varus/valgus alignment at the knee."
+                    },
+                    {
+                        "title": "Prone Cobra (Pelvic Floor/Back Extension)",
+                        "sets_reps": "3 sets x 30s hold",
+                        "rationale": "Strengthens erector spinae and multifidus to restore core stability."
+                    },
+                    {
+                        "title": "Quad Sets (Isometric hold)",
+                        "sets_reps": "3 sets x 10s hold",
+                        "rationale": "Maintains baseline neuromuscular recruitment patterns of the vastus medialis."
+                    }
+                ]
+            },
+            {
+                "week": 2,
+                "focus": "Eccentric Strength & Alignment",
+                "tasks": [
+                    {
+                        "title": "Slow Eccentric Step-Downs",
+                        "sets_reps": "3 sets x 10 reps",
+                        "rationale": "Improves deceleration control and tendon capacity of the patellar insertion."
+                    },
+                    {
+                        "title": "Dead Bug Hold (Core Bracing)",
+                        "sets_reps": "3 sets x 10 reps/side",
+                        "rationale": "Addresses stability asymmetry and reduces pelvic rotation under load."
+                    },
+                    {
+                        "title": "Banded Glute Bridges",
+                        "sets_reps": "3 sets x 12 reps",
+                        "rationale": "Teaches the gluteal muscles to extend the hip without lumbar compensation."
+                    }
+                ]
+            },
+            {
+                "week": 3,
+                "focus": "Dynamic Stability Overlay",
+                "tasks": [
+                    {
+                        "title": "Single-Leg Balance on Foam Pad",
+                        "sets_reps": "3 sets x 30s/leg",
+                        "rationale": "Fires stabilizer muscles in ankles and hips to prevent joint cave."
+                    },
+                    {
+                        "title": "Banded Lateral Monster Walks",
+                        "sets_reps": "2 sets x 15 steps",
+                        "rationale": "Builds endurance in lateral glutes to eliminate dynamic varus stress."
+                    },
+                    {
+                        "title": "Bird Dog (Contralateral Extension)",
+                        "sets_reps": "3 sets x 8 reps/side",
+                        "rationale": "Reduces shear stress on the lumbar spine while testing rotational control."
+                    }
+                ]
+            },
+            {
+                "week": 4,
+                "focus": "Functional Loading Progression",
+                "tasks": [
+                    {
+                        "title": "Tempo Goblet Squats (3-1-1)",
+                        "sets_reps": "3 sets x 8 reps",
+                        "rationale": "Integrates single-muscle activations into a compound functional pattern."
+                    },
+                    {
+                        "title": "Single-Leg Romanian Deadlifts",
+                        "sets_reps": "3 sets x 8 reps/leg",
+                        "rationale": "Addresses bilateral hamstrings-to-quads strength imbalances."
+                    },
+                    {
+                        "title": "Side Plank with Leg Abduction",
+                        "sets_reps": "3 sets x 20s/side",
+                        "rationale": "Challenges the lateral kinetic chain to maintain spinal neutrality."
+                    }
+                ]
+            }
+        ]
+    }
+
+    # Generate custom program with Groq if key is present
+    if GROQ_API_KEY:
+        try:
+            client = Groq(api_key=GROQ_API_KEY)
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Generate a customized 4-week physiotherapy / rehab program for a user with these high-risk areas: {top_zones_str}. "
+                        f"Structure the response as a JSON object with this exact schema: \n"
+                        f"{{\n"
+                        f"  \"title\": \"Name of the program (e.g. Lower Limb Realignment Program)\",\n"
+                        f"  \"focus\": \"Short summary of targeted corrections\",\n"
+                        f"  \"weeks\": [\n"
+                        f"    {{\n"
+                        f"      \"week\": 1,\n"
+                        f"      \"focus\": \"Week 1 focus area\",\n"
+                        f"      \"tasks\": [\n"
+                        f"        {{\n"
+                        f"          \"title\": \"Exercise name\",\n"
+                        f"          \"sets_reps\": \"Sets & reps, e.g. 3x12 reps\",\n"
+                        f"          \"rationale\": \"1 sentence biomechanical explanation explaining WHY this exercise targets the weak zones\"\n"
+                        f"        }}\n"
+                        f"      ]\n"
+                        f"    }}\n"
+                        f"  ]\n"
+                        f"}}\n"
+                        f"Generate exactly 4 weeks, with exactly 3 tasks per week. Return ONLY the raw JSON string. No extra text."
+                    )
+                }],
+                max_tokens=1000,
+                temperature=0.4
+            )
+            raw = response.choices[0].message.content.strip()
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            parsed = _json.loads(raw.strip())
+            if "title" in parsed and "weeks" in parsed:
+                program = parsed
+        except Exception as e:
+            print(f"Groq program generation failed, using fallback: {e}")
+            
+    return program
+
 
 @app.get("/analytics/external-apps/{user_id}")
 def get_external_apps(user_id: str, db: Session = Depends(get_db)):

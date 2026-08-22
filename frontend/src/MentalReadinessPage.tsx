@@ -1,25 +1,51 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar";
-import { BrainCircuit, PenTool, CheckCircle, AlertTriangle } from "lucide-react";
+import { BrainCircuit, PenTool, CheckCircle, AlertTriangle, Wifi, WifiOff } from "lucide-react";
 import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer
 } from 'recharts';
-
-const RESTQ_DATA = [
-  { subject: 'General Stress', A: 30, fullMark: 100 },
-  { subject: 'Emotional Stress', A: 20, fullMark: 100 },
-  { subject: 'Social Stress', A: 25, fullMark: 100 },
-  { subject: 'Fatigue', A: 45, fullMark: 100 },
-  { subject: 'Lack of Energy', A: 40, fullMark: 100 },
-  { subject: 'Physical Complaints', A: 50, fullMark: 100 },
-  { subject: 'Success', A: 70, fullMark: 100 },
-  { subject: 'Social Recovery', A: 85, fullMark: 100 },
-  { subject: 'Physical Recovery', A: 75, fullMark: 100 },
-  { subject: 'General Well-being', A: 80, fullMark: 100 },
-];
+import { api } from "./api";
+import { useAuth } from "./context/AuthContext";
 
 export default function MentalReadinessPage() {
+  const { user } = useAuth();
   const [surveyDone, setSurveyDone] = useState(false);
+  const [vitals, setVitals] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchVitals = async () => {
+      try {
+        const uid = user?.uid || "test-user";
+        const data = await api.getLatestWearable(uid);
+        setVitals(data);
+      } catch (err) {
+        console.error("Failed to fetch wearable readiness data", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchVitals();
+  }, [user]);
+
+  // Derived scores from synced wearable stats, falling back to typical values if not synced
+  const hrv = vitals?.hrv ?? 62;
+  const sleep = vitals?.sleep_score ?? 88;
+  const readiness = vitals?.readiness_score ?? 78;
+
+  const RESTQ_DATA = [
+    { subject: 'General Stress', A: Math.max(10, Math.round(100 - readiness)), fullMark: 100 },
+    { subject: 'Emotional Stress', A: Math.max(10, Math.round(95 - readiness * 0.9)), fullMark: 100 },
+    { subject: 'Social Stress', A: 25, fullMark: 100 },
+    { subject: 'Fatigue', A: Math.max(10, Math.round(100 - sleep)), fullMark: 100 },
+    { subject: 'Lack of Energy', A: Math.max(10, Math.round(90 - sleep * 0.8)), fullMark: 100 },
+    { subject: 'Physical Complaints', A: Math.max(10, Math.round(110 - hrv * 1.5)), fullMark: 100 },
+    { subject: 'Success', A: Math.min(100, Math.round(readiness * 0.9)), fullMark: 100 },
+    { subject: 'Social Recovery', A: 85, fullMark: 100 },
+    { subject: 'Physical Recovery', A: Math.min(100, Math.round(hrv * 1.2)), fullMark: 100 },
+    { subject: 'General Well-being', A: Math.min(100, sleep), fullMark: 100 },
+  ];
+
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0 bg-background">
@@ -30,7 +56,18 @@ export default function MentalReadinessPage() {
             <h1 className="text-2xl font-black flex items-center gap-2">
               <BrainCircuit className="w-6 h-6 text-primary" /> Mental Readiness
             </h1>
-            <p className="text-muted-foreground text-sm mt-1">Psychological readiness and stress-recovery balance (RESTQ-Sport).</p>
+            <p className="text-muted-foreground text-sm mt-1 flex flex-wrap items-center gap-2">
+              <span>Psychological readiness and stress-recovery balance (RESTQ-Sport).</span>
+              {vitals?.source && vitals.source !== "not_synced" ? (
+                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-400/10 px-2.5 py-0.5 rounded-full">
+                  <Wifi className="w-2.5 h-2.5" /> Live Synced ({vitals.source.replace('_', ' ')})
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground bg-secondary px-2.5 py-0.5 rounded-full">
+                  <WifiOff className="w-2.5 h-2.5" /> Wearable Not Connected (Using Defaults)
+                </span>
+              )}
+            </p>
           </div>
           <button 
             onClick={() => setSurveyDone(true)}

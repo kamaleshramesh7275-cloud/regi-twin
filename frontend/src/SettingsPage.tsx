@@ -1,11 +1,11 @@
 import React, { useState } from "react";
 import { Sidebar } from "./components/Sidebar";
-import { Activity, Camera, History, Clock, Brain, Settings, User, BarChart2, Smartphone, Shield, Bell, Check, LogOut } from "lucide-react";
+import { Smartphone, Shield, Bell, Check, LogOut, User } from "lucide-react";
 import { useAuth } from "./context/AuthContext";
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
-    <button 
+    <button
       onClick={onChange}
       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${checked ? 'bg-primary' : 'bg-secondary/40 border border-border/50'}`}
     >
@@ -14,16 +14,34 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
   );
 }
 
+function usePersistentToggle(key: string, defaultValue: boolean): [boolean, () => void] {
+  const [value, setValue] = React.useState<boolean>(() => {
+    const stored = localStorage.getItem(key);
+    return stored !== null ? stored === 'true' : defaultValue;
+  });
+  const toggle = () => setValue(prev => {
+    const next = !prev;
+    localStorage.setItem(key, String(next));
+    return next;
+  });
+  return [value, toggle];
+}
+
 export default function SettingsPage() {
   const { user, logout } = useAuth();
-  
-  const [appleHealth, setAppleHealth] = useState(true);
-  const [garmin, setGarmin] = useState(false);
-  const [oura, setOura] = useState(true);
-  
-  const [weeklyReport, setWeeklyReport] = useState(true);
-  const [injuryAlerts, setInjuryAlerts] = useState(true);
-  const [milestones, setMilestones] = useState(false);
+
+  // Wearable platform toggles — persisted to localStorage
+  const [appleHealth, toggleAppleHealth] = usePersistentToggle('setting_apple_health', true);
+  const [garmin,      toggleGarmin]      = usePersistentToggle('setting_garmin', false);
+  const [googleFit,   toggleGoogleFit]   = usePersistentToggle('setting_google_fit', true);
+  const [fitbit,      toggleFitbit]      = usePersistentToggle('setting_fitbit', false);
+  const [oura,        toggleOura]        = usePersistentToggle('setting_oura', false);
+
+  // Notification toggles — persisted to localStorage
+  const [weeklyReport, toggleWeeklyReport] = usePersistentToggle('setting_notif_weekly', true);
+  const [injuryAlerts, toggleInjuryAlerts] = usePersistentToggle('setting_notif_injury', true);
+  const [milestones,   toggleMilestones]   = usePersistentToggle('setting_notif_milestones', false);
+
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0 bg-black">
@@ -63,10 +81,18 @@ export default function SettingsPage() {
             <div className="bg-secondary/10 border border-border/50 rounded-2xl p-6 space-y-6">
               <div className="flex items-center justify-between">
                 <div>
+                  <div className="font-medium">Google Fit</div>
+                  <div className="text-sm text-muted-foreground">Syncs steps, heart rate, and activity</div>
+                </div>
+                <Toggle checked={googleFit} onChange={toggleGoogleFit} />
+              </div>
+              <div className="w-full h-px bg-border/40" />
+              <div className="flex items-center justify-between">
+                <div>
                   <div className="font-medium">Apple Health</div>
                   <div className="text-sm text-muted-foreground">Syncs steps, workouts, and heart rate</div>
                 </div>
-                <Toggle checked={appleHealth} onChange={() => setAppleHealth(!appleHealth)} />
+                <Toggle checked={appleHealth} onChange={toggleAppleHealth} />
               </div>
               <div className="w-full h-px bg-border/40" />
               <div className="flex items-center justify-between">
@@ -74,15 +100,23 @@ export default function SettingsPage() {
                   <div className="font-medium">Garmin Connect</div>
                   <div className="text-sm text-muted-foreground">Syncs VO2 max and training load</div>
                 </div>
-                <Toggle checked={garmin} onChange={() => setGarmin(!garmin)} />
+                <Toggle checked={garmin} onChange={toggleGarmin} />
+              </div>
+              <div className="w-full h-px bg-border/40" />
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-medium">Fitbit</div>
+                  <div className="text-sm text-muted-foreground">Syncs sleep, HRV, and readiness</div>
+                </div>
+                <Toggle checked={fitbit} onChange={toggleFitbit} />
               </div>
               <div className="w-full h-px bg-border/40" />
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-medium">Oura Ring</div>
-                  <div className="text-sm text-muted-foreground">Syncs sleep and readiness scores</div>
+                  <div className="text-sm text-muted-foreground">Syncs deep sleep and readiness scores</div>
                 </div>
-                <Toggle checked={oura} onChange={() => setOura(!oura)} />
+                <Toggle checked={oura} onChange={toggleOura} />
               </div>
             </div>
           </section>
@@ -98,7 +132,7 @@ export default function SettingsPage() {
                   <div className="font-medium">Weekly Twin Report</div>
                   <div className="text-sm text-muted-foreground">Get an email summary of your physical changes</div>
                 </div>
-                <Toggle checked={weeklyReport} onChange={() => setWeeklyReport(!weeklyReport)} />
+                <Toggle checked={weeklyReport} onChange={toggleWeeklyReport} />
               </div>
               <div className="w-full h-px bg-border/40" />
               <div className="flex items-center justify-between">
@@ -106,7 +140,7 @@ export default function SettingsPage() {
                   <div className="font-medium">Injury Risk Alerts</div>
                   <div className="text-sm text-muted-foreground">Push notifications for cumulative trauma</div>
                 </div>
-                <Toggle checked={injuryAlerts} onChange={() => setInjuryAlerts(!injuryAlerts)} />
+                <Toggle checked={injuryAlerts} onChange={toggleInjuryAlerts} />
               </div>
               <div className="w-full h-px bg-border/40" />
               <div className="flex items-center justify-between">
@@ -114,7 +148,7 @@ export default function SettingsPage() {
                   <div className="font-medium">Milestone Celebrations</div>
                   <div className="text-sm text-muted-foreground">Updates when you hit new benchmarking levels</div>
                 </div>
-                <Toggle checked={milestones} onChange={() => setMilestones(!milestones)} />
+                <Toggle checked={milestones} onChange={toggleMilestones} />
               </div>
             </div>
           </section>

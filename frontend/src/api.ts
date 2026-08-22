@@ -136,5 +136,61 @@ export const api = {
     });
     if (!res.ok) throw new Error("Failed to sync external apps");
     return res.json();
-  }
+  },
+
+  /** Push a vitals snapshot synced from a consumer smartwatch/band platform API */
+  async syncWearableData(userId: string, data: {
+    source: string;          // 'google_fit' | 'garmin' | 'fitbit' | 'apple_health' | 'samsung_health'
+    heart_rate?: number;
+    hrv?: number;
+    spo2?: number;
+    steps?: number;
+    sleep_hours?: number;
+    sleep_score?: number;
+    readiness_score?: number;
+    calories_burned?: number;
+    active_minutes?: number;
+    raw_data?: string;
+  }) {
+    const res = await fetchWithTimeout(`${API_BASE}/wearables/sync/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Failed to sync wearable data");
+    return res.json();
+  },
+
+  /** Fetch the most recently synced wearable vitals for a user */
+  async getLatestWearable(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/wearables/latest/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch wearable data");
+    return res.json();
+  },
+
+  /** Request generation of a customized rehab program based on capability profile */
+  async generateProgram(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/programs/generate/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" }
+    });
+    if (!res.ok) throw new Error("Failed to generate program");
+    return res.json();
+  },
+
+  /** Get chat history for dynamic twin */
+  async getChatHistory(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/chat/history/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch chat history");
+    return res.json();
+  },
+
+  /** Clear chat history */
+  async clearChatHistory(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/chat/history/${userId}`, {
+      method: "DELETE"
+    });
+    if (!res.ok) throw new Error("Failed to clear chat history");
+    return res.json();
+  },
 };

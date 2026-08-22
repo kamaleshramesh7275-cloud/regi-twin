@@ -225,7 +225,7 @@ export default function LoginPage() {
             <span className="font-bold">PhysioTwin</span>
           </div>
           <div className="text-sm text-muted-foreground">
-            © 2026 Novalegions. All rights reserved.
+            © 2026 Pro Caffeinators. All rights reserved.
           </div>
           <div className="flex items-center gap-6 text-sm text-muted-foreground">
             <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>

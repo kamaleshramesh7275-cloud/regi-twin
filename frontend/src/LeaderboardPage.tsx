@@ -8,6 +8,7 @@ interface LeaderboardEntry {
   username: string;
   score: number;
   rank_change: number;
+  user_id?: string;
 }
 
 export default function LeaderboardPage() {
@@ -24,8 +25,7 @@ export default function LeaderboardPage() {
           api.getDashboard(user?.uid || "demo_user")
         ]);
         setLeaderboardData(lbData);
-        // We use the dashboard metrics to calculate a rough mark, or use reserve if available
-        setCapabilityMark(Math.round(dashboardData.reserve * 10) || 712);
+        setCapabilityMark(dashboardData.capability_mark || 712);
       } catch (e) {
         console.error("Failed to load leaderboard data", e);
       } finally {
@@ -34,6 +34,7 @@ export default function LeaderboardPage() {
     };
     loadData();
   }, [user]);
+
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0 bg-black">
@@ -75,13 +76,20 @@ export default function LeaderboardPage() {
                   </div>
                 ))}
                 {/* Current User */}
-                <div className="flex items-center justify-between p-4 rounded-xl bg-primary/10 border border-primary/20 mt-4 shadow-sm">
-                  <div className="flex items-center gap-4">
-                    <div className="w-8 text-center font-bold text-primary text-lg">#49</div>
-                    <div className="text-base font-bold text-primary">You</div>
-                  </div>
-                  <div className="font-mono text-base font-bold text-primary">{capabilityMark}</div>
-                </div>
+                {(() => {
+                  const myIndex = leaderboardData.findIndex(u => u.user_id === user?.uid);
+                  const myRankDisplay = myIndex !== -1 ? `#${myIndex + 1}` : "#—";
+                  const displayUsername = user?.email ? user.email.split("@")[0] : "You";
+                  return (
+                    <div className="flex items-center justify-between p-4 rounded-xl bg-primary/10 border border-primary/20 mt-4 shadow-sm">
+                      <div className="flex items-center gap-4">
+                        <div className="w-8 text-center font-bold text-primary text-lg">{myRankDisplay}</div>
+                        <div className="text-base font-bold text-primary">You ({displayUsername})</div>
+                      </div>
+                      <div className="font-mono text-base font-bold text-primary">{capabilityMark}</div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Insights Column */}

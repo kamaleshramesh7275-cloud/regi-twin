@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from sqlalchemy.orm import Session
 from groq import Groq
 import models
@@ -6,6 +8,7 @@ import statistics
 import datetime
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
 
 import json
 
@@ -106,9 +109,27 @@ def compute_capability_profile(user_id: str, db: Session):
         recovery = max(0.0, min(100.0, 88.0 - (heavy_workouts * 5) + (total_protein * 3)))
         reserve = max(0.0, min(100.0, 55.0 - (heavy_workouts * 3) + (total_protein * 2)))
         
-        if trend_data:
-            trend_data[-1]["recovery"] = round(recovery, 1)
-            trend_data[-1]["reserve"] = round(reserve, 1)
+    if trend_data:
+        trend_data[-1]["recovery"] = round(recovery, 1)
+        trend_data[-1]["reserve"] = round(reserve, 1)
+
+    # Fix 6: Compute cardio score from real wearable data instead of hardcoding 78.0
+    # Pull the most recent wearable session for this user
+    latest_wearable = (
+        db.query(models.WearableSession)
+        .filter(models.WearableSession.user_id == user_id)
+        .order_by(models.WearableSession.timestamp.desc())
+        .first()
+    )
+    if latest_wearable and (latest_wearable.heart_rate or latest_wearable.hrv):
+        hr  = latest_wearable.heart_rate or 72.0
+        hrv = latest_wearable.hrv or 50.0
+        # Lower resting HR → better cardio: 50 BPM = 100 score, 90 BPM = 20 score
+        hr_score  = max(0.0, min(100.0, 130.0 - (hr * 1.0)))
+        # Higher HRV → better recovery: 80ms = 80 score, 20ms = 20 score
+        hrv_score = max(0.0, min(100.0, hrv * 1.0))
+        cardio = round((hr_score * 0.6) + (hrv_score * 0.4), 1)
+    # else: cardio stays at the base fallback value of 78.0
 
     profile = models.CapabilityProfile(
         user_id=user_id,

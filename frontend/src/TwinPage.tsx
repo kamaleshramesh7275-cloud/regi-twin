@@ -167,6 +167,24 @@ export default function TwinPage() {
       // Sync the parsed Hevy/HealthifyMe data to the backend for the Dashboard to use
       const uid = user?.uid || "demo_user";
       await api.syncExternalApps(uid, data.workouts, data.nutrition);
+
+      // Fix 5: Persist wearable vitals to wearable_sessions so VitalsPage and
+      // the analytics engine can use real HR/HRV data instead of hardcoded values.
+      if (data.liveVitals) {
+        await api.syncWearableData(uid, {
+          source: data.source === "Google Fit API" ? "google_fit" : "mock",
+          heart_rate: data.liveVitals.heartRate ?? undefined,
+          steps: data.liveVitals.steps ?? undefined,
+          // hrv, spo2, sleep_hours are enriched from platform API when available
+          hrv: undefined,
+          spo2: undefined,
+          sleep_hours: undefined,
+          sleep_score: undefined,
+          readiness_score: undefined,
+          calories_burned: undefined,
+          active_minutes: undefined,
+        });
+      }
       
       setDynamicRisk(updatedRisk);
       setSyncedData(data);

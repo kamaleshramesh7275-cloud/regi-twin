@@ -4,3 +4,5 @@ sqlalchemy
 pydantic
 firebase-admin
 python-multipart
+groq
+python-dotenv

@@ -22,20 +22,29 @@ class User(Base):
     consent = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-class SensorSession(Base):
-    __tablename__ = "sensor_sessions"
+
+class WearableSession(Base):
+    """Vitals synced from consumer smartwatches/fitness bands via software APIs
+    (Google Fit, Garmin Connect, Fitbit, Apple Health, etc.)
+    No dedicated hardware — all data arrives through platform APIs.
+    """
+    __tablename__ = "wearable_sessions"
 
     session_id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.user_id"))
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    heart_rate = Column(Float)
-    spo2 = Column(Float)
-    temperature = Column(Float)
-    accel_x = Column(Float)
-    accel_y = Column(Float)
-    accel_z = Column(Float)
-    source = Column(String, default="synthetic") # 'synthetic' | 'esp32'
-    sensor_quality = Column(String, default="High")
+    # Source platform: 'google_fit' | 'garmin' | 'fitbit' | 'apple_health' | 'samsung_health'
+    source = Column(String, default="google_fit")
+    heart_rate = Column(Float, nullable=True)       # BPM (resting)
+    hrv = Column(Float, nullable=True)              # Heart rate variability (ms)
+    spo2 = Column(Float, nullable=True)             # Blood oxygen %
+    steps = Column(Integer, nullable=True)          # Daily steps
+    sleep_hours = Column(Float, nullable=True)      # Total sleep in hours
+    sleep_score = Column(Integer, nullable=True)    # Platform sleep quality score 0-100
+    readiness_score = Column(Integer, nullable=True) # Platform readiness/recovery score 0-100
+    calories_burned = Column(Integer, nullable=True)
+    active_minutes = Column(Integer, nullable=True)
+    raw_data = Column(Text, nullable=True)          # Full JSON blob from platform API
 
 class VisionSession(Base):
     __tablename__ = "vision_sessions"
@@ -53,17 +62,8 @@ class VisionSession(Base):
     camera_quality = Column(String)
     annotated_image_url = Column(Text, nullable=True)
 
-class FusedSession(Base):
-    __tablename__ = "fused_sessions"
-
-    session_id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.user_id"))
-    sensor_session_id = Column(String, ForeignKey("sensor_sessions.session_id"))
-    vision_session_id = Column(String, ForeignKey("vision_sessions.session_id"))
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    fused_confidence = Column(String) # 'Low' | 'Medium' | 'High'
-
 class CapabilityProfile(Base):
+
     __tablename__ = "capability_profiles"
 
     id = Column(String, primary_key=True, default=generate_uuid)

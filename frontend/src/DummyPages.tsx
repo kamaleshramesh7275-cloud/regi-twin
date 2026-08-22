@@ -407,7 +407,7 @@ export function SettingsPage() {
       <main className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center gap-4">
         <Settings className="w-16 h-16 text-muted-foreground opacity-50" />
         <h1 className="text-3xl font-black">Settings</h1>
-        <p className="text-muted-foreground">User preferences and hardware configuration.</p>
+        <p className="text-muted-foreground">User preferences and app configuration.</p>
       </main>
     </div>
   );
