@@ -128,5 +128,26 @@ class TwinNote(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.user_id"))
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    type = Column(String) # 'weekly_letter' | 'user_note' | 'system_flag'
+    type = Column(String) # 'weekly_letter' | 'user_note' | 'system_flag' | 'chat_message'
     content = Column(Text)
+
+class PainLog(Base):
+    """Daily subjective pain intensity per joint zone (1-10 scale)"""
+    __tablename__ = "pain_logs"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"))
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    zone = Column(String)  # 'left_knee', 'lumbar', etc.
+    score = Column(Integer)  # 1 to 10
+
+class KinesiophobiaRecord(Base):
+    """TSK-11 (Tampa Scale for Kinesiophobia) survey results for re-injury fear triage"""
+    __tablename__ = "kinesiophobia_records"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"))
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    score = Column(Integer)  # 11 to 44
+    answers_json = Column(Text)  # Store JSON array of 11 questions
+

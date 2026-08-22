@@ -59,6 +59,10 @@ class AnalyticsDashboardResponse(BaseModel):
     zone_risks: Optional[Any] = None
     trend_data: Optional[Any] = None
     capability_mark: Optional[int] = None
+    acwr: Optional[float] = None
+    acwr_risk: Optional[str] = None
+    recovery_score: Optional[int] = None
+
 
 
 class ChatMessage(BaseModel):
@@ -72,6 +76,18 @@ class SimulationRequest(BaseModel):
     activity_type: str
     duration_mins: int
     intensity: str
+
+class PainLogCreate(BaseModel):
+    zone: str
+    score: int
+
+class TriageRequest(BaseModel):
+    score: int
+    answers_json: str
+
+class CaseNoteCreate(BaseModel):
+    note: str
+
 
 @app.get("/")
 def read_root():
@@ -406,6 +422,66 @@ def get_dashboard(user_id: str, db: Session = Depends(get_db)):
         db.add(entry)
     db.commit()
 
+    # Calculate ACWR (Acute-to-Chronic Workload Ratio)
+    # Fetch user's workout/nutrition sessions from the last 28 days
+    twenty_eight_days_ago = datetime.datetime.utcnow() - datetime.timedelta(days=28)
+    seven_days_ago = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+    
+    app_sessions = db.query(models.ExternalAppSession).filter(
+        models.ExternalAppSession.user_id == user_id,
+        models.ExternalAppSession.timestamp >= twenty_eight_days_ago
+    ).all()
+    
+    acute_loads = []
+    chronic_loads = []
+    
+    for s in app_sessions:
+        try:
+            data = json.loads(s.session_data)
+            workouts = data.get("workouts", [])
+            for w in workouts:
+                load = w.get("volume_kg", 0)
+                if not load:
+                    load = w.get("duration_min", 30) * 10
+                
+                if s.timestamp >= seven_days_ago:
+                    acute_loads.append(load)
+                chronic_loads.append(load)
+        except Exception:
+            pass
+            
+    acute_avg = sum(acute_loads) / 7.0 if acute_loads else 100.0
+    chronic_avg = sum(chronic_loads) / 28.0 if chronic_loads else 100.0
+    acwr = round(acute_avg / (chronic_avg or 1.0), 2)
+    acwr = max(0.0, min(3.0, acwr))
+    
+    if acwr > 1.5:
+        acwr_risk = "Danger Zone"
+    elif acwr >= 0.8:
+        acwr_risk = "Sweet Spot"
+    else:
+        acwr_risk = "Under-training"
+
+    # Calculate Recovery Score
+    latest_wearable = (
+        db.query(models.WearableSession)
+        .filter(models.WearableSession.user_id == user_id)
+        .order_by(models.WearableSession.timestamp.desc())
+        .first()
+    )
+    
+    recovery_val = 78
+    if latest_wearable:
+        sleep_score = latest_wearable.sleep_score or 75
+        hrv_val = latest_wearable.hrv or 60
+        hr_val = latest_wearable.heart_rate or 72
+        
+        hrv_comp = min(100.0, hrv_val * 1.3)
+        hr_comp = max(0.0, min(100.0, 130.0 - hr_val))
+        
+        recovery_val = int(round((sleep_score * 0.40) + (hrv_comp * 0.40) + (hr_comp * 0.20)))
+        recovery_val = max(10, min(100, recovery_val))
+
     return AnalyticsDashboardResponse(
         mobility=profile.mobility,
         stability=profile.stability,
@@ -417,7 +493,10 @@ def get_dashboard(user_id: str, db: Session = Depends(get_db)):
         change_point_alert=alert,
         zone_risks=json.loads(profile.zone_risks) if profile.zone_risks else default_zone_risks,
         trend_data=json.loads(profile.trend_data) if profile.trend_data else default_trend_data,
-        capability_mark=capability_mark
+        capability_mark=capability_mark,
+        acwr=acwr,
+        acwr_risk=acwr_risk,
+        recovery_score=recovery_val
     )
 
 
@@ -937,3 +1016,304 @@ def get_external_apps(user_id: str, db: Session = Depends(get_db)):
         {"app_name": e.app_name, "session_data": json.loads(e.session_data), "timestamp": e.timestamp.isoformat()} 
         for e in entries
     ]
+
+
+@app.post("/pain/log/{user_id}")
+def log_pain(user_id: str, req: PainLogCreate, db: Session = Depends(get_db)):
+    new_log = models.PainLog(
+        user_id=user_id,
+        zone=req.zone,
+        score=req.score
+    )
+    db.add(new_log)
+    db.commit()
+    db.refresh(new_log)
+    return {"status": "success", "log_id": new_log.id}
+
+
+@app.get("/pain/history/{user_id}")
+def get_pain_history(user_id: str, db: Session = Depends(get_db)):
+    logs = db.query(models.PainLog).filter(models.PainLog.user_id == user_id).order_by(models.PainLog.timestamp.asc()).all()
+    return [{
+        "timestamp": l.timestamp.isoformat(),
+        "zone": l.zone,
+        "score": l.score
+    } for l in logs]
+
+
+@app.post("/users/triage/{user_id}")
+def triage_user(user_id: str, req: TriageRequest, db: Session = Depends(get_db)):
+    record = models.KinesiophobiaRecord(
+        user_id=user_id,
+        score=req.score,
+        answers_json=req.answers_json
+    )
+    db.add(record)
+    
+    # Check score and update user mode / recovery intensity configuration
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if user:
+        if req.score >= 25:
+            user.mode = "Low-Intensity Posture & Joint Stability"
+        else:
+            user.mode = "Standard Athletic Recovery"
+    db.commit()
+    return {"status": "success", "score": req.score, "mode_assigned": user.mode if user else "None"}
+
+
+@app.post("/clinic/casenotes/{user_id}")
+def create_case_note(user_id: str, req: CaseNoteCreate, db: Session = Depends(get_db)):
+    new_note = models.TwinNote(
+        user_id=user_id,
+        type="system_flag",  # 'system_flag' acts as Case Note
+        content=f"Casenote: {req.note}"
+    )
+    db.add(new_note)
+    db.commit()
+    return {"status": "success"}
+
+
+@app.get("/clinic/casenotes/{user_id}")
+def get_case_notes(user_id: str, db: Session = Depends(get_db)):
+    notes = db.query(models.TwinNote).filter(
+        models.TwinNote.user_id == user_id,
+        models.TwinNote.type == "system_flag"
+    ).order_by(models.TwinNote.timestamp.desc()).all()
+    return [{
+        "timestamp": n.timestamp.isoformat(),
+        "note": n.content.replace("Casenote: ", "")
+    } for n in notes]
+
+
+@app.get("/analytics/report/pdf/{user_id}")
+def get_printable_report(user_id: str, db: Session = Depends(get_db)):
+    from fastapi.responses import HTMLResponse
+    
+    profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
+    sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.VisionSession.timestamp.desc()).all()
+    pain_logs = db.query(models.PainLog).filter(models.PainLog.user_id == user_id).order_by(models.PainLog.timestamp.desc()).limit(10).all()
+    
+    mobility = profile.mobility if profile else 50
+    stability = profile.stability if profile else 50
+    quality = profile.movement_quality if profile else 50
+    cardio = profile.cardiovascular_efficiency if profile else 50
+    recovery = profile.recovery if profile else 50
+    reserve = profile.capability_reserve if profile else 50
+    
+    mark = 500
+    if profile:
+        mark = int(round((mobility*0.2 + stability*0.25 + quality*0.2 + cardio*0.2 + recovery*0.15)*10))
+        
+    sessions_rows = ""
+    for s in sessions:
+        sessions_rows += f"""
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.08);">{s.timestamp.strftime('%Y-%m-%d %H:%M')}</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); font-weight: 500;">{s.task_type}</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); font-family: monospace;">{s.rom or 0}&deg;</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); font-family: monospace;">{round((s.symmetry or 0)*100, 1)}%</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); font-family: monospace;">{round((s.stability or 0)*100, 1)}%</td>
+        </tr>
+        """
+        
+    pain_rows = ""
+    for p in pain_logs:
+        pain_rows += f"""
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.08);">{p.timestamp.strftime('%Y-%m-%d')}</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); font-weight: 500;">{p.zone.replace('_', ' ').title()}</td>
+            <td style="padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); font-weight: bold; color: {'#ef4444' if p.score > 6 else '#f59e0b'}">{p.score}/10</td>
+        </tr>
+        """
+        
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>PhysioTwin - Biomechanical Capability Report</title>
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+        <style>
+            body {{
+                font-family: 'Outfit', system-ui, sans-serif;
+                background-color: #030712;
+                color: #f3f4f6;
+                margin: 40px;
+                line-height: 1.6;
+                -webkit-font-smoothing: antialiased;
+            }}
+            .header {{
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px solid rgba(255,255,255,0.1);
+                padding-bottom: 24px;
+                margin-bottom: 40px;
+            }}
+            .logo-area {{ display: flex; align-items: center; gap: 8px; }}
+            .logo-icon {{
+                width: 32px;
+                height: 32px;
+                background-color: #2563eb;
+                border-radius: 8px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 900;
+                color: white;
+                font-size: 14px;
+            }}
+            .logo-text {{ font-size: 20px; font-weight: 800; tracking-tight; }}
+            .title {{ font-size: 32px; font-weight: 900; letter-spacing: -0.025em; text-align: center; margin-bottom: 40px; color: white; }}
+            .section {{
+                background-color: rgba(255,255,255,0.02);
+                border: 1px solid rgba(255,255,255,0.05);
+                border-radius: 16px;
+                padding: 24px;
+                margin-bottom: 30px;
+            }}
+            .section-title {{
+                font-size: 18px;
+                font-weight: 800;
+                letter-spacing: -0.015em;
+                color: #3b82f6;
+                border-bottom: 1px solid rgba(255,255,255,0.05);
+                padding-bottom: 10px;
+                margin-bottom: 20px;
+            }}
+            .grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }}
+            .stat-card {{
+                background-color: rgba(255,255,255,0.01);
+                border: 1px solid rgba(255,255,255,0.05);
+                border-radius: 12px;
+                padding: 16px;
+                text-align: center;
+            }}
+            .stat-label {{ font-size: 11px; font-weight: 700; color: #9ca3af; uppercase; letter-spacing: 0.05em; }}
+            .stat-val {{ font-size: 28px; font-weight: 800; color: #3b82f6; margin-top: 6px; font-family: monospace; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+            th {{ text-align: left; padding: 10px; background-color: rgba(255,255,255,0.03); color: #9ca3af; font-size: 11px; font-weight: 700; uppercase; letter-spacing: 0.05em; border-bottom: 1px solid rgba(255,255,255,0.1); }}
+            @media print {{
+                body {{
+                    background-color: white;
+                    color: black;
+                    margin: 0;
+                    padding: 20px;
+                }}
+                .title, .section-title {{ color: black !important; }}
+                .logo-icon {{ background-color: black !important; }}
+                .stat-val {{ color: black !important; }}
+                .section {{
+                    background: none !important;
+                    border: 1px solid #ddd !important;
+                    box-shadow: none !important;
+                }}
+                .stat-card {{
+                    background: none !important;
+                    border: 1px solid #ddd !important;
+                }}
+                th {{
+                    background: #f3f4f6 !important;
+                    color: black !important;
+                    border-bottom: 1px solid #ccc !important;
+                }}
+                td {{ border-bottom: 1px solid #eee !important; }}
+                .no-print {{ display: none !important; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="no-print" style="background: rgba(37,99,235,0.1); padding: 16px; border-radius: 12px; border: 1px solid rgba(37,99,235,0.2); margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 13px; font-weight: 500; color: #93c5fd;">Biomechanical PDF Report Generator. Print styling overrides apply.</span>
+            <button onclick="window.print()" style="background: #2563eb; color: white; border: none; padding: 8px 18px; border-radius: 8px; font-size: 12px; font-weight: bold; cursor: pointer; transition: background 0.2s;">Print / Save PDF</button>
+        </div>
+        
+        <div class="header">
+            <div class="logo-area">
+                <div class="logo-icon">PT</div>
+                <div class="logo-text">PhysioTwin</div>
+            </div>
+            <div style="text-align: right; font-size: 11px; color: #9ca3af; line-height: 1.4;">
+                User ID: {user_id}<br/>
+                Report Date: {datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}
+            </div>
+        </div>
+        
+        <div class="title">Clinical Diagnostic &amp; Biomechanical Report</div>
+        
+        <div class="section">
+            <div class="section-title">1. Biomechanical Base Scores</div>
+            <div style="text-align: center; margin-bottom: 24px; font-size: 15px; color: #9ca3af;">
+                Total Physical Capability Mark: <strong style="font-size: 26px; color: #3b82f6; font-family: monospace; font-weight: 900; margin-left: 6px;">{mark}</strong> / 1000
+            </div>
+            <div class="grid">
+                <div class="stat-card">
+                    <div class="stat-label">Mobility</div>
+                    <div class="stat-val">{mobility}%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Stability</div>
+                    <div class="stat-val">{stability}%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Movement Quality</div>
+                    <div class="stat-val">{quality}%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Cardiovascular</div>
+                    <div class="stat-val">{cardio}%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Recovery Index</div>
+                    <div class="stat-val">{recovery}%</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Capability Reserve</div>
+                    <div class="stat-val">{reserve}%</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">2. Markerless Kinematic Capture History</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date / Time</th>
+                        <th>Movement Task</th>
+                        <th>Range of Motion</th>
+                        <th>Symmetry</th>
+                        <th>Stability</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {sessions_rows if sessions_rows else "<tr><td colspan='5' style='text-align:center; padding: 20px; color: #6b7280;'>No diagnostic captures recorded.</td></tr>"}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section" style="page-break-before: always;">
+            <div class="section-title">3. Subjective Pain logs</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Body Region</th>
+                        <th>Subjective Intensity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {pain_rows if pain_rows else "<tr><td colspan='3' style='text-align:center; padding: 20px; color: #6b7280;'>No pain reports logged.</td></tr>"}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="section" style="margin-top: 50px; background: none; border: none; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px;">
+            <div style="font-size: 10px; color: #6b7280; text-align: center; line-height: 1.4;">
+                Disclaimer: This report is automatically generated using computer vision biomechanical estimation. It should be used to augment, not replace, clinical evaluation by a licensed physical therapist or orthopedic specialist.
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content, status_code=200)
+

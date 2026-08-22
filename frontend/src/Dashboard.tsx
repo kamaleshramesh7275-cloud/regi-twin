@@ -161,21 +161,29 @@ export default function Dashboard() {
         </header>
 
         {/* Alert Banner */}
-        {data.change_point_alert && (
-          <div className="glow-border-destructive rounded-xl p-4 bg-red-500/8 border border-red-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in">
+        {(data.change_point_alert || (data.acwr && data.acwr > 1.5)) && (
+          <div className="glow-border-destructive rounded-xl p-4 bg-red-500/8 border border-red-500/30 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-in pointer-events-auto">
             <div className="flex items-start gap-3">
               <AlertTriangle className="text-red-400 w-6 h-6 shrink-0 mt-0.5" />
               <div>
-                <div className="font-semibold text-red-400 text-sm uppercase tracking-widest">System Alert</div>
-                <div className="text-sm mt-0.5">{data.change_point_alert}</div>
+                <div className="font-semibold text-red-400 text-sm uppercase tracking-widest">System Warning</div>
+                {data.change_point_alert && <div className="text-sm mt-0.5">{data.change_point_alert}</div>}
+                {data.acwr && data.acwr > 1.5 && (
+                  <div className="text-xs mt-1.5 text-red-300 font-medium">
+                    Acute-to-Chronic Workload Ratio (ACWR) spiked to <span className="font-bold text-white font-mono">{data.acwr}</span>. 
+                    Your sudden training volume places you in the high-risk injury zone. Consider active recovery.
+                  </div>
+                )}
               </div>
             </div>
-            <button
-            onClick={() => setSelectedMetric('Stability')}
-              className="text-xs font-bold text-red-400 border border-red-500/40 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors shrink-0 md:ml-4 w-full md:w-auto text-center"
-            >
-              Investigate →
-            </button>
+            {data.change_point_alert && (
+              <button
+                onClick={() => setSelectedMetric('Stability')}
+                className="text-xs font-bold text-red-400 border border-red-500/40 px-3 py-1.5 rounded-lg hover:bg-red-500/10 transition-colors shrink-0 md:ml-4 w-full md:w-auto text-center"
+              >
+                Investigate →
+              </button>
+            )}
           </div>
         )}
 
@@ -220,6 +228,54 @@ export default function Dashboard() {
 
           {/* Left Column (Radar + Activity Feed) */}
           <div className="flex flex-col gap-4">
+            {/* WHOOP-style Recovery Gauge */}
+            <div className="metric-card glass-panel pointer-events-auto">
+              <div className="flex items-center justify-between mb-4">
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Autonomic Recovery</div>
+                <span className={`badge text-[10px] ${
+                  (data.recovery_score || 78) >= 67 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                  (data.recovery_score || 78) >= 34 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                  'bg-red-500/20 text-red-400 border-red-500/30'
+                }`}>
+                  {(data.recovery_score || 78) >= 67 ? 'Cleared for Load' : (data.recovery_score || 78) >= 34 ? 'Moderate Strain' : 'Rest / Recover'}
+                </span>
+              </div>
+              <div className="flex items-center gap-6">
+                <div className="relative flex items-center justify-center w-20 h-20 shrink-0">
+                  <svg className="w-full h-full transform -rotate-90">
+                    <circle cx="40" cy="40" r="34" stroke="rgba(255,255,255,0.05)" strokeWidth="6" fill="transparent" />
+                    <circle 
+                      cx="40" cy="40" r="34" 
+                      stroke={(data.recovery_score || 78) >= 67 ? '#10b981' : (data.recovery_score || 78) >= 34 ? '#f59e0b' : '#ef4444'}
+                      strokeWidth="6" fill="transparent" 
+                      strokeDasharray={2 * Math.PI * 34}
+                      strokeDashoffset={2 * Math.PI * 34 * (1 - (data.recovery_score || 78) / 100)}
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                  <div className="absolute font-mono-numbers font-black text-xl">
+                    {data.recovery_score || 78}%
+                  </div>
+                </div>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <div className="font-semibold text-foreground text-sm">Autonomic Readiness</div>
+                  <p className="leading-relaxed">
+                    Dynamic balance score compiled from resting HR, sleep quality, and active HRV baseline.
+                  </p>
+                  {data.acwr && (
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <span className="font-bold text-foreground">ACWR Load:</span> 
+                      <span className={`font-bold font-mono px-1.5 py-0.5 rounded text-[10px] ${
+                        data.acwr_risk === "Danger Zone" ? "bg-red-500/20 text-red-400 border border-red-500/30" :
+                        data.acwr_risk === "Sweet Spot" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" :
+                        "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                      }`}>{data.acwr} ({data.acwr_risk})</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Radar */}
             <div className="metric-card glass-panel pointer-events-auto cursor-pointer" onClick={() => setSelectedMetric('Fingerprint')}>
               <div className="flex items-center justify-between mb-1">

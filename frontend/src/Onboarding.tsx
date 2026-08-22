@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { useLocation } from 'wouter';
 import { Dna, Target, Zap, ShieldCheck, Rocket, User, Activity, Leaf, Stethoscope, AlertTriangle, Check } from 'lucide-react';
+import { api } from './api';
+import { auth } from './firebase';
 
 const STEPS = [
   { id: 1, title: 'Your Baseline', icon: <Dna className="w-5 h-5" />, desc: 'Tell us about your body' },
   { id: 2, title: 'Goals', icon: <Target className="w-5 h-5" />, desc: 'What do you want to achieve?' },
   { id: 3, title: 'Twin Mode', icon: <Zap className="w-5 h-5" />, desc: 'How should your twin think?' },
-  { id: 4, title: 'Consent', icon: <ShieldCheck className="w-5 h-5" />, desc: 'Review before we begin' },
-  { id: 5, title: 'Initialize', icon: <Rocket className="w-5 h-5" />, desc: 'Boot your digital twin' },
+  { id: 4, title: 'Triage Survey', icon: <AlertTriangle className="w-5 h-5" />, desc: 'Fear of movement assessment' },
+  { id: 5, title: 'Consent', icon: <ShieldCheck className="w-5 h-5" />, desc: 'Review before we begin' },
+  { id: 6, title: 'Initialize', icon: <Rocket className="w-5 h-5" />, desc: 'Boot your digital twin' },
 ];
 
 const GOALS = ['General Tracking', 'Athletic Performance', 'Rehab & Recovery', 'Healthy Aging'];
@@ -18,18 +21,56 @@ const MODES = [
   { id: 'Caregiver/Professional', icon: <Stethoscope className="w-6 h-6" />, desc: 'Multi-patient monitoring & reporting' },
 ];
 
+const TRIAGE_QUESTIONS = [
+  { id: 1, text: "I am afraid that I might injury myself if I exercise." },
+  { id: 2, text: "My pain would be worse if I did physical activity." },
+  { id: 3, text: "It's not really safe for a person with my condition to be physically active." },
+  { id: 4, text: "My body is telling me I have something seriously wrong." }
+];
+
 export default function Onboarding() {
   const [step, setStep] = useState(1);
   const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
   const [selectedMode, setSelectedMode] = useState('');
   const [consented, setConsented] = useState(false);
+  
+  // Triage state (1 to 4 scale: 1=Strongly Disagree, 4=Strongly Agree)
+  const [triageAnswers, setTriageAnswers] = useState<Record<number, number>>({
+    1: 2,
+    2: 2,
+    3: 2,
+    4: 2
+  });
+  
   const [, setLocation] = useLocation();
 
-  const nextStep = () => setStep(s => Math.min(s + 1, 5));
+  const nextStep = () => setStep(s => Math.min(s + 1, 6));
   const prevStep = () => setStep(s => Math.max(s - 1, 1));
   const toggleGoal = (g: string) => setSelectedGoals(prev => prev.includes(g) ? prev.filter(x => x !== g) : [...prev, g]);
 
-  const progress = ((step - 1) / (STEPS.length - 1)) * 100;
+  const handleTriageChange = (qId: number, val: number) => {
+    setTriageAnswers(prev => ({
+      ...prev,
+      [qId]: val
+    }));
+  };
+
+  const handleFinishOnboarding = async () => {
+    try {
+      const uid = auth.currentUser?.uid || "test-user";
+      const totalRawScore = Object.values(triageAnswers).reduce((a, b) => a + b, 0);
+      // Map 4-16 range to clinical TSK 11-44 scale
+      const scaledScore = Math.round(totalRawScore * 2.75);
+      
+      await api.submitTriage(uid, {
+        score: scaledScore,
+        answers_json: JSON.stringify(triageAnswers)
+      });
+    } catch (e) {
+      console.error("Failed to submit kinesiophobia triage", e);
+    }
+    setLocation('/dashboard');
+  };
 
   return (
     <div className="min-h-screen relative flex flex-col items-center justify-center p-4 overflow-hidden">
@@ -157,6 +198,43 @@ export default function Onboarding() {
 
           {step === 4 && (
             <div className="space-y-5">
+              <h2 className="text-xl font-bold">Movement Safety Screen (TSK-11)</h2>
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                Please rate how strongly you agree with these statements to help us tailor program load limits safely:
+              </p>
+              <div className="space-y-4 mt-2">
+                {TRIAGE_QUESTIONS.map(q => (
+                  <div key={q.id} className="p-3 bg-secondary/30 rounded-xl border border-border/50">
+                    <p className="text-xs font-semibold leading-normal mb-2">{q.text}</p>
+                    <div className="grid grid-cols-4 gap-1 text-[10px]">
+                      {[
+                        { val: 1, label: 'Disagree' },
+                        { val: 2, label: 'Slight Disagree' },
+                        { val: 3, label: 'Slight Agree' },
+                        { val: 4, label: 'Agree' }
+                      ].map(choice => (
+                        <button
+                          key={choice.val}
+                          type="button"
+                          onClick={() => handleTriageChange(q.id, choice.val)}
+                          className={`py-1 border rounded font-medium transition-all ${
+                            triageAnswers[q.id] === choice.val 
+                              ? 'bg-primary text-white border-primary shadow-sm'
+                              : 'bg-card text-muted-foreground border-border hover:border-slate-300'
+                          }`}
+                        >
+                          {choice.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {step === 5 && (
+            <div className="space-y-5">
               <h2 className="text-2xl font-bold">Consent & Safety</h2>
               <div className="space-y-3 p-4 rounded-xl bg-yellow-500/5 border border-yellow-500/20">
                 <div className="flex gap-4">
@@ -184,7 +262,7 @@ export default function Onboarding() {
             </div>
           )}
 
-          {step === 5 && (
+          {step === 6 && (
             <div className="space-y-6 text-center">
               <div className="w-20 h-20 mx-auto rounded-full bg-primary flex items-center justify-center shadow-lg text-white">
                 <Rocket className="w-10 h-10" />
@@ -202,7 +280,7 @@ export default function Onboarding() {
                 <div className="flex justify-between text-sm"><span className="text-muted-foreground">Sensor</span><span className="badge badge-yellow text-[10px]">Simulated</span></div>
               </div>
               <button
-                onClick={() => setLocation('/dashboard')}
+                onClick={handleFinishOnboarding}
                 className="btn btn-cyan w-full py-4 text-base"
               >
                 Launch Twin Dashboard →
@@ -217,13 +295,13 @@ export default function Onboarding() {
                 ← Back
               </button>
             )}
-            {step < 5 && (
+            {step < 6 && (
               <button
                 onClick={nextStep}
-                disabled={step === 4 && !consented}
+                disabled={step === 5 && !consented}
                 className="btn btn-primary py-3 flex-1 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {step === 4 ? 'I Agree →' : 'Continue →'}
+                {step === 5 ? 'I Agree →' : 'Continue →'}
               </button>
             )}
           </div>

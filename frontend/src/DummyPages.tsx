@@ -24,27 +24,58 @@ export function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('All');
 
-  useEffect(() => {
-    async function fetchHistory() {
-      try {
-        const uid = auth.currentUser?.uid || "test-user";
-        let data = await api.getSessionHistory(uid);
-        if (!data || data.length === 0) {
-          data = [
-            { id: '1', task_type: 'Sit-to-Stand Assessment', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), rom: 85.2, symmetry: 0.95, movement_speed: 15.4, stability: 0.88 },
-            { id: '2', task_type: 'Static Posture', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(), rom: 90.1, symmetry: 0.98, movement_speed: 0, stability: 0.92 },
-            { id: '3', task_type: 'Sit-to-Stand Assessment', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(), rom: 82.4, symmetry: 0.91, movement_speed: 14.1, stability: 0.85 },
-          ];
-        }
-        setSessions(data);
-      } catch (err) {
-        console.error("Error fetching history", err);
-      } finally {
-        setLoading(false);
-      }
+  // Pain Logger States
+  const [painLogs, setPainLogs] = useState<any[]>([]);
+  const [selectedZone, setSelectedZone] = useState('left_knee');
+  const [painScore, setPainScore] = useState(5);
+  const [loggingPain, setLoggingPain] = useState(false);
+
+  const fetchPainLogs = async () => {
+    try {
+      const uid = auth.currentUser?.uid || "test-user";
+      const logs = await api.getPainHistory(uid);
+      setPainLogs(logs);
+    } catch (err) {
+      console.error("Error fetching pain history", err);
     }
+  };
+
+  const fetchHistory = async () => {
+    try {
+      const uid = auth.currentUser?.uid || "test-user";
+      let data = await api.getSessionHistory(uid);
+      if (!data || data.length === 0) {
+        data = [
+          { id: '1', task_type: 'Sit-to-Stand Assessment', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), rom: 85.2, symmetry: 0.95, movement_speed: 15.4, stability: 0.88 },
+          { id: '2', task_type: 'Static Posture', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(), rom: 90.1, symmetry: 0.98, movement_speed: 0, stability: 0.92 },
+          { id: '3', task_type: 'Sit-to-Stand Assessment', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(), rom: 82.4, symmetry: 0.91, movement_speed: 14.1, stability: 0.85 },
+        ];
+      }
+      setSessions(data);
+    } catch (err) {
+      console.error("Error fetching history", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchHistory();
+    fetchPainLogs();
   }, []);
+
+  const handleLogPain = async () => {
+    setLoggingPain(true);
+    try {
+      const uid = auth.currentUser?.uid || "test-user";
+      await api.logPain(uid, { zone: selectedZone, score: painScore });
+      await fetchPainLogs();
+    } catch (err) {
+      console.error("Error logging pain", err);
+    } finally {
+      setLoggingPain(false);
+    }
+  };
 
   const filteredSessions = filter === 'All' ? sessions : sessions.filter(s => s.task_type.includes(filter));
   
@@ -52,6 +83,13 @@ export function HistoryPage() {
   const avgRom = sessions.length ? sessions.reduce((acc, s) => acc + s.rom, 0) / sessions.length : 0;
   const bestSym = sessions.length ? Math.max(...sessions.map(s => s.symmetry)) : 0;
   const avgStab = sessions.length ? sessions.reduce((acc, s) => acc + s.stability, 0) / sessions.length : 0;
+
+  // Format pain history for chart
+  const painChartData = painLogs.map((l: any) => ({
+    date: new Date(l.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+    score: l.score,
+    zone: l.zone.replace('_', ' ').toUpperCase()
+  }));
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0">
@@ -110,77 +148,146 @@ export function HistoryPage() {
               ))}
             </div>
 
-            {/* Session List */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 anim-up-d2 pointer-events-auto">
-              {filteredSessions.map((session, i) => (
-                <div key={session.id} className="glass-panel hover:border-primary/50 transition-colors relative overflow-hidden group">
-                  <div className="flex justify-between items-start mb-3">
-                    <div>
-                      <div className="font-bold text-lg">{session.task_type}</div>
-                      <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                        <Clock className="w-3 h-3" />
-                        {new Date(session.timestamp).toLocaleString()}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pointer-events-auto">
+              {/* Left Column (2/3 width) - Session List */}
+              <div className="lg:col-span-2 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredSessions.map((session, i) => (
+                    <div key={session.id || i} className="glass-panel hover:border-primary/50 transition-colors relative overflow-hidden group">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <div className="font-bold text-lg">{session.task_type}</div>
+                          <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <Clock className="w-3 h-3" />
+                            {new Date(session.timestamp).toLocaleString()}
+                          </div>
+                        </div>
+                        {session.badge && (
+                          <div className={`badge text-[10px] ${
+                            session.badge === 'Personal Best' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' :
+                            session.badge === 'Watchpoint' ? 'bg-red-500/20 text-red-300 border-red-500/30' :
+                            'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                          }`}>
+                            {session.badge === 'Personal Best' && <Trophy className="w-3 h-3 mr-1" />}
+                            {session.badge === 'Watchpoint' && <AlertCircle className="w-3 h-3 mr-1" />}
+                            {session.badge === 'Improved' && <TrendingUp className="w-3 h-3 mr-1" />}
+                            {session.badge}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                    {session.badge && (
-                      <div className={`badge text-[10px] ${
-                        session.badge === 'Personal Best' ? 'bg-amber-500/20 text-amber-300 border-amber-500/30' :
-                        session.badge === 'Watchpoint' ? 'bg-red-500/20 text-red-300 border-red-500/30' :
-                        'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
-                      }`}>
-                        {session.badge === 'Personal Best' && <Trophy className="w-3 h-3 mr-1" />}
-                        {session.badge === 'Watchpoint' && <AlertCircle className="w-3 h-3 mr-1" />}
-                        {session.badge === 'Improved' && <TrendingUp className="w-3 h-3 mr-1" />}
-                        {session.badge}
-                      </div>
-                    )}
-                  </div>
-                  
-                  {session.notes && (
-                    <div className="text-xs italic text-muted-foreground mb-4 bg-secondary/50 p-2 rounded border border-border/50">
-                      "{session.notes}"
-                    </div>
-                  )}
+                      
+                      {session.notes && (
+                        <div className="text-xs italic text-muted-foreground mb-4 bg-secondary/50 p-2 rounded border border-border/50">
+                          "{session.notes}"
+                        </div>
+                      )}
 
-                  {session.annotated_image_url && (
-                    <div className="mb-4 rounded-xl overflow-hidden border border-border">
-                      <img src={session.annotated_image_url} alt="Annotated Capture" className="w-full h-auto object-cover max-h-48" />
+                      {session.annotated_image_url && (
+                        <div className="mb-4 rounded-xl overflow-hidden border border-border">
+                          <img src={session.annotated_image_url} alt="Annotated Capture" className="w-full h-auto object-cover max-h-48" />
+                        </div>
+                      )}
+                      
+                      <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
+                        <div>
+                          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Range of Motion</div>
+                          <div className="font-mono-numbers font-bold text-xl">{(session.rom || 0).toFixed(1)}°</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1 flex justify-between">
+                            <span>Symmetry</span>
+                            <span className="font-mono-numbers">{((session.symmetry || 0) * 100).toFixed(0)}%</span>
+                          </div>
+                          <div className="h-1.5 bg-secondary rounded-full mt-1 overflow-hidden">
+                            <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(session.symmetry || 0) * 100}%` }} />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Speed (Reps/Min)</div>
+                          <div className="font-mono-numbers font-bold text-xl">{(session.movement_speed || 0).toFixed(1)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1 flex justify-between">
+                            <span>Stability</span>
+                            <span className="font-mono-numbers">{((session.stability || 0) * 100).toFixed(0)}</span>
+                          </div>
+                          <div className="h-1.5 bg-secondary rounded-full mt-1 overflow-hidden">
+                            <div className="h-full bg-amber-500 rounded-full" style={{ width: `${(session.stability || 0) * 100}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right Column (1/3 width) - Pain Logger Widget & Trend Chart */}
+              <div className="space-y-6">
+                <div className="card space-y-4">
+                  <h3 className="font-bold text-sm uppercase tracking-wider text-muted-foreground">Subjective Pain Logger</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1">Joint Region</label>
+                      <select 
+                        value={selectedZone}
+                        onChange={e => setSelectedZone(e.target.value)}
+                        className="w-full bg-secondary text-foreground text-xs rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-primary border border-border"
+                      >
+                        <option value="left_knee">Left Knee</option>
+                        <option value="right_knee">Right Knee</option>
+                        <option value="lumbar">Lumbar Spine</option>
+                        <option value="cervical">Cervical Spine</option>
+                        <option value="left_shoulder">Left Shoulder</option>
+                        <option value="right_shoulder">Right Shoulder</option>
+                        <option value="left_ankle">Left Ankle</option>
+                        <option value="right_ankle">Right Ankle</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                        <span>Intensity Scale</span>
+                        <span className="font-bold text-primary">{painScore}/10</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="1" 
+                        max="10" 
+                        value={painScore}
+                        onChange={e => setPainScore(parseInt(e.target.value))}
+                        className="w-full h-1 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                      />
+                    </div>
+                    <button
+                      onClick={handleLogPain}
+                      disabled={loggingPain}
+                      className="btn-primary w-full py-2 text-xs font-bold disabled:opacity-50"
+                    >
+                      {loggingPain ? "Logging..." : "Submit Pain Log"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="card space-y-4">
+                  <h3 className="font-bold text-sm uppercase tracking-wider text-muted-foreground">Pain Trend Overlay</h3>
+                  {painLogs.length === 0 ? (
+                    <div className="text-xs text-muted-foreground italic text-center py-8">
+                      No pain scores logged. Use the form above to begin tracking localized pain.
+                    </div>
+                  ) : (
+                    <div className="h-44 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={painChartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                          <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 9 }} />
+                          <YAxis tick={{ fill: '#94a3b8', fontSize: 9 }} domain={[1, 10]} />
+                          <Tooltip content={<CustomTooltip />} />
+                          <Line type="monotone" dataKey="score" stroke="#ef4444" strokeWidth={2.5} activeDot={{ r: 6 }} name="Pain Score" />
+                        </LineChart>
+                      </ResponsiveContainer>
                     </div>
                   )}
-                  
-                  <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
-                    <div>
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Range of Motion</div>
-                      <div className="font-mono-numbers font-bold text-xl">{session.rom.toFixed(1)}°</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1 flex justify-between">
-                        <span>Symmetry</span>
-                        <span className="font-mono-numbers">{(session.symmetry * 100).toFixed(0)}%</span>
-                      </div>
-                      <div className="h-1.5 bg-secondary rounded-full mt-1 overflow-hidden">
-                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${session.symmetry * 100}%` }} />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Speed (Reps/Min)</div>
-                      <div className="font-mono-numbers font-bold text-xl">{session.movement_speed.toFixed(1)}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1 flex justify-between">
-                        <span>Stability</span>
-                        <span className="font-mono-numbers">{(session.stability * 100).toFixed(0)}</span>
-                      </div>
-                      <div className="h-1.5 bg-secondary rounded-full mt-1 overflow-hidden">
-                        <div className="h-full bg-amber-500 rounded-full" style={{ width: `${session.stability * 100}%` }} />
-                      </div>
-                    </div>
-                  </div>
-                  <button className="absolute top-1/2 -right-12 -translate-y-1/2 w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center opacity-0 group-hover:right-4 group-hover:opacity-100 transition-all shadow-lg">
-                    <ChevronRight className="w-5 h-5" />
-                  </button>
                 </div>
-              ))}
+              </div>
             </div>
           </div>
         )}
@@ -188,6 +295,7 @@ export function HistoryPage() {
     </div>
   );
 }
+
 
 export function TimelinePage() {
   const { user } = useAuth();

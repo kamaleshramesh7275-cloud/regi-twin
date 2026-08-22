@@ -13,6 +13,41 @@ export default function ClinicPage() {
   const [error, setError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Therapist Notes States
+  const [caseNotes, setCaseNotes] = useState<any[]>([]);
+  const [noteText, setNoteText] = useState("");
+  const [savingNote, setSavingNote] = useState(false);
+
+  const fetchNotes = async () => {
+    try {
+      const uid = user?.uid || "test-user";
+      const notes = await api.getCaseNotes(uid);
+      setCaseNotes(notes);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  React.useEffect(() => {
+    if (user) {
+      fetchNotes();
+    }
+  }, [user]);
+
+  const handleAddNote = async () => {
+    if (!noteText.trim() || !user) return;
+    setSavingNote(true);
+    try {
+      await api.createCaseNote(user.uid, noteText);
+      setNoteText("");
+      await fetchNotes();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
@@ -173,19 +208,57 @@ export default function ClinicPage() {
               <h3 className="font-bold text-lg flex items-center gap-2">
                 <FileText className="w-5 h-5 text-primary" /> Clinical Reports
               </h3>
-              <p className="text-sm text-muted-foreground">Generate comprehensive PDF reports of your biomechanical data for insurance or external doctors.</p>
+              <p className="text-sm text-muted-foreground">Generate and print dynamic styled summaries of your range of motion, symmetry, and logged pain history.</p>
               
-              <div className="grid grid-cols-2 gap-3 mt-4">
-                <button className="border border-border hover:border-primary/50 bg-secondary/20 hover:bg-primary/5 p-4 rounded-xl text-left transition-colors">
-                  <FileText className="w-6 h-6 text-primary mb-2" />
-                  <div className="font-semibold text-sm">Post-Op Summary</div>
-                  <div className="text-xs text-muted-foreground mt-1">Last 30 Days</div>
+              <div className="mt-4">
+                <a 
+                  href={`http://localhost:8000/analytics/report/pdf/${user?.uid || "test-user"}`}
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="btn-primary w-full text-center flex items-center justify-center gap-2 py-3 font-semibold text-sm cursor-pointer"
+                >
+                  <FileText className="w-4.5 h-4.5" /> Print Biomechanical Report
+                </a>
+              </div>
+            </div>
+
+            {/* Therapist Case Notes Widget */}
+            <div className="card space-y-4">
+              <h3 className="font-bold text-lg flex items-center gap-2">
+                <Send className="w-5 h-5 text-primary" /> AI Case Notes & Clinical Flags
+              </h3>
+              <p className="text-sm text-muted-foreground">Add therapist case notes directly. These are stored in the database and fed into the Twin's LLM context so the AI remembers clinical status.</p>
+              
+              <div className="space-y-3">
+                <textarea 
+                  value={noteText}
+                  onChange={e => setNoteText(e.target.value)}
+                  placeholder="e.g. Patient displays mild kinesiophobia in knee flexion, limit single-leg explosive drills."
+                  className="w-full h-20 bg-secondary text-foreground text-xs rounded-xl p-3 focus:outline-none focus:ring-1 focus:ring-primary border border-border resize-none"
+                />
+                <button
+                  onClick={handleAddNote}
+                  disabled={savingNote || !noteText.trim()}
+                  className="btn-primary w-full py-2 text-xs font-bold disabled:opacity-50"
+                >
+                  {savingNote ? "Saving Note..." : "Add Case Note"}
                 </button>
-                <button className="border border-border hover:border-primary/50 bg-secondary/20 hover:bg-primary/5 p-4 rounded-xl text-left transition-colors">
-                  <FileText className="w-6 h-6 text-primary mb-2" />
-                  <div className="font-semibold text-sm">Full Biomechanical Audit</div>
-                  <div className="text-xs text-muted-foreground mt-1">All Time</div>
-                </button>
+              </div>
+
+              <div className="space-y-2 mt-4 max-h-60 overflow-y-auto">
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">Logged Notes History</div>
+                {caseNotes.length === 0 ? (
+                  <div className="text-xs text-muted-foreground italic py-2 text-center">No case notes logged.</div>
+                ) : (
+                  caseNotes.map((n, i) => (
+                    <div key={i} className="p-3 bg-secondary/35 rounded-lg border border-border/50 text-xs">
+                      <div className="text-muted-foreground text-[10px] mb-1">
+                        {new Date(n.timestamp).toLocaleString()}
+                      </div>
+                      <p className="leading-relaxed text-foreground font-medium">{n.note}</p>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 

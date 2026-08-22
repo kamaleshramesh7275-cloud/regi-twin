@@ -375,6 +375,13 @@ def chat_with_twin(user_id: str, messages_history: list[dict], db: Session):
     if profile:
         stats = f"Mobility: {profile.mobility}, Stability: {profile.stability}, Quality: {profile.movement_quality}, Cardio: {profile.cardiovascular_efficiency}, Recovery: {profile.recovery}, Reserve: {profile.capability_reserve}"
         
+    # Feature 10: Prepend case notes to twin system prompt for context memory
+    case_notes = db.query(models.TwinNote).filter(
+        models.TwinNote.user_id == user_id,
+        models.TwinNote.type == "system_flag"
+    ).order_by(models.TwinNote.timestamp.desc()).limit(3).all()
+    notes_text = "\n".join([f"- {n.content.replace('Casenote: ', '')}" for n in case_notes]) if case_notes else "None"
+
     system_prompt = f"""
     You are PhysioTwin, a friendly, concise, and highly analytical digital twin of the user's physical capability.
     The user is chatting with you. You should answer their questions based on their latest data.
@@ -382,6 +389,9 @@ def chat_with_twin(user_id: str, messages_history: list[dict], db: Session):
     
     User's Latest Stats:
     {stats}
+
+    User's Clinical Case Notes:
+    {notes_text}
     """
     
     # Prepend system prompt to the messages

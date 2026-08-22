@@ -193,4 +193,51 @@ export const api = {
     if (!res.ok) throw new Error("Failed to clear chat history");
     return res.json();
   },
+
+  /** Log dynamic daily pain intensity */
+  async logPain(userId: string, data: { zone: string, score: number }) {
+    const res = await fetchWithTimeout(`${API_BASE}/pain/log/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error("Failed to log pain");
+    return res.json();
+  },
+
+  /** Fetch user's pain log history */
+  async getPainHistory(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/pain/history/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch pain history");
+    return res.json();
+  },
+
+  /** Submit TSK-11 kinesiophobia survey results */
+  async submitTriage(userId: string, data: { score: number, answers_json: string }) {
+    const res = await fetchWithTimeout(`${API_BASE}/users/triage/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error("Failed to submit triage score");
+    return res.json();
+  },
+
+  /** Fetch professional clinical case notes */
+  async getCaseNotes(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/clinic/casenotes/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch case notes");
+    return res.json();
+  },
+
+  /** Create a professional clinical case note */
+  async createCaseNote(userId: string, note: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/clinic/casenotes/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note })
+    });
+    if (!res.ok) throw new Error("Failed to create case note");
+    return res.json();
+  },
 };
