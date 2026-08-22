@@ -184,7 +184,7 @@ def generate_weekly_letter(user_id: str, db: Session):
         client = Groq(api_key=GROQ_API_KEY)
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.1-8b-instant",
+            model="groq/compound-mini",
             temperature=0.7,
             max_tokens=300
         )
@@ -307,7 +307,7 @@ Provide exactly 3 targeted corrective exercises, each formatted as:
         client = Groq(api_key=GROQ_API_KEY)
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
-            model="llama-3.1-8b-instant",
+            model="groq/compound-mini",
             temperature=0.35,
             max_tokens=900
         )
@@ -403,14 +403,22 @@ def chat_with_twin(user_id: str, messages_history: list[dict], db: Session):
         client = Groq(api_key=GROQ_API_KEY)
         chat_completion = client.chat.completions.create(
             messages=api_messages,
-            model="llama-3.1-8b-instant",
+            model="groq/compound-mini",
             temperature=0.7,
             max_tokens=300
         )
         return chat_completion.choices[0].message.content
     except Exception as e:
-        print(f"LLM Error: {e}")
-        return f"Twin is offline. Error: {str(e)}"
+        err_str = str(e)
+        print(f"LLM Error: {err_str}")
+        if "401" in err_str or "invalid_api_key" in err_str or "Authentication" in err_str:
+            return "⚠️ The AI Twin is temporarily unavailable — the LLM API key needs to be refreshed. Please contact your administrator."
+        elif "429" in err_str or "rate_limit" in err_str:
+            return "⏳ The AI Twin is receiving too many requests right now. Please wait a moment and try again."
+        elif "503" in err_str or "unavailable" in err_str.lower():
+            return "🔌 The AI Twin's language model service is temporarily down. Please try again in a few minutes."
+        else:
+            return "❌ The AI Twin encountered an unexpected error. Please try again."
 
 def simulate_activity(user_id: str, activity_type: str, duration_mins: int, intensity: str, db: Session):
     # Fetch current profile

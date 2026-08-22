@@ -622,7 +622,7 @@ async def analyze_medical_report(user_id: str, file: UploadFile = File(...), db:
         try:
             client = Groq(api_key=GROQ_API_KEY)
             groq_response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="groq/compound-mini",
                 messages=[{
                     "role": "user",
                     "content": (
@@ -797,7 +797,7 @@ def generate_rehab_program(user_id: str, db: Session = Depends(get_db)):
         try:
             client = Groq(api_key=GROQ_API_KEY)
             response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="groq/compound-mini",
                 messages=[{
                     "role": "user",
                     "content": (
