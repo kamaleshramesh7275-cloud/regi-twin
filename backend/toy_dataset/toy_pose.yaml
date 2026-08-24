@@ -1,0 +1,6 @@
+path: C:\projects\regi-twin\backend\toy_dataset
+train: images/train
+val: images/val
+kpt_shape: [17, 3]
+names:
+  0: person

@@ -22,7 +22,7 @@ async function fetchWithTimeout(resource: string, options: RequestInit & { timeo
 
 export const api = {
   async getDashboard(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/analytics/dashboard/${userId}`);
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/dashboard/${userId}?min_hours_ago=1&max_hours_ago=10`);
     if (!res.ok) throw new Error("Failed to fetch dashboard");
     return res.json();
   },
@@ -51,7 +51,7 @@ export const api = {
   },
 
   async getSessionHistory(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/sessions/history/${userId}`);
+    const res = await fetchWithTimeout(`${API_BASE}/sessions/history/${userId}?min_hours_ago=1&max_hours_ago=10`);
     if (!res.ok) throw new Error("Failed to fetch session history");
     return res.json();
   },
@@ -112,7 +112,7 @@ export const api = {
   },
 
   async getExternalApps(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/analytics/external-apps/${userId}`);
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/external-apps/${userId}?min_hours_ago=1&max_hours_ago=10`);
     if (!res.ok) throw new Error("Failed to fetch external app data");
     return res.json();
   },
@@ -210,7 +210,7 @@ export const api = {
 
   /** Fetch user's pain log history */
   async getPainHistory(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/pain/history/${userId}`);
+    const res = await fetchWithTimeout(`${API_BASE}/pain/history/${userId}?min_hours_ago=1&max_hours_ago=10`);
     if (!res.ok) throw new Error("Failed to fetch pain history");
     return res.json();
   },
@@ -246,7 +246,7 @@ export const api = {
 
   /** Feature 2: Get live analytics summary (ROM trend, capability trend, pain overlay, zone heatmap) */
   async getAnalyticsSummary(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/analytics/summary/${userId}`);
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/summary/${userId}?min_hours_ago=1&max_hours_ago=10`);
     if (!res.ok) throw new Error("Failed to fetch analytics summary");
     return res.json();
   },

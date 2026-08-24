@@ -10,6 +10,7 @@ import {
 import { api } from "./api";
 import { auth } from "./firebase";
 import { Sidebar } from "./components/Sidebar";
+import * as ort from "onnxruntime-web";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Mode = "sit-to-stand" | "standing-posture" | "squat-analysis" | "gait-analysis" | "medical-report" | "static-image";
@@ -183,19 +184,33 @@ function CaptureEngineContent() {
   useEffect(() => {
     async function initVision() {
       try {
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-        );
-        const poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          numPoses: 1,
-        });
-        setLandmarker(poseLandmarker);
-        setModelReady(true);
+        // Attempt to load custom ONNX model first (if trained)
+        try {
+          ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/";
+          const session = await ort.InferenceSession.create("/model.onnx", { executionProviders: ["wasm"] });
+          console.log("Successfully loaded custom ONNX pose model!");
+          // TODO: Implement custom YOLOv8-pose inference loop here when model.onnx is ready.
+          throw new Error("Fallback for inference loop to MediaPipe");
+        } catch (onnxErr) {
+          console.log(onnxErr.message);
+          // Fallback to MediaPipe
+          const vision = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+          );
+          const poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task",
+              delegate: "GPU",
+            },
+            runningMode: "VIDEO",
+            numPoses: 1,
+            minPoseDetectionConfidence: 0.8,
+            minPosePresenceConfidence: 0.8,
+            minTrackingConfidence: 0.8,
+          });
+          setLandmarker(poseLandmarker);
+          setModelReady(true);
+        }
       } catch (err) {
         console.error("Vision init failed", err);
         setModelError(true);
@@ -666,7 +681,7 @@ function CaptureEngineContent() {
 
   if (stage === "landing") {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-start px-4 pt-8 pb-20 md:pb-8 relative overflow-hidden overflow-y-auto">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-start px-4 pt-8 pb-20 md:pb-8 relative overflow-y-auto overflow-x-hidden">
         {/* Background glow */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] rounded-full opacity-10 blur-3xl pointer-events-none"
           style={{ background: "radial-gradient(ellipse, #0ea5e9, #8b5cf6)" }} />
@@ -806,7 +821,7 @@ function CaptureEngineContent() {
   // ── Stage 0.2: Options Menu ─────────────────────────────────────────────
   if (stage === "options") {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-y-auto overflow-x-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] rounded-full opacity-10 blur-3xl pointer-events-none"
           style={{ background: "radial-gradient(ellipse, #0ea5e9, #8b5cf6)" }} />
 
@@ -872,7 +887,7 @@ function CaptureEngineContent() {
   // ── Stage 0.3: Upload Report ─────────────────────────────────────────────
   if (stage === "upload-report") {
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-y-auto overflow-x-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] rounded-full opacity-10 blur-3xl pointer-events-none"
           style={{ background: "radial-gradient(ellipse, #8b5cf6, #ec4899)" }} />
 
@@ -1088,7 +1103,7 @@ function CaptureEngineContent() {
     };
 
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-y-auto overflow-x-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] rounded-full opacity-10 blur-3xl pointer-events-none"
           style={{ background: "radial-gradient(ellipse, #10b981, #0ea5e9)" }} />
 
@@ -1177,7 +1192,7 @@ function CaptureEngineContent() {
     ];
 
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-y-auto overflow-x-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[350px] rounded-full opacity-10 blur-3xl pointer-events-none"
           style={{ background: "radial-gradient(ellipse, #0ea5e9, #8b5cf6)" }} />
 
@@ -1250,7 +1265,7 @@ function CaptureEngineContent() {
   if (stage === "setup") {
     const isSts = mode === "sit-to-stand";
     return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden">
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-12 relative overflow-y-auto overflow-x-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] rounded-full opacity-10 blur-3xl pointer-events-none"
           style={{ background: "radial-gradient(ellipse, #0ea5e9, #8b5cf6)" }} />
 
@@ -1676,7 +1691,7 @@ export default function CaptureEngine() {
   return (
     <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground pb-[72px] md:pb-0 bg-background">
       <Sidebar />
-      <main className="flex-1 overflow-hidden relative z-10 w-full flex flex-col">
+      <main className="flex-1 overflow-y-auto relative z-10 w-full flex flex-col">
         <CaptureEngineContent />
       </main>
     </div>

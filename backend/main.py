@@ -291,7 +291,7 @@ def ingest_vision_session(session: VisionSessionCreate, db: Session = Depends(ge
     return {"message": "Vision session logged and profile updated"}
 
 @app.get("/sessions/history/{user_id}")
-def get_session_history(user_id: str, db: Session = Depends(get_db)):
+def get_session_history(user_id: str, db: Session = Depends(get_db), min_hours_ago: Optional[int] = None, max_hours_ago: Optional[int] = None):
     sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.VisionSession.timestamp.asc()).all()
     
     # Calculate historical bests per task_type to award badges
@@ -353,7 +353,7 @@ def get_session_history(user_id: str, db: Session = Depends(get_db)):
 
 
 @app.get("/analytics/dashboard/{user_id}", response_model=AnalyticsDashboardResponse)
-def get_dashboard(user_id: str, db: Session = Depends(get_db)):
+def get_dashboard(user_id: str, db: Session = Depends(get_db), min_hours_ago: Optional[int] = None, max_hours_ago: Optional[int] = None):
     profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
     if not profile:
         return AnalyticsDashboardResponse(
@@ -844,7 +844,7 @@ def generate_rehab_program(user_id: str, db: Session = Depends(get_db)):
 
 
 @app.get("/analytics/external-apps/{user_id}")
-def get_external_apps(user_id: str, db: Session = Depends(get_db)):
+def get_external_apps(user_id: str, db: Session = Depends(get_db), min_hours_ago: Optional[int] = None, max_hours_ago: Optional[int] = None):
     import json
     entries = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).order_by(models.ExternalAppSession.timestamp.desc()).all()
     if not entries:
@@ -1035,7 +1035,7 @@ def log_pain(user_id: str, req: PainLogCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/pain/history/{user_id}")
-def get_pain_history(user_id: str, db: Session = Depends(get_db)):
+def get_pain_history(user_id: str, db: Session = Depends(get_db), min_hours_ago: Optional[int] = None, max_hours_ago: Optional[int] = None):
     logs = db.query(models.PainLog).filter(models.PainLog.user_id == user_id).order_by(models.PainLog.timestamp.asc()).all()
     return [{
         "timestamp": l.timestamp.isoformat(),
@@ -1324,7 +1324,7 @@ def get_printable_report(user_id: str, db: Session = Depends(get_db)):
 # ── Feature 2: Analytics Summary ─────────────────────────────────────────────
 
 @app.get("/analytics/summary/{user_id}")
-def get_analytics_summary(user_id: str, db: Session = Depends(get_db)):
+def get_analytics_summary(user_id: str, db: Session = Depends(get_db), min_hours_ago: Optional[int] = None, max_hours_ago: Optional[int] = None):
     """Return live analytics data: ROM trend, capability trend, pain overlay, zone heatmap."""
     vision_sessions = db.query(models.VisionSession)\
         .filter(models.VisionSession.user_id == user_id)\
