@@ -1,13 +1,13 @@
-# PhysioTwin 🧬
+# PhysioTwin 
 
 The Digital Twin of Your Recovery. PhysioTwin is an advanced sports-science and physiotherapy platform that builds a 3D biomechanical model of your body to predict injuries, optimize tissue repair, and return athletes to sport faster.
 
-## 🎥 Video Demo
+##  Video Demo
 [Watch the PhysioTwin Video Demo here](https://drive.google.com/file/d/1Gyfq_DeAfjbFYifYRk9BRmKfBbe_jCRK/view?usp=drivesdk)
 
 ---
 
-## ✨ Key Features
+##  Key Features
 
 - **Computer Vision Diagnostics**: Real-time pose estimation using MediaPipe to measure Range of Motion (ROM), joint symmetry, and movement stability directly from a smartphone camera.
 - **Wearable Data Integration**: Syncs with Google Fit, Apple Health, Garmin, and Fitbit to track heart rate, HRV, sleep, and recovery metrics.
@@ -18,7 +18,7 @@ The Digital Twin of Your Recovery. PhysioTwin is an advanced sports-science and 
 
 ---
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 **Frontend:**
 - React 18 & TypeScript
@@ -36,7 +36,7 @@ The Digital Twin of Your Recovery. PhysioTwin is an advanced sports-science and 
 
 ---
 
-## 🚀 Local Development Setup
+##  Local Development Setup
 
 ### Prerequisites
 - Node.js (v18+)
@@ -78,7 +78,7 @@ The frontend application will be available at `http://localhost:5173`.
 
 ---
 
-## ⚙️ Environment Variables
+## Environment Variables
 
 For the application to function fully, you need to configure the following environment variables.
 
@@ -101,7 +101,6 @@ PYTHON_VERSION="3.11.0"
 
 ---
 
-## ☁️ Production Deployment (Render)
 
 PhysioTwin is configured to be deployed as a unified Web Service on Render. 
 
@@ -120,5 +119,5 @@ PhysioTwin is configured to be deployed as a unified Web Service on Render.
 
 ---
 
-## 📄 License
+##  License
 This project is for demonstration and educational purposes. Not intended for actual medical diagnosis. Always consult a qualified healthcare professional.
