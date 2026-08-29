@@ -119,9 +119,9 @@ export default function TwinPage() {
       try {
         const uid = user?.uid || "demo_user";
         const [dash, hist, proj] = await Promise.all([
-          api.getDashboard(uid),
-          api.getSessionHistory(uid),
-          api.getDynamicProjections(uid),
+          api.getDashboard(uid).catch(e => { console.error(e); return { zone_risks: {} }; }),
+          api.getSessionHistory(uid).catch(e => { console.error(e); return []; }),
+          api.getDynamicProjections(uid).catch(e => { console.error(e); return []; }),
         ]);
         if (dash.zone_risks) {
           setLiveRisk(dash.zone_risks);
