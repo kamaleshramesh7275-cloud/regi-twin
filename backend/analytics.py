@@ -53,15 +53,21 @@ def compute_capability_profile(user_id: str, db: Session):
     sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.VisionSession.timestamp.asc()).all()
     session_count = len(sessions)
     
-    # Base fallback values
-    mobility = 85.0
-    stability = 70.0
-    quality = 92.0
-    cardio = 78.0
-    recovery = 88.0
-    reserve = 55.0
+    # Base values start at zero for a clean slate
+    mobility = 0.0
+    stability = 0.0
+    quality = 0.0
+    cardio = 0.0
+    recovery = 0.0
+    reserve = 0.0
     
-    zone_risks = {}
+    zone_risks = {
+        "head": 0, "neck": 0, "chest": 0, "lumbar": 0,
+        "left_shoulder": 0, "right_shoulder": 0, "left_arm": 0, "right_arm": 0,
+        "left_forearm": 0, "right_forearm": 0, "left_hip": 0, "right_hip": 0,
+        "left_thigh": 0, "right_thigh": 0, "left_knee": 0, "right_knee": 0,
+        "left_shin": 0, "right_shin": 0, "left_ankle": 0, "right_ankle": 0
+    }
     trend_data = []
 
     if session_count > 0:
@@ -79,11 +85,11 @@ def compute_capability_profile(user_id: str, db: Session):
         for i, s in enumerate(sessions[-30:]):
             trend_data.append({
                 "name": s.timestamp.strftime('%m-%d'),
-                "mobility": round(s.rom, 1) if s.rom else 85.0,
-                "stability": round(s.stability * 100, 1) if s.stability else 70.0,
-                "quality": round(s.symmetry * 100, 1) if s.symmetry else 92.0,
-                "recovery": round(recovery - (i * 0.5) % 10, 1),
-                "reserve": round(reserve + (i * 0.2) % 5, 1)
+                "mobility": round(s.rom, 1) if s.rom else 0.0,
+                "stability": round(s.stability * 100, 1) if s.stability else 0.0,
+                "quality": round(s.symmetry * 100, 1) if s.symmetry else 0.0,
+                "recovery": 0.0,
+                "reserve": 0.0
             })
             
         # Parse zone risks from the latest session
@@ -102,26 +108,16 @@ def compute_capability_profile(user_id: str, db: Session):
                     "cervical": min(100, 30 + head_fwd * 3),
                     "left_shoulder": min(100, 20 + shoulder_tilt * 4),
                     "right_shoulder": min(100, 20 + shoulder_tilt * 4),
-                    "left_ankle": 30,
-                    "right_ankle": 30,
+                    "left_ankle": 0,
+                    "right_ankle": 0,
                     "left_hip": min(100, 20 + hip_tilt * 4),
                     "right_hip": min(100, 20 + hip_tilt * 4)
                 }
             except Exception as e:
                 print(f"Error parsing joint angles for zone risks: {e}")
     else:
-        # Placeholder trend data if no sessions
-        base_date = datetime.datetime.utcnow()
-        for i in range(7, -1, -1):
-            dt = base_date - datetime.timedelta(days=i)
-            trend_data.append({
-                "name": dt.strftime('%m-%d'),
-                "mobility": mobility,
-                "stability": stability,
-                "quality": quality,
-                "recovery": recovery,
-                "reserve": reserve
-            })
+        # No sessions = empty trend data and clean risks
+        trend_data = []
 
     # Integrate External Apps (Hevy/HealthifyMe)
     ext_apps = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).order_by(models.ExternalAppSession.timestamp.desc()).all()

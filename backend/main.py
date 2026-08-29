@@ -430,10 +430,27 @@ def get_session_history(user_id: str, db: Session = Depends(get_db), min_hours_a
 
 @app.get("/analytics/dashboard/{user_id}", response_model=AnalyticsDashboardResponse)
 def get_dashboard(user_id: str, db: Session = Depends(get_db), min_hours_ago: Optional[int] = None, max_hours_ago: Optional[int] = None):
+    # Provide default fallback for zone risks and trend data if the profile lacks them
+    default_zone_risks = {
+        "head": 0, "neck": 0, "chest": 0, "lumbar": 0,
+        "left_shoulder": 0, "right_shoulder": 0, "left_arm": 0, "right_arm": 0,
+        "left_forearm": 0, "right_forearm": 0, "left_hip": 0, "right_hip": 0,
+        "left_thigh": 0, "right_thigh": 0, "left_knee": 0, "right_knee": 0,
+        "left_shin": 0, "right_shin": 0, "left_ankle": 0, "right_ankle": 0
+    }
+    
+    default_trend_data = []
+
     profile = db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).order_by(models.CapabilityProfile.timestamp.desc()).first()
     if not profile:
         return AnalyticsDashboardResponse(
-            mobility=50, stability=50, quality=50, cardio=50, recovery=50, reserve=50, confidence="Low"
+            mobility=0.0, stability=0.0, quality=0.0, cardio=0.0, recovery=0.0, reserve=0.0, confidence="None",
+            zone_risks=default_zone_risks,
+            trend_data=default_trend_data,
+            capability_mark=0,
+            acwr=0.0,
+            acwr_risk="Under-training",
+            recovery_score=0
         )
     
     cp = db.query(models.ChangePoint).filter(models.ChangePoint.user_id == user_id).order_by(models.ChangePoint.detected_at.desc()).first()
@@ -442,31 +459,6 @@ def get_dashboard(user_id: str, db: Session = Depends(get_db), min_hours_ago: Op
         alert = f"Deterioration detected in {cp.metric_name} over last 3 sessions."
         
     import json
-    
-    # Provide default fallback for zone risks and trend data if the profile lacks them
-    default_zone_risks = {
-        "left_knee": 72,
-        "right_knee": 25,
-        "lumbar": 48,
-        "cervical": 65,
-        "left_shoulder": 20,
-        "right_shoulder": 15,
-        "left_ankle": 55,
-        "right_ankle": 30,
-        "left_hip": 18,
-        "right_hip": 22
-    }
-    
-    default_trend_data = [
-        {"name": "W1", "mobility": 74, "stability": 72, "quality": 85, "cardio": 70, "recovery": 80, "reserve": 50},
-        {"name": "W2", "mobility": 76, "stability": 70, "quality": 86, "cardio": 72, "recovery": 82, "reserve": 52},
-        {"name": "W3", "mobility": 78, "stability": 68, "quality": 88, "cardio": 74, "recovery": 84, "reserve": 53},
-        {"name": "W4", "mobility": 80, "stability": 66, "quality": 90, "cardio": 76, "recovery": 85, "reserve": 54},
-        {"name": "W5", "mobility": 82, "stability": 65, "quality": 91, "cardio": 77, "recovery": 86, "reserve": 55},
-        {"name": "W6", "mobility": 84, "stability": 63, "quality": 92, "cardio": 78, "recovery": 87, "reserve": 56},
-        {"name": "W7", "mobility": 86, "stability": 62, "quality": 93, "cardio": 79, "recovery": 88, "reserve": 55},
-        {"name": "W8", "mobility": 88, "stability": 64, "quality": 93, "cardio": 79, "recovery": 88, "reserve": 55}
-    ]
 
     # Calculate dynamic capability mark based on capability profile weights
     mobility_score = profile.mobility if profile.mobility is not None else 85.0
