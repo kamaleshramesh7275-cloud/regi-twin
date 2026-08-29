@@ -94,6 +94,21 @@ class CaseNoteCreate(BaseModel):
     note: str
 
 
+class ReadinessSurveyCreate(BaseModel):
+    general_stress: int
+    emotional_stress: int
+    social_stress: int
+    fatigue: int
+    energy_deficit: int
+    physical_complaints: int
+    success: int
+    social_recovery: int
+    physical_recovery: int
+    well_being: int
+    kinesiophobia_score: int
+    sport_confidence_score: int
+
+
 @app.get("/api/health")
 def read_health():
     return {"status": "ok", "message": "PhysioTwin API is running"}
@@ -210,6 +225,30 @@ def get_latest_wearable(user_id: str, db: Session = Depends(get_db)):
         "active_minutes": None,
         "timestamp": None
     }
+
+@app.get("/wearables/history/{user_id}")
+def get_wearable_history(user_id: str, db: Session = Depends(get_db), limit: int = 7):
+    sessions = (
+        db.query(models.WearableSession)
+        .filter(models.WearableSession.user_id == user_id)
+        .order_by(models.WearableSession.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+    # Return in chronological order
+    sessions.reverse()
+    return [
+        {
+            "date": s.timestamp.strftime("%a"),
+            "hrv": s.hrv,
+            "heart_rate": s.heart_rate,
+            "sleep_hours": s.sleep_hours,
+            "sleep_score": s.sleep_score,
+            "readiness_score": s.readiness_score
+        }
+        for s in sessions if s.hrv is not None
+    ]
+
 
 
 class SyncFitRequest(BaseModel):
@@ -1736,6 +1775,69 @@ def get_dynamic_projections(user_id: str, db: Session = Depends(get_db)):
         {"horizon": "In 6 Months",  "months": 6,  "zones": project(6, False),  "withTreatment": project(6, True)},
         {"horizon": "In 1 Year",    "months": 12, "zones": project(12, False), "withTreatment": project(12, True)},
     ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# READINESS SURVEYS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/analytics/readiness/{user_id}")
+def get_readiness_survey(user_id: str, db: Session = Depends(get_db)):
+    survey = db.query(models.ReadinessSurvey)\
+        .filter(models.ReadinessSurvey.user_id == user_id)\
+        .order_by(models.ReadinessSurvey.timestamp.desc()).first()
+    if not survey:
+        return {
+            "general_stress": 0, "emotional_stress": 0, "social_stress": 0,
+            "fatigue": 0, "energy_deficit": 0, "physical_complaints": 0,
+            "success": 0, "social_recovery": 0, "physical_recovery": 0, "well_being": 0,
+            "kinesiophobia_score": 0, "sport_confidence_score": 0, "timestamp": None
+        }
+    return {
+        "general_stress": survey.general_stress,
+        "emotional_stress": survey.emotional_stress,
+        "social_stress": survey.social_stress,
+        "fatigue": survey.fatigue,
+        "energy_deficit": survey.energy_deficit,
+        "physical_complaints": survey.physical_complaints,
+        "success": survey.success,
+        "social_recovery": survey.social_recovery,
+        "physical_recovery": survey.physical_recovery,
+        "well_being": survey.well_being,
+        "kinesiophobia_score": survey.kinesiophobia_score,
+        "sport_confidence_score": survey.sport_confidence_score,
+        "timestamp": survey.timestamp.isoformat()
+    }
+
+@app.post("/analytics/readiness/survey/{user_id}")
+def submit_readiness_survey(user_id: str, payload: ReadinessSurveyCreate, db: Session = Depends(get_db)):
+    survey = models.ReadinessSurvey(
+        user_id=user_id,
+        general_stress=payload.general_stress,
+        emotional_stress=payload.emotional_stress,
+        social_stress=payload.social_stress,
+        fatigue=payload.fatigue,
+        energy_deficit=payload.energy_deficit,
+        physical_complaints=payload.physical_complaints,
+        success=payload.success,
+        social_recovery=payload.social_recovery,
+        physical_recovery=payload.physical_recovery,
+        well_being=payload.well_being,
+        kinesiophobia_score=payload.kinesiophobia_score,
+        sport_confidence_score=payload.sport_confidence_score
+    )
+    db.add(survey)
+    
+    # Save a compatible KinesiophobiaRecord for tracking history compatibility
+    k_rec = models.KinesiophobiaRecord(
+        user_id=user_id,
+        score=payload.kinesiophobia_score,
+        answers_json="[]"
+    )
+    db.add(k_rec)
+    
+    db.commit()
+    return {"status": "success", "id": survey.id}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -9,11 +9,6 @@ import { useAuth } from "./context/AuthContext";
 import { Link } from "wouter";
 import WearableImportModal from "./WearableImportModal";
 
-const FALLBACK_HRV = [
-  { date: 'Mon', hrv: 45 }, { date: 'Tue', hrv: 42 }, { date: 'Wed', hrv: 55 },
-  { date: 'Thu', hrv: 60 }, { date: 'Fri', hrv: 58 }, { date: 'Sat', hrv: 65 }, { date: 'Sun', hrv: 62 },
-];
-
 const SOURCE_LABELS: Record<string, string> = {
   google_fit: 'Google Fit', garmin: 'Garmin Connect', fitbit: 'Fitbit',
   apple_health: 'Apple Health', samsung_health: 'Samsung Health', mock: 'Demo Data', not_synced: 'Not synced',
@@ -45,6 +40,7 @@ function readinessLabel(score: number | null): string {
 export default function VitalsPage() {
   const { user } = useAuth();
   const [vitals, setVitals] = useState<any>(null);
+  const [hrvChartData, setHrvChartData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
 
@@ -52,8 +48,12 @@ export default function VitalsPage() {
     setLoading(true);
     try {
       const uid = user?.uid || "test-user";
-      const data = await api.getLatestWearable(uid);
-      setVitals(data);
+      const [latest, history] = await Promise.all([
+        api.getLatestWearable(uid),
+        api.getWearableHistory(uid)
+      ]);
+      setVitals(latest);
+      setHrvChartData(history || []);
     } catch (err) {
       console.error("Failed to fetch wearable vitals", err);
     } finally {
@@ -70,11 +70,6 @@ export default function VitalsPage() {
   const sleepScore = vitals?.sleep_score;
   const readiness = vitals?.readiness_score;
   const sourceLabel = SOURCE_LABELS[vitals?.source] ?? vitals?.source ?? "Unknown";
-
-  // Build HRV chart data — use real hrv point as today if available
-  const hrvChartData = hrv
-    ? [...FALLBACK_HRV.slice(0, 6), { date: 'Today', hrv: Math.round(hrv) }]
-    : FALLBACK_HRV;
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0 bg-background">
@@ -234,18 +229,25 @@ export default function VitalsPage() {
                   A rising HRV indicates your autonomic nervous system is recovering well. Today's value is from your last wearable sync.
                 </p>
                 <div className="h-64 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={hrvChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                      <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                      <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
-                      <RechartsTooltip
-                        contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '8px' }}
-                        itemStyle={{ color: '#2563eb', fontWeight: 'bold' }}
-                      />
-                      <Line type="monotone" dataKey="hrv" name="HRV (ms)" stroke="#2563eb" strokeWidth={4} dot={{ r: 5 }} activeDot={{ r: 7 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  {hrvChartData.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center border border-dashed border-border rounded-xl bg-card/5 text-center p-4">
+                      <p className="text-muted-foreground text-sm font-semibold">No historical HRV data found.</p>
+                      <p className="text-xs text-muted-foreground/70 mt-1">Data will populate here dynamically as you sync Google Fit daily.</p>
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={hrvChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                        <XAxis dataKey="date" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                        <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} domain={['auto', 'auto']} />
+                        <RechartsTooltip
+                          contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '8px' }}
+                          itemStyle={{ color: '#2563eb', fontWeight: 'bold' }}
+                        />
+                        <Line type="monotone" dataKey="hrv" name="HRV (ms)" stroke="#2563eb" strokeWidth={4} dot={{ r: 5 }} activeDot={{ r: 7 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
               </div>
 

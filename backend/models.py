@@ -229,3 +229,28 @@ class NutritionLog(Base):
     protein_g = Column(Float, nullable=True)
     carbs_g = Column(Float, nullable=True)
     fat_g = Column(Float, nullable=True)
+
+
+class ReadinessSurvey(Base):
+    """Daily stress-recovery and psychological readiness survey."""
+    __tablename__ = "readiness_surveys"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"))
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    # Stress & Recovery (RESTQ-Sport indicators, 0-100)
+    general_stress = Column(Integer)
+    emotional_stress = Column(Integer)
+    social_stress = Column(Integer)
+    fatigue = Column(Integer)
+    energy_deficit = Column(Integer)
+    physical_complaints = Column(Integer)
+    success = Column(Integer)
+    social_recovery = Column(Integer)
+    physical_recovery = Column(Integer)
+    well_being = Column(Integer)
+    
+    # Psychological indices
+    kinesiophobia_score = Column(Integer)     # Tampa Scale (11 to 44)
+    sport_confidence_score = Column(Integer)  # ACL-RSI (0 to 100)

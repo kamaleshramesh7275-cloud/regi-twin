@@ -15,6 +15,7 @@ export default function LeaderboardPage() {
   const { user } = useAuth();
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [capabilityMark, setCapabilityMark] = useState<number>(0);
+  const [zoneRisks, setZoneRisks] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,7 +26,8 @@ export default function LeaderboardPage() {
           api.getDashboard(user?.uid || "demo_user")
         ]);
         setLeaderboardData(lbData);
-        setCapabilityMark(dashboardData.capability_mark || 712);
+        setCapabilityMark(dashboardData.capability_mark || 0);
+        setZoneRisks(dashboardData.zone_risks || null);
       } catch (e) {
         console.error("Failed to load leaderboard data", e);
       } finally {
@@ -34,6 +36,22 @@ export default function LeaderboardPage() {
     };
     loadData();
   }, [user]);
+
+  const getHighestRiskZone = () => {
+    if (!zoneRisks) return null;
+    let maxRisk = 0;
+    let maxZone = "";
+    Object.entries(zoneRisks).forEach(([zone, score]) => {
+      const num = score as number;
+      if (num > maxRisk) {
+        maxRisk = num;
+        maxZone = zone;
+      }
+    });
+    return maxRisk > 10 ? { zone: maxZone.replace('_', ' '), score: maxRisk } : null;
+  };
+
+  const highest = getHighestRiskZone();
 
 
   return (
@@ -96,21 +114,32 @@ export default function LeaderboardPage() {
               <div className="space-y-4">
                 <h2 className="text-lg font-semibold mb-4">Actionable Insights</h2>
                 
-                <div className="bg-secondary/20 border border-border/50 p-5 rounded-2xl shadow-sm">
-                  <div className="flex items-center gap-2 text-foreground font-medium mb-3">
-                    <Target className="w-5 h-5 text-primary" /> Priority: Knee Stability
+                {highest ? (
+                  <div className="bg-secondary/20 border border-border/50 p-5 rounded-2xl shadow-sm">
+                    <div className="flex items-center gap-2 text-foreground font-medium mb-3">
+                      <Target className="w-5 h-5 text-primary" /> Priority: {highest.zone.toUpperCase()}
+                    </div>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Your {highest.zone} risk is holding your score back (Score: {highest.score}%). Target this area in your workouts to boost your peer capability mark.
+                    </p>
                   </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Your left knee risk is holding your score back. Strengthen your glute medius and left quad to boost your mark by +45 points.
-                  </p>
-                </div>
+                ) : (
+                  <div className="bg-secondary/20 border border-border/50 p-5 rounded-2xl shadow-sm">
+                    <div className="flex items-center gap-2 text-foreground font-medium mb-3">
+                      <Target className="w-5 h-5 text-primary" /> Priority: Complete Capture
+                    </div>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      Record a movement capture session or sync external platforms to identify stability priorities and personalized quad/glute exercises.
+                    </p>
+                  </div>
+                )}
 
                 <div className="bg-secondary/20 border border-border/50 p-5 rounded-2xl shadow-sm">
                   <div className="flex items-center gap-2 text-foreground font-medium mb-3">
-                    <Activity className="w-5 h-5 text-primary" /> Mobility Gains
+                    <Activity className="w-5 h-5 text-primary" /> Dynamic Insights
                   </div>
                   <p className="text-sm text-muted-foreground leading-relaxed">
-                    You are outperforming 80% of peers in shoulder mobility. Keep up the upper-cross syndrome prevention routine.
+                    Compare your metrics. Logging daily surveys on the Readiness page will evaluate kinesiophobia risk indices and return-to-sport indicators.
                   </p>
                 </div>
               </div>

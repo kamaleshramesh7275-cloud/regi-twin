@@ -171,6 +171,12 @@ export const api = {
     return res.json();
   },
 
+  async getWearableHistory(userId: string, limit = 7) {
+    const res = await fetchWithTimeout(`${API_BASE}/wearables/history/${userId}?limit=${limit}`);
+    if (!res.ok) throw new Error("Failed to fetch wearable history");
+    return res.json();
+  },
+
   /** Request generation of a customized rehab program based on capability profile */
   async generateProgram(userId: string) {
     const res = await fetchWithTimeout(`${API_BASE}/programs/generate/${userId}`, {
@@ -413,6 +419,36 @@ export const api = {
   async getAchievements(userId: string) {
     const res = await fetchWithTimeout(`${API_BASE}/analytics/achievements/${userId}`);
     if (!res.ok) throw new Error("Failed to fetch achievements");
+    return res.json();
+  },
+
+  // ── READINESS SURVEYS ────────────────────────────────────────────────────────
+  async getReadinessSurvey(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/readiness/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch readiness survey");
+    return res.json();
+  },
+
+  async submitReadinessSurvey(userId: string, data: {
+    general_stress: number;
+    emotional_stress: number;
+    social_stress: number;
+    fatigue: number;
+    energy_deficit: number;
+    physical_complaints: number;
+    success: number;
+    social_recovery: number;
+    physical_recovery: number;
+    well_being: number;
+    kinesiophobia_score: number;
+    sport_confidence_score: number;
+  }) {
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/readiness/survey/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Failed to submit readiness survey");
     return res.json();
   },
 };
