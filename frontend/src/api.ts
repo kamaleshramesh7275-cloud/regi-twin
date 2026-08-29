@@ -283,5 +283,137 @@ export const api = {
     if (!res.ok) throw new Error("Failed to fetch patient summary");
     return res.json();
   },
+
+  // ── MEDICATIONS ─────────────────────────────────────────────────────────────
+
+  async getMedications(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/medications/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch medications");
+    return res.json();
+  },
+
+  async addMedication(userId: string, data: { name: string; dosage: string; time_of_day: string; type: string }) {
+    const res = await fetchWithTimeout(`${API_BASE}/medications/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Failed to add medication");
+    return res.json();
+  },
+
+  async toggleMedication(medId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/medications/${medId}/toggle`, { method: "PATCH" });
+    if (!res.ok) throw new Error("Failed to toggle medication");
+    return res.json();
+  },
+
+  async deleteMedication(medId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/medications/${medId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Failed to delete medication");
+    return res.json();
+  },
+
+  // ── COMMUNITY POSTS ──────────────────────────────────────────────────────────
+
+  async getCommunityPosts(limit = 20) {
+    const res = await fetchWithTimeout(`${API_BASE}/community/posts?limit=${limit}`);
+    if (!res.ok) throw new Error("Failed to fetch community posts");
+    return res.json();
+  },
+
+  async createCommunityPost(userId: string, data: { author_name: string; group_name: string; title: string; content: string }) {
+    const res = await fetchWithTimeout(`${API_BASE}/community/posts/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Failed to create community post");
+    return res.json();
+  },
+
+  async likeCommunityPost(postId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/community/posts/${postId}/like`, { method: "POST" });
+    if (!res.ok) throw new Error("Failed to like post");
+    return res.json();
+  },
+
+  // ── MANUAL WORKOUT LOGGING ───────────────────────────────────────────────────
+
+  async getWorkouts(userId: string, limit = 50) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/${userId}?limit=${limit}`);
+    if (!res.ok) throw new Error("Failed to fetch workouts");
+    return res.json();
+  },
+
+  async logWorkout(userId: string, data: {
+    name: string;
+    duration_min?: number;
+    notes?: string;
+    exercises?: { name: string; sets: number; reps: number; weight_kg: number }[];
+    affected_zones?: string[];
+    load_level?: string;
+  }) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/log/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Failed to log workout");
+    return res.json();
+  },
+
+  async deleteWorkout(logId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/${logId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Failed to delete workout");
+    return res.json();
+  },
+
+  // ── MANUAL NUTRITION LOGGING ─────────────────────────────────────────────────
+
+  async getNutrition(userId: string, days = 7) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/${userId}?days=${days}`);
+    if (!res.ok) throw new Error("Failed to fetch nutrition logs");
+    return res.json();
+  },
+
+  async logNutrition(userId: string, data: {
+    meal_name?: string;
+    items?: string;
+    calories?: number;
+    protein_g?: number;
+    carbs_g?: number;
+    fat_g?: number;
+  }) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/log/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Failed to log nutrition");
+    return res.json();
+  },
+
+  async deleteNutritionLog(logId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/${logId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Failed to delete nutrition log");
+    return res.json();
+  },
+
+  // ── DYNAMIC PROJECTIONS ──────────────────────────────────────────────────────
+
+  async getDynamicProjections(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/projections/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch projections");
+    return res.json();
+  },
+
+  // ── ACHIEVEMENTS ─────────────────────────────────────────────────────────────
+
+  async getAchievements(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/achievements/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch achievements");
+    return res.json();
+  },
 };
 

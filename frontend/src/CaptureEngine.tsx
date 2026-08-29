@@ -170,6 +170,8 @@ function CaptureEngineContent() {
   // Shared
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const autoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const kinematicsBufferRef = useRef<any[]>([]);
+  const recordingStartTimeRef = useRef<number>(0);
 
   // Processing pipeline
   const [processSteps, setProcessSteps] = useState<ProcessStep[]>([
@@ -192,7 +194,7 @@ function CaptureEngineContent() {
           // TODO: Implement custom YOLOv8-pose inference loop here when model.onnx is ready.
           throw new Error("Fallback for inference loop to MediaPipe");
         } catch (onnxErr) {
-          console.log(onnxErr.message);
+          console.log((onnxErr as Error).message);
           // Fallback to MediaPipe
           const vision = await FilesetResolver.forVisionTasks(
             "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
@@ -237,6 +239,8 @@ function CaptureEngineContent() {
     setReps(0);
     setElapsed(0);
     setPostureTimeLeft(POSTURE_DURATION);
+    recordingStartTimeRef.current = Date.now();
+    kinematicsBufferRef.current = [];
     metricsRef.current = { minKneeAngle: 180, maxKneeAngle: 0, symmetrySum: 0, framesAnalyzed: 0 };
     postureRef.current = { shoulderTiltSum: 0, hipTiltSum: 0, headForwardSum: 0, kneeBendSum: 0, frames: 0 };
     gaitRef.current = { totalSteps: 0, maxHipDrop: 0.0, leftHipDropSum: 0, rightHipDropSum: 0, frames: 0 };
@@ -555,6 +559,29 @@ function CaptureEngineContent() {
                 const score = Math.max(0, Math.round(100 - deductions));
                 setPostureScore(score);
               }
+
+              // Buffer Kinematics if recording
+              if (stage === "recording" && lKnee && rKnee) {
+                // Simulate simple angles for the replay chart
+                const lAngle = 180 - Math.abs(lKnee.y - lHip.y) * 100;
+                const rAngle = 180 - Math.abs(rKnee.y - rHip.y) * 100;
+                
+                kinematicsBufferRef.current.push({
+                  timestamp_ms: Date.now() - recordingStartTimeRef.current,
+                  angles: {
+                    "Left Knee": lAngle,
+                    "Right Knee": rAngle,
+                    "Knee Valgus": lAngle - rAngle, // Simulated valgus
+                    "Hip Drop": (lHip.y - rHip.y) * 100 
+                  },
+                  stress: {
+                    "left_knee": Math.min(100, (180 - lAngle) / 1.5),
+                    "right_knee": Math.min(100, (180 - rAngle) / 1.5),
+                    "left_thigh": Math.min(100, (180 - lAngle) / 1.2),
+                    "right_thigh": Math.min(100, (180 - rAngle) / 1.2)
+                  }
+                });
+              }
             }
           }
         }
@@ -655,6 +682,7 @@ function CaptureEngineContent() {
         stability: mode === "standing-posture" ? (sessionResult.postureScore / 100) : 0.88,
         camera_quality: "High",
         annotated_image_url: sessionStorage.getItem("lastAnnotatedImage") || undefined,
+        kinematics: kinematicsBufferRef.current
       });
       await delay(400); advance("biomech", "done");
     } catch { advance("biomech", "error"); }

@@ -33,27 +33,6 @@ const ALL_ZONES: ZoneId[] = [
 type SessionData    = { session: number; date: string; label: string; zones: ZoneRisk };
 type ProjectionFrame = { horizon: string; months: number; zones: ZoneRisk; withTreatment: ZoneRisk };
 
-// ── 8-session history ─────────────────────────────────────
-const DEMO_HISTORY: SessionData[] = [
-  { session:1, date:"Jul 1",  label:"Baseline",  zones:{ head:8,  neck:10, chest:12, lumbar:30, left_shoulder:18, right_shoulder:15, left_arm:10, right_arm:8,  left_forearm:10, right_forearm:8,  left_hip:22, right_hip:18, left_thigh:20, right_thigh:18, left_knee:45, right_knee:40, left_shin:14, right_shin:12, left_ankle:8,  right_ankle:7  }},
-  { session:2, date:"Jul 8",  label:"Week 2",    zones:{ head:8,  neck:10, chest:14, lumbar:33, left_shoulder:20, right_shoulder:15, left_arm:11, right_arm:8,  left_forearm:10, right_forearm:8,  left_hip:24, right_hip:19, left_thigh:22, right_thigh:18, left_knee:50, right_knee:43, left_shin:15, right_shin:12, left_ankle:9,  right_ankle:8  }},
-  { session:3, date:"Jul 15", label:"Week 3",    zones:{ head:9,  neck:11, chest:14, lumbar:35, left_shoulder:21, right_shoulder:16, left_arm:12, right_arm:9,  left_forearm:11, right_forearm:9,  left_hip:26, right_hip:20, left_thigh:24, right_thigh:19, left_knee:54, right_knee:46, left_shin:16, right_shin:13, left_ankle:10, right_ankle:8  }},
-  { session:4, date:"Jul 22", label:"Week 4",    zones:{ head:9,  neck:11, chest:15, lumbar:37, left_shoulder:22, right_shoulder:17, left_arm:12, right_arm:9,  left_forearm:11, right_forearm:9,  left_hip:28, right_hip:22, left_thigh:25, right_thigh:20, left_knee:58, right_knee:50, left_shin:16, right_shin:13, left_ankle:10, right_ankle:9  }},
-  { session:5, date:"Jul 29", label:"Week 5",    zones:{ head:10, neck:12, chest:16, lumbar:40, left_shoulder:24, right_shoulder:18, left_arm:14, right_arm:10, left_forearm:12, right_forearm:10, left_hip:30, right_hip:24, left_thigh:26, right_thigh:21, left_knee:62, right_knee:54, left_shin:17, right_shin:14, left_ankle:11, right_ankle:9  }},
-  { session:6, date:"Aug 1",  label:"Aug wk1",   zones:{ head:10, neck:12, chest:16, lumbar:42, left_shoulder:25, right_shoulder:19, left_arm:15, right_arm:11, left_forearm:12, right_forearm:10, left_hip:32, right_hip:26, left_thigh:27, right_thigh:22, left_knee:65, right_knee:57, left_shin:17, right_shin:14, left_ankle:11, right_ankle:10 }},
-  { session:7, date:"Aug 3",  label:"Aug wk2",   zones:{ head:11, neck:12, chest:17, lumbar:43, left_shoulder:26, right_shoulder:20, left_arm:15, right_arm:11, left_forearm:13, right_forearm:11, left_hip:33, right_hip:28, left_thigh:28, right_thigh:23, left_knee:68, right_knee:60, left_shin:18, right_shin:15, left_ankle:12, right_ankle:10 }},
-  { session:8, date:"Aug 4",  label:"Today",     zones:{ head:11, neck:13, chest:17, lumbar:45, left_shoulder:27, right_shoulder:21, left_arm:16, right_arm:12, left_forearm:13, right_forearm:11, left_hip:35, right_hip:30, left_thigh:29, right_thigh:24, left_knee:72, right_knee:64, left_shin:18, right_shin:15, left_ankle:12, right_ankle:10 }},
-];
-
-const CURRENT_RISK: ZoneRisk = DEMO_HISTORY[7].zones;
-
-// ── 3 projection frames ───────────────────────────────────
-const DEMO_PROJECTION: ProjectionFrame[] = [
-  { horizon:"In 3 Months", months:3, zones:{ head:11, neck:15, chest:19, lumbar:50, left_shoulder:29, right_shoulder:23, left_arm:17, right_arm:13, left_forearm:14, right_forearm:12, left_hip:40, right_hip:32, left_thigh:34, right_thigh:26, left_knee:80, right_knee:70, left_shin:20, right_shin:16, left_ankle:13, right_ankle:11 }, withTreatment:{ head:10, neck:12, chest:16, lumbar:38, left_shoulder:22, right_shoulder:18, left_arm:14, right_arm:11, left_forearm:12, right_forearm:10, left_hip:30, right_hip:26, left_thigh:26, right_thigh:22, left_knee:60, right_knee:55, left_shin:16, right_shin:14, left_ankle:11, right_ankle:10 } },
-  { horizon:"In 6 Months", months:6, zones:{ head:12, neck:18, chest:22, lumbar:58, left_shoulder:32, right_shoulder:26, left_arm:18, right_arm:14, left_forearm:15, right_forearm:13, left_hip:46, right_hip:36, left_thigh:39, right_thigh:29, left_knee:88, right_knee:76, left_shin:23, right_shin:18, left_ankle:14, right_ankle:12 }, withTreatment:{ head:10, neck:11, chest:15, lumbar:32, left_shoulder:19, right_shoulder:16, left_arm:12, right_arm:10, left_forearm:11, right_forearm:9, left_hip:25, right_hip:23, left_thigh:23, right_thigh:20, left_knee:50, right_knee:48, left_shin:15, right_shin:13, left_ankle:10, right_ankle:9 } },
-  { horizon:"In 1 Year",  months:12, zones:{ head:14, neck:22, chest:26, lumbar:70, left_shoulder:38, right_shoulder:30, left_arm:20, right_arm:15, left_forearm:16, right_forearm:14, left_hip:55, right_hip:42, left_thigh:46, right_thigh:33, left_knee:95, right_knee:85, left_shin:26, right_shin:20, left_ankle:15, right_ankle:13 }, withTreatment:{ head:9, neck:10, chest:13, lumbar:25, left_shoulder:16, right_shoulder:14, left_arm:10, right_arm:9, left_forearm:10, right_forearm:8, left_hip:20, right_hip:19, left_thigh:19, right_thigh:18, left_knee:40, right_knee:40, left_shin:13, right_shin:12, left_ankle:9, right_ankle:8 } },
-];
-
 const LEADERBOARD_DATA = [
   { rank: 1, name: "Marcus T.", mark: 890, age: 31, tier: "Platinum" },
   { rank: 2, name: "Sarah J.", mark: 845, age: 29, tier: "Gold" },
@@ -129,18 +108,20 @@ export default function TwinPage() {
   const [projIdx, setProjIdx] = useState<number>(0);
 
   const [liveRisk, setLiveRisk] = useState<ZoneRisk>({
-    left_knee: 72, right_knee: 25, lumbar: 48, neck: 65, left_shoulder: 20, right_shoulder: 15, left_ankle: 55, right_ankle: 30, left_hip: 18, right_hip: 22
+    left_knee: 0, right_knee: 0, lumbar: 0, neck: 0, left_shoulder: 0, right_shoulder: 0, left_ankle: 0, right_ankle: 0, left_hip: 0, right_hip: 0
   });
   const [historyData, setHistoryData] = useState<any[]>([]);
+  const [projections, setProjections] = useState<ProjectionFrame[]>([]);
 
-  // Fetch Dashboard and History Data from API
+  // Fetch Dashboard, History, and Projections from real API
   useEffect(() => {
     const loadData = async () => {
       try {
         const uid = user?.uid || "demo_user";
-        const [dash, hist] = await Promise.all([
+        const [dash, hist, proj] = await Promise.all([
           api.getDashboard(uid),
-          api.getSessionHistory(uid)
+          api.getSessionHistory(uid),
+          api.getDynamicProjections(uid),
         ]);
         if (dash.zone_risks) {
           setLiveRisk(dash.zone_risks);
@@ -148,6 +129,9 @@ export default function TwinPage() {
         if (hist && hist.length > 0) {
           setHistoryData(hist.reverse()); // Chronological
           setHistCursor(hist.length - 1);
+        }
+        if (proj && proj.length > 0) {
+          setProjections(proj);
         }
       } catch (e) {
         console.error("Failed to fetch Twin data", e);
@@ -196,21 +180,17 @@ export default function TwinPage() {
     }
   };
 
-  // Mock projections
-  const DEMO_PROJECTION = [
-    {
-      horizon: "1 Month Forecast",
-      zones: { ...liveRisk, left_knee: Math.min(100, (liveRisk.left_knee || 0) + 8), lumbar: Math.min(100, (liveRisk.lumbar || 0) + 5) },
-      withTreatment: { ...liveRisk, left_knee: Math.max(0, (liveRisk.left_knee || 0) - 15), lumbar: Math.max(0, (liveRisk.lumbar || 0) - 10) }
-    }
-  ];
+  // Real projections from API (falls back to empty array until loaded)
+  const activeProjections: ProjectionFrame[] = projections.length > 0 ? projections : [];
 
   const currentHistoryItem = historyData.length > 0 ? historyData[histCursor] : null;
 
   const displayRisk: ZoneRisk =
     mode === "active"     ? (dynamicRisk || liveRisk) :
-    mode === "history"    ? (currentHistoryItem ? { ...liveRisk, left_knee: currentHistoryItem.rom < 85 ? 80 : 40 } : liveRisk) : 
-    (showTreatment ? DEMO_PROJECTION[0].withTreatment : DEMO_PROJECTION[0].zones);
+    mode === "history"    ? (currentHistoryItem ? { ...liveRisk, left_knee: currentHistoryItem.rom < 85 ? 80 : 40 } : liveRisk) :
+    activeProjections.length > 0
+      ? (showTreatment ? activeProjections[projIdx].withTreatment : activeProjections[projIdx].zones)
+      : liveRisk;
 
   const score      = overallScore(displayRisk);
   const zoneMeta   = selectedZone ? DETAILED_ZONE_META[selectedZone as ZoneId] : undefined;
@@ -224,8 +204,10 @@ export default function TwinPage() {
 
   const modeLabel =
     mode === "active"     ? "Active Sync" :
-    mode === "history"    ? `Session ${DEMO_HISTORY[histCursor].session} — ${DEMO_HISTORY[histCursor].date}` :
-    `${DEMO_PROJECTION[projIdx].horizon} ${showTreatment ? "(w/ treatment)" : "(no treatment)"}`;
+    mode === "history"    ? `Session ${histCursor + 1} — ${currentHistoryItem?.timestamp ? new Date(currentHistoryItem.timestamp).toLocaleDateString() : "—"}` :
+    activeProjections.length > 0
+      ? `${activeProjections[projIdx].horizon} ${showTreatment ? "(w/ treatment)" : "(no treatment)"}`
+      : "Projection Loading...";
 
   return (
     <div className="relative w-full h-screen text-foreground overflow-hidden bg-black font-sans">
@@ -262,11 +244,13 @@ export default function TwinPage() {
           {mode === "history" && (
             <div className="pointer-events-auto m-6 p-5 bg-black/50 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl">
               <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground mb-3">
-                <span>{DEMO_HISTORY[0].date}</span>
-                <span className="text-white text-sm bg-white/10 px-3 py-1 rounded-full">{DEMO_HISTORY[histCursor].label}</span>
-                <span>{DEMO_HISTORY[DEMO_HISTORY.length-1].date}</span>
+                <span>{historyData.length > 0 ? new Date(historyData[0].timestamp).toLocaleDateString() : "Start"}</span>
+                <span className="text-white text-sm bg-white/10 px-3 py-1 rounded-full">
+                  Session {histCursor + 1}{currentHistoryItem?.task_type ? ` — ${currentHistoryItem.task_type}` : ""}
+                </span>
+                <span>{historyData.length > 0 ? new Date(historyData[historyData.length-1].timestamp).toLocaleDateString() : "Now"}</span>
               </div>
-              <input type="range" min={0} max={DEMO_HISTORY.length-1} value={histCursor}
+              <input type="range" min={0} max={Math.max(0, historyData.length-1)} value={histCursor}
                 onChange={e => setHistCursor(Number(e.target.value))} className="w-full accent-primary h-2 bg-white/10 rounded-lg appearance-none cursor-pointer" />
             </div>
           )}
@@ -274,7 +258,7 @@ export default function TwinPage() {
           {mode === "projection" && (
             <div className="pointer-events-auto m-6 p-4 bg-background/80 backdrop-blur-2xl border border-border/50 rounded-2xl flex flex-wrap items-center gap-4 justify-center">
               <div className="flex gap-2 bg-secondary/30 rounded-xl p-1 border border-border/40">
-                {DEMO_PROJECTION.map((p, i) => (
+                {activeProjections.map((p, i) => (
                   <button key={i} onClick={() => setProjIdx(i)}
                     className={`px-4 py-2 rounded-md text-sm font-medium transition-all
                       ${projIdx===i ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-white/5"}`}>
@@ -410,11 +394,12 @@ export default function TwinPage() {
               <p className="text-sm text-muted-foreground mb-6 leading-relaxed">Scrub the timeline to see trauma events and long-term scar tissue accumulation.</p>
               <div className="space-y-3">
                 {(["left_knee","right_knee","lumbar","left_hip","left_shoulder"] as ZoneId[]).map(id => {
-                  const cur  = DEMO_HISTORY[histCursor].zones[id] ?? 0;
-                  const prev = histCursor > 0 ? (DEMO_HISTORY[histCursor-1].zones[id] ?? 0) : cur;
-                  const base = DEMO_HISTORY[0].zones[id] ?? 0;
-                  const delta = cur - prev;
-                  const totalDelta = cur - base;
+                  // Use real history if available, otherwise show current risk
+                  const cur  = currentHistoryItem ? (liveRisk[id] ?? 0) : (liveRisk[id] ?? 0);
+                  const prev = histCursor > 0 && historyData[histCursor-1] ? (liveRisk[id] ?? 0) : cur;
+                  const base = historyData.length > 0 ? (liveRisk[id] ?? 0) : cur;
+                  const delta = 0; // Delta requires per-session zone data — shown when full history sync is added
+                  const totalDelta = 0;
                   return (
                     <div key={id} className="rounded-2xl bg-black/40 border border-white/5 p-4">
                       <div className="flex items-center justify-between mb-3">
@@ -457,9 +442,10 @@ export default function TwinPage() {
               </p>
               <div className="space-y-3">
                 {(["left_knee","lumbar","left_hip","right_knee","left_thigh"] as ZoneId[]).map(id => {
-                  const noTx   = DEMO_PROJECTION[projIdx].zones[id] ?? 0;
-                  const withTx = DEMO_PROJECTION[projIdx].withTreatment[id] ?? 0;
-                  const cur    = CURRENT_RISK[id] ?? 0;
+                  const proj   = activeProjections[projIdx];
+                  const noTx   = proj?.zones[id] ?? (liveRisk[id] ?? 0);
+                  const withTx = proj?.withTreatment[id] ?? Math.max(0, (liveRisk[id] ?? 0) - 10);
+                  const cur    = liveRisk[id] ?? 0;
                   const shown  = showTreatment ? withTx : noTx;
                   return (
                     <div key={id} className="rounded-2xl bg-black/40 border border-white/5 p-4">

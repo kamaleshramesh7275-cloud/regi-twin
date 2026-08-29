@@ -7,15 +7,14 @@ import { auth } from "./firebase";
 import { Sidebar } from "./components/Sidebar";
 import { useAuth } from "./context/AuthContext";
 
-const DEMO_TIMELINE = [
-  { day: "Today", events: [{ time: "08:30 AM", type: "Sync", title: "Hevy App Sync", desc: "Heavy Squat Day • 12,400 lbs total volume", status: "success" }] },
-  { day: "Yesterday", events: [{ time: "09:00 AM", type: "Sync", title: "HealthifyMe Sync", desc: "165g Protein • 2,400 kcal", status: "success" }] },
-];
-const DEMO_INSIGHTS = [{ type: 'warning', title: 'Systemic Fatigue', desc: 'HRV dropped to 45ms. Avoid heavy lifting today.' }];
-const DEMO_MILESTONES = [{ title: "Perfect Posture", date: "Jul 15, 2026", icon: <User className="w-5 h-5 text-emerald-400" /> }];
-const DEMO_RECORDS = [{ label: "Max Mobility", value: "94", date: "Jul 10, 2026" }];
-const DEMO_DOMAIN_SCORES = [{ name: 'Mobility', score: 85 }];
-const DEMO_ACTION_PLAN = [{ phase: "Phase 1", tasks: ["Foam roll calves", "Banded glute bridges"] }];
+// Note: DEMO_* constants below are used only for Timeline/Insights loading fallbacks
+// and will be replaced by empty-states once real data exists.
+const DEMO_TIMELINE: any[] = [];
+const DEMO_INSIGHTS: any[] = [];
+const DEMO_MILESTONES: any[] = [];
+const DEMO_RECORDS: any[] = [];
+const DEMO_DOMAIN_SCORES: any[] = [];
+const DEMO_ACTION_PLAN: any[] = [];
 
 const isDemoMode = () => false;
 
@@ -43,15 +42,8 @@ export function HistoryPage() {
   const fetchHistory = async () => {
     try {
       const uid = auth.currentUser?.uid || "test-user";
-      let data = await api.getSessionHistory(uid);
-      if (!data || data.length === 0) {
-        data = [
-          { id: '1', task_type: 'Sit-to-Stand Assessment', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), rom: 85.2, symmetry: 0.95, movement_speed: 15.4, stability: 0.88 },
-          { id: '2', task_type: 'Static Posture', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(), rom: 90.1, symmetry: 0.98, movement_speed: 0, stability: 0.92 },
-          { id: '3', task_type: 'Sit-to-Stand Assessment', timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5).toISOString(), rom: 82.4, symmetry: 0.91, movement_speed: 14.1, stability: 0.85 },
-        ];
-      }
-      setSessions(data);
+      const data = await api.getSessionHistory(uid);
+      setSessions(data || []);
     } catch (err) {
       console.error("Error fetching history", err);
     } finally {

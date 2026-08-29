@@ -134,24 +134,13 @@ export async function fetchGoogleFitData(accessToken?: string) {
   }
 }
 
+/** Returns empty/zero data when Google Fit is unavailable, so the UI shows an empty state */
 function getMockData() {
   return {
-    source: "Mock Data",
-    liveVitals: { heartRate: 72, steps: 8432 },
-    workouts: [
-      { app: "Hevy", name: "Leg Day (Heavy)", load: "High", affectedZones: ["left_knee", "right_knee", "lumbar", "left_thigh", "right_thigh"], day: "Mon" },
-      { app: "Hevy", name: "Push Day", load: "Medium", affectedZones: ["chest", "left_shoulder", "right_shoulder"], day: "Wed" },
-      { app: "Hevy", name: "Pull Day", load: "High", affectedZones: ["lumbar", "neck"], day: "Fri" }
-    ],
-    nutrition: [
-      { day: "Mon", calories: 2100, protein: 120, carbs: 220, fat: 60, hydration: "Optimal" },
-      { day: "Tue", calories: 2300, protein: 140, carbs: 250, fat: 65, hydration: "Suboptimal" },
-      { day: "Wed", calories: 2400, protein: 150, carbs: 260, fat: 70, hydration: "Optimal" },
-      { day: "Thu", calories: 2200, protein: 130, carbs: 230, fat: 62, hydration: "Low" },
-      { day: "Fri", calories: 2500, protein: 165, carbs: 270, fat: 75, hydration: "Optimal" },
-      { day: "Sat", calories: 2800, protein: 180, carbs: 300, fat: 85, hydration: "Optimal" },
-      { day: "Sun", calories: 2150, protein: 125, carbs: 210, fat: 58, hydration: "Optimal" },
-    ]
+    source: "No Data",
+    liveVitals: { heartRate: 0, steps: 0 },
+    workouts: [] as any[],
+    nutrition: [] as any[],
   };
 }
 

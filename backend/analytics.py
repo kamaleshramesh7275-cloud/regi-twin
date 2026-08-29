@@ -12,6 +12,42 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 import json
 
+def detect_anomalies(kinematics_timeseries: list) -> list:
+    anomalies = []
+    # kinematics_timeseries is a list of dicts: {"timestamp_ms": ..., "angles": {"Knee Valgus": ...}}
+    for frame in kinematics_timeseries:
+        ms = frame.get("timestamp_ms", 0)
+        angles = frame.get("angles", {})
+        
+        # Simple heuristic: if Knee Valgus exceeds a threshold
+        valgus = angles.get("Knee Valgus", 0)
+        if abs(valgus) > 15.0:
+            anomalies.append({
+                "timestamp_ms": ms,
+                "type": "knee_valgus",
+                "description": f"Excessive knee valgus detected ({round(valgus, 1)}°)"
+            })
+            
+        # Add more heuristics as needed
+        hip_drop = angles.get("Hip Drop", 0)
+        if abs(hip_drop) > 10.0:
+            anomalies.append({
+                "timestamp_ms": ms,
+                "type": "hip_drop",
+                "description": f"Excessive hip drop detected ({round(hip_drop, 1)}°)"
+            })
+            
+    # filter out closely packed anomalies (debounce)
+    filtered = []
+    last_ms = {}
+    for a in anomalies:
+        t = a["type"]
+        if t not in last_ms or (a["timestamp_ms"] - last_ms[t]) > 1000: # 1 second debounce
+            filtered.append(a)
+            last_ms[t] = a["timestamp_ms"]
+            
+    return filtered
+
 # Mock capability scoring algorithm
 def compute_capability_profile(user_id: str, db: Session):
     sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.VisionSession.timestamp.asc()).all()

@@ -46,6 +46,7 @@ function MicronutrientBar({ name, pct }: { name: string, pct: number }) {
 export function NutritionRecovery() {
   const { user } = useAuth();
   const [data, setData] = useState<any[]>([]);
+  const [manualLogs, setManualLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
@@ -53,9 +54,13 @@ export function NutritionRecovery() {
     const fetchData = async () => {
       try {
         const uid = user?.uid || "demo_user";
-        const res = await api.getExternalApps(uid);
+        const [res, logs] = await Promise.all([
+          api.getExternalApps(uid),
+          api.getNutrition(uid, 7),
+        ]);
         const nutritionData = res.filter((r: any) => r.app_name === "HealthifyMe");
         setData(nutritionData);
+        setManualLogs(logs || []);
       } catch (err) {
         console.error(err);
       } finally {
@@ -68,6 +73,9 @@ export function NutritionRecovery() {
   const raw = (data.length > 0 && data[0]?.session_data) ? data[0].session_data : null;
   const nutritionHistory: any[] = raw?.nutrition || [];
   const weeklySummary = raw?.weekly_summary || null;
+
+  // Use manual logs as fallback when no HealthifyMe data
+  const hasRealData = nutritionHistory.length > 0 || manualLogs.length > 0;
   
   const dayIdx = selectedDay !== null ? selectedDay : nutritionHistory.length - 1;
   const latest = nutritionHistory.length > 0 ? nutritionHistory[dayIdx] : null;
@@ -99,6 +107,14 @@ export function NutritionRecovery() {
         {loading ? (
           <div className="flex justify-center p-12">
             <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+          </div>
+        ) : !hasRealData ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-4 glass-panel">
+            <Apple className="w-12 h-12 text-muted-foreground opacity-30" />
+            <div className="text-muted-foreground text-center">
+              <p className="font-semibold">No nutrition data yet.</p>
+              <p className="text-xs mt-1">Connect HealthifyMe or log meals manually.</p>
+            </div>
           </div>
         ) : (
           <div className="space-y-6">

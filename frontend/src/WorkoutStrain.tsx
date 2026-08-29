@@ -60,6 +60,7 @@ function MuscleGroupBar({ label, pct, color }: { label: string; pct: number; col
 export function WorkoutStrain() {
   const { user } = useAuth();
   const [data, setData] = useState<any[]>([]);
+  const [manualLogs, setManualLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedDay, setExpandedDay] = useState<string | null>("Mon");
 
@@ -67,9 +68,13 @@ export function WorkoutStrain() {
     const fetchData = async () => {
       try {
         const uid = user?.uid || "demo_user";
-        const res = await api.getExternalApps(uid);
+        const [res, logs] = await Promise.all([
+          api.getExternalApps(uid),
+          api.getWorkouts(uid),
+        ]);
         const workoutData = res.filter((r: any) => r.app_name === "Hevy");
         setData(workoutData);
+        setManualLogs(logs || []);
       } catch (err) {
         console.error(err);
       } finally {
@@ -94,6 +99,13 @@ export function WorkoutStrain() {
     });
   });
 
+  // Also aggregate zone counts from manual logs
+  manualLogs.forEach((l: any) => {
+    (l.affected_zones || []).forEach((z: string) => {
+      zoneCounts[z] = (zoneCounts[z] || 0) + 1;
+    });
+  });
+
   const loadMap = [
     { zone: "Lumbar", load: Math.min(100, (zoneCounts["lumbar"] || 0) * 25 + 10) },
     { zone: "Knees", load: Math.min(100, ((zoneCounts["left_knee"] || 0) + (zoneCounts["right_knee"] || 0)) * 18 + 5) },
@@ -109,20 +121,20 @@ export function WorkoutStrain() {
     load: w.load,
   }));
 
-  // ACWR chart data (synthetic 4-week trailing + current)
-  const acwrData = [
-    { week: "Wk-4", acute: 22, chronic: 24, ratio: 0.92 },
-    { week: "Wk-3", acute: 26, chronic: 25, ratio: 1.04 },
-    { week: "Wk-2", acute: 31, chronic: 26, ratio: 1.19 },
-    { week: "Wk-1", acute: 35, chronic: 28, ratio: 1.25 },
-    { week: "This Wk", acute: weeklyStats?.acute_load / 1000 || 38.5, chronic: weeklyStats?.chronic_load / 1000 || 28, ratio: weeklyStats?.acwr || 1.37 },
-  ];
+  // ACWR computed from real weekly stats if available, else no chart data
+  const acwrData: any[] = weeklyStats ? [
+    { week: "This Wk", acute: weeklyStats.acute_load / 1000 || 0, chronic: weeklyStats.chronic_load / 1000 || 0, ratio: weeklyStats.acwr || 0 },
+  ] : [];
 
-  const acwrZone = ACWR_ZONE(weeklyStats?.acwr || 1.37);
+  const acwrZone = ACWR_ZONE(weeklyStats?.acwr || 1.0);
 
-  // Muscle split for pie
-  const muscleGroups = weeklyStats?.muscle_groups || { Legs: 38, Back: 28, Chest: 18, Shoulders: 10, Arms: 6 };
-  const splitData = Object.entries(muscleGroups).map(([name, value]) => ({ name, value }));
+  // Muscle split — from real weekly stats or from manual log zones
+  const muscleGroups = weeklyStats?.muscle_groups || (
+    Object.keys(zoneCounts).length > 0
+      ? Object.fromEntries(Object.entries(zoneCounts).map(([k, v]) => [k, v * 10]))
+      : null
+  );
+  const splitData = muscleGroups ? Object.entries(muscleGroups).map(([name, value]) => ({ name, value })) : [];
   const splitColors = ["#a855f7", "#3b82f6", "#f97316", "#10b981", "#ec4899"];
 
   // PRs this week

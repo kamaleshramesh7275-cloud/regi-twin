@@ -49,6 +49,8 @@ class VisionSessionCreate(BaseModel):
     stability: float
     camera_quality: str
     annotated_image_url: Optional[str] = None
+    kinematics: Optional[List[dict]] = None
+    wearable_session_id: Optional[str] = None
 
 class AnalyticsDashboardResponse(BaseModel):
     mobility: float
@@ -270,8 +272,11 @@ def sync_external_apps(user_id: str, req: SyncExternalAppsRequest, db: Session =
 
 @app.post("/sessions/vision")
 def ingest_vision_session(session: VisionSessionCreate, db: Session = Depends(get_db)):
+    import json
+    from analytics import detect_anomalies
     new_session = models.VisionSession(
         user_id=session.user_id,
+        wearable_session_id=session.wearable_session_id,
         task_type=session.task_type,
         pose_landmarks_json=session.pose_landmarks_json,
         joint_angles_json=session.joint_angles_json,
@@ -284,11 +289,82 @@ def ingest_vision_session(session: VisionSessionCreate, db: Session = Depends(ge
     )
     db.add(new_session)
     db.commit()
+    db.refresh(new_session)
+    
+    if session.kinematics:
+        kin_entries = []
+        for frame in session.kinematics:
+            kin_entries.append(
+                models.KinematicsData(
+                    vision_session_id=new_session.session_id,
+                    timestamp_ms=frame.get("timestamp_ms", 0),
+                    joint_angles_json=json.dumps(frame.get("angles", {})),
+                    stress_levels_json=json.dumps(frame.get("stress", {}))
+                )
+            )
+        db.bulk_save_objects(kin_entries)
+        
+        anomalies = detect_anomalies(session.kinematics)
+        anom_entries = []
+        for a in anomalies:
+            anom_entries.append(
+                models.AnomalyEvent(
+                    vision_session_id=new_session.session_id,
+                    timestamp_ms=a["timestamp_ms"],
+                    type=a["type"],
+                    description=a["description"]
+                )
+            )
+        if anom_entries:
+            db.bulk_save_objects(anom_entries)
+            
+        db.commit()
     
     # Compute profile right after a session is added
     compute_capability_profile(session.user_id, db)
     
-    return {"message": "Vision session logged and profile updated"}
+    return {"message": "Vision session logged and profile updated", "session_id": new_session.session_id}
+
+@app.get("/captures/{session_id}/replay")
+def get_session_replay(session_id: str, db: Session = Depends(get_db)):
+    import json
+    v_session = db.query(models.VisionSession).filter(models.VisionSession.session_id == session_id).first()
+    if not v_session:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    kinematics = db.query(models.KinematicsData).filter(models.KinematicsData.vision_session_id == session_id).order_by(models.KinematicsData.timestamp_ms.asc()).all()
+    anomalies = db.query(models.AnomalyEvent).filter(models.AnomalyEvent.vision_session_id == session_id).order_by(models.AnomalyEvent.timestamp_ms.asc()).all()
+    
+    wearable = None
+    if v_session.wearable_session_id:
+        w_session = db.query(models.WearableSession).filter(models.WearableSession.session_id == v_session.wearable_session_id).first()
+        if w_session:
+            wearable = {
+                "heart_rate": w_session.heart_rate,
+                "hrv": w_session.hrv,
+                "readiness_score": w_session.readiness_score
+            }
+            
+    return {
+        "session_id": session_id,
+        "task_type": v_session.task_type,
+        "timestamp": v_session.timestamp.isoformat(),
+        "wearable": wearable,
+        "kinematics": [
+            {
+                "timestamp_ms": k.timestamp_ms,
+                "angles": json.loads(k.joint_angles_json) if k.joint_angles_json else {},
+                "stress": json.loads(k.stress_levels_json) if k.stress_levels_json else {}
+            } for k in kinematics
+        ],
+        "anomalies": [
+            {
+                "timestamp_ms": a.timestamp_ms,
+                "type": a.type,
+                "description": a.description
+            } for a in anomalies
+        ]
+    }
 
 @app.get("/sessions/history/{user_id}")
 def get_session_history(user_id: str, db: Session = Depends(get_db), min_hours_ago: Optional[int] = None, max_hours_ago: Optional[int] = None):
@@ -848,175 +924,10 @@ def get_external_apps(user_id: str, db: Session = Depends(get_db), min_hours_ago
     import json
     entries = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).order_by(models.ExternalAppSession.timestamp.desc()).all()
     if not entries:
-        # Seed realistic external app data to simulate the webhook
-        seed_data = [
-            models.ExternalAppSession(user_id=user_id, app_name="Hevy", session_data=json.dumps({
-                "workouts": [
-                  {"app": "Hevy", "name": "Leg Day (Heavy)", "load": "High", "day": "Mon",
-                   "volume_kg": 14200, "duration_min": 75, "sets": 22, "reps_total": 176,
-                   "affectedZones": ["left_knee", "right_knee", "lumbar", "left_thigh", "right_thigh", "glutes"],
-                   "exercises": [
-                     {"name": "Barbell Back Squat", "sets": 5, "reps": 5, "weight_kg": 120, "volume": 3000, "is_pr": True, "prev_1rm": 138},
-                     {"name": "Romanian Deadlift", "sets": 4, "reps": 10, "weight_kg": 90, "volume": 3600, "is_pr": False, "prev_1rm": 118},
-                     {"name": "Leg Press", "sets": 4, "reps": 12, "weight_kg": 160, "volume": 7680, "is_pr": False},
-                     {"name": "Leg Curl (Machine)", "sets": 3, "reps": 12, "weight_kg": 55, "volume": 1980, "is_pr": False},
-                     {"name": "Walking Lunges", "sets": 3, "reps": 20, "weight_kg": 20, "volume": 1200, "is_pr": False},
-                     {"name": "Calf Raises", "sets": 4, "reps": 15, "weight_kg": 80, "volume": 4800, "is_pr": False}
-                   ]},
-                  {"app": "Hevy", "name": "Rest Day", "load": "None", "day": "Tue",
-                   "volume_kg": 0, "duration_min": 0, "sets": 0, "reps_total": 0,
-                   "affectedZones": [], "exercises": []},
-                  {"app": "Hevy", "name": "Push Day (Hypertrophy)", "load": "Medium", "day": "Wed",
-                   "volume_kg": 9800, "duration_min": 65, "sets": 20, "reps_total": 200,
-                   "affectedZones": ["chest", "left_shoulder", "right_shoulder", "triceps"],
-                   "exercises": [
-                     {"name": "Incline Bench Press", "sets": 4, "reps": 10, "weight_kg": 85, "volume": 3400, "is_pr": False, "prev_1rm": 112},
-                     {"name": "Flat Dumbbell Press", "sets": 3, "reps": 12, "weight_kg": 36, "volume": 1296, "is_pr": False},
-                     {"name": "Cable Lateral Raise", "sets": 4, "reps": 15, "weight_kg": 12, "volume": 720, "is_pr": False},
-                     {"name": "Arnold Press", "sets": 3, "reps": 10, "weight_kg": 22, "volume": 660, "is_pr": True, "prev_1rm": 29},
-                     {"name": "Tricep Rope Pushdown", "sets": 3, "reps": 15, "weight_kg": 30, "volume": 1350, "is_pr": False},
-                     {"name": "Overhead Tricep Extension", "sets": 3, "reps": 12, "weight_kg": 25, "volume": 900, "is_pr": False}
-                   ]},
-                  {"app": "Hevy", "name": "Pull Day (Heavy)", "load": "High", "day": "Thu",
-                   "volume_kg": 12400, "duration_min": 70, "sets": 21, "reps_total": 182,
-                   "affectedZones": ["lumbar", "neck", "biceps", "left_shoulder", "right_shoulder", "traps"],
-                   "exercises": [
-                     {"name": "Conventional Deadlift", "sets": 4, "reps": 5, "weight_kg": 150, "volume": 3000, "is_pr": True, "prev_1rm": 168},
-                     {"name": "Barbell Row (Pendlay)", "sets": 4, "reps": 8, "weight_kg": 100, "volume": 3200, "is_pr": False, "prev_1rm": 120},
-                     {"name": "Weighted Pull-Ups", "sets": 4, "reps": 8, "weight_kg": 20, "volume": 2560, "is_pr": False},
-                     {"name": "Face Pulls", "sets": 3, "reps": 15, "weight_kg": 30, "volume": 1350, "is_pr": False},
-                     {"name": "Barbell Curl", "sets": 3, "reps": 10, "weight_kg": 40, "volume": 1200, "is_pr": False},
-                     {"name": "Hammer Curl", "sets": 3, "reps": 12, "weight_kg": 18, "volume": 648, "is_pr": False}
-                   ]},
-                  {"app": "Hevy", "name": "Rest Day", "load": "None", "day": "Fri",
-                   "volume_kg": 0, "duration_min": 0, "sets": 0, "reps_total": 0,
-                   "affectedZones": [], "exercises": []},
-                  {"app": "Hevy", "name": "Full Body Strength", "load": "Medium", "day": "Sat",
-                   "volume_kg": 10600, "duration_min": 80, "sets": 24, "reps_total": 220,
-                   "affectedZones": ["left_knee", "right_knee", "lumbar", "chest", "traps", "core"],
-                   "exercises": [
-                     {"name": "Front Squat", "sets": 4, "reps": 6, "weight_kg": 90, "volume": 2160, "is_pr": False},
-                     {"name": "Bench Press", "sets": 4, "reps": 8, "weight_kg": 95, "volume": 3040, "is_pr": False, "prev_1rm": 125},
-                     {"name": "T-Bar Row", "sets": 4, "reps": 10, "weight_kg": 70, "volume": 2800, "is_pr": False},
-                     {"name": "Dumbbell Shoulder Press", "sets": 3, "reps": 10, "weight_kg": 28, "volume": 840, "is_pr": False},
-                     {"name": "Cable Crunch", "sets": 3, "reps": 15, "weight_kg": 50, "volume": 2250, "is_pr": False},
-                     {"name": "Farmer's Walk", "sets": 3, "reps": 1, "weight_kg": 50, "volume": 150, "is_pr": False}
-                   ]},
-                  {"app": "Hevy", "name": "Active Recovery", "load": "Low", "day": "Sun",
-                   "volume_kg": 1800, "duration_min": 40, "sets": 8, "reps_total": 120,
-                   "affectedZones": ["core", "glutes"],
-                   "exercises": [
-                     {"name": "Yoga Flow", "sets": 1, "reps": 30, "weight_kg": 0, "volume": 0, "is_pr": False},
-                     {"name": "Band Pull-Aparts", "sets": 3, "reps": 20, "weight_kg": 5, "volume": 300, "is_pr": False},
-                     {"name": "Glute Bridges", "sets": 4, "reps": 20, "weight_kg": 30, "volume": 2400, "is_pr": False}
-                   ]}
-                ],
-                "weekly_stats": {
-                  "total_volume_kg": 48800,
-                  "total_sessions": 5,
-                  "total_sets": 95,
-                  "avg_session_duration": 66,
-                  "acute_load": 38500,
-                  "chronic_load": 28000,
-                  "acwr": 1.37,
-                  "readiness_score": 72,
-                  "hrv_avg": 58,
-                  "sleep_avg_h": 7.2,
-                  "prs_this_week": 4,
-                  "muscle_groups": {"Legs": 38, "Back": 28, "Chest": 18, "Shoulders": 10, "Arms": 6}
-                }
-            })),
-            models.ExternalAppSession(user_id=user_id, app_name="HealthifyMe", session_data=json.dumps({
-                "nutrition": [
-                  {"day": "Mon", "calories": 2180, "protein": 128, "carbs": 235, "fat": 62, "fiber": 24, "sugar": 45, "sodium": 1850, "water_ml": 2800, "hydration": "Optimal",
-                   "food_quality_score": 82, "recovery_note": "Solid protein intake, but consider bumping up hydration post-workout.",
-                   "micronutrients": {"iron_pct": 110, "calcium_pct": 95, "vit_d_pct": 80, "vit_b12_pct": 120, "magnesium_pct": 90, "potassium_pct": 85},
-                   "meals": [
-                     {"meal": "Breakfast", "items": "3 Egg Omelette with Spinach, 2 Multigrain Toast, Black Coffee", "kcal": 420, "protein": 32, "time": "07:30"},
-                     {"meal": "Lunch", "items": "Chicken Biryani (1 plate), Raita, Salad", "kcal": 680, "protein": 38, "time": "13:00"},
-                     {"meal": "Snack", "items": "Protein Shake (whey), 1 Banana", "kcal": 280, "protein": 30, "time": "16:30"},
-                     {"meal": "Dinner", "items": "Grilled Fish, Brown Rice, Stir-fried Veggies", "kcal": 520, "protein": 28, "time": "20:00"},
-                     {"meal": "Post-Dinner", "items": "Greek Yogurt with Almonds", "kcal": 280, "protein": 0, "time": "22:00"}
-                   ]},
-                  {"day": "Tue", "calories": 2350, "protein": 148, "carbs": 248, "fat": 68, "fiber": 28, "sugar": 38, "sodium": 1720, "water_ml": 3200, "hydration": "Optimal",
-                   "food_quality_score": 88, "recovery_note": "Great micronutrient diversity today. Iron levels are well-supported.",
-                   "micronutrients": {"iron_pct": 130, "calcium_pct": 105, "vit_d_pct": 85, "vit_b12_pct": 115, "magnesium_pct": 95, "potassium_pct": 90},
-                   "meals": [
-                     {"meal": "Breakfast", "items": "Overnight Oats with Protein Powder, Berries, Chia Seeds", "kcal": 450, "protein": 35, "time": "07:00"},
-                     {"meal": "Lunch", "items": "Dal Tadka, 3 Rotis, Paneer Bhurji, Buttermilk", "kcal": 720, "protein": 42, "time": "12:30"},
-                     {"meal": "Snack", "items": "Peanut Butter Toast, Green Tea", "kcal": 320, "protein": 14, "time": "16:00"},
-                     {"meal": "Dinner", "items": "Chicken Tikka (6 pcs), Mixed Salad, Quinoa", "kcal": 580, "protein": 45, "time": "19:30"},
-                     {"meal": "Post-Dinner", "items": "Casein Shake", "kcal": 280, "protein": 12, "time": "22:30"}
-                   ]},
-                  {"day": "Wed", "calories": 2520, "protein": 162, "carbs": 268, "fat": 74, "fiber": 32, "sugar": 42, "sodium": 1950, "water_ml": 3500, "hydration": "Optimal",
-                   "food_quality_score": 92, "recovery_note": "Your Wednesday protein intake of 162g combined with post-workout carb timing is well-positioned to support your Leg Day DOMS recovery.",
-                   "micronutrients": {"iron_pct": 140, "calcium_pct": 110, "vit_d_pct": 90, "vit_b12_pct": 130, "magnesium_pct": 105, "potassium_pct": 100},
-                   "meals": [
-                     {"meal": "Breakfast", "items": "4 Egg Whites Scramble, Avocado Toast, Orange Juice", "kcal": 480, "protein": 36, "time": "06:45"},
-                     {"meal": "Lunch", "items": "Rajma Chawal, Cucumber Raita, Papad", "kcal": 650, "protein": 28, "time": "13:00"},
-                     {"meal": "Pre-Workout", "items": "Banana, 10 Almonds, Black Coffee", "kcal": 220, "protein": 6, "time": "15:30"},
-                     {"meal": "Post-Workout", "items": "Whey Protein, Dextrose Shake", "kcal": 350, "protein": 42, "time": "17:30"},
-                     {"meal": "Dinner", "items": "Mutton Keema, 2 Rotis, Onion Salad", "kcal": 620, "protein": 40, "time": "20:30"},
-                     {"meal": "Post-Dinner", "items": "Warm Milk with Turmeric", "kcal": 200, "protein": 10, "time": "22:00"}
-                   ]},
-                  {"day": "Thu", "calories": 2050, "protein": 118, "carbs": 225, "fat": 58, "fiber": 20, "sugar": 52, "sodium": 2100, "water_ml": 2400, "hydration": "Suboptimal",
-                   "food_quality_score": 65, "recovery_note": "Low protein and hydration today. Your recovery readiness is suffering. Aim for lean proteins tomorrow.",
-                   "micronutrients": {"iron_pct": 80, "calcium_pct": 75, "vit_d_pct": 60, "vit_b12_pct": 90, "magnesium_pct": 70, "potassium_pct": 75},
-                   "meals": [
-                     {"meal": "Breakfast", "items": "Poha with Peanuts, Tea", "kcal": 320, "protein": 12, "time": "08:00"},
-                     {"meal": "Lunch", "items": "Chole Bhature (2 pcs), Lassi", "kcal": 780, "protein": 22, "time": "13:30"},
-                     {"meal": "Snack", "items": "Samosa (2), Chai", "kcal": 380, "protein": 8, "time": "17:00"},
-                     {"meal": "Dinner", "items": "Egg Fried Rice, Manchurian", "kcal": 570, "protein": 26, "time": "20:00"}
-                   ]},
-                  {"day": "Fri", "calories": 2480, "protein": 168, "carbs": 258, "fat": 72, "fiber": 30, "sugar": 35, "sodium": 1680, "water_ml": 3400, "hydration": "Optimal",
-                   "food_quality_score": 90, "recovery_note": "Excellent bounce back! Macros are perfectly aligned with your Pull Day demands.",
-                   "micronutrients": {"iron_pct": 120, "calcium_pct": 100, "vit_d_pct": 95, "vit_b12_pct": 140, "magnesium_pct": 100, "potassium_pct": 95},
-                   "meals": [
-                     {"meal": "Breakfast", "items": "Moong Dal Chilla (3), Mint Chutney, Boiled Eggs (2)", "kcal": 420, "protein": 34, "time": "07:15"},
-                     {"meal": "Lunch", "items": "Grilled Chicken Breast, Sweet Potato, Broccoli", "kcal": 620, "protein": 52, "time": "12:30"},
-                     {"meal": "Snack", "items": "Makhana (Fox Nuts), Protein Bar", "kcal": 310, "protein": 22, "time": "16:00"},
-                     {"meal": "Dinner", "items": "Palak Paneer, Jeera Rice, Salad", "kcal": 580, "protein": 32, "time": "19:45"},
-                     {"meal": "Post-Dinner", "items": "Cottage Cheese with Flaxseeds", "kcal": 250, "protein": 28, "time": "22:00"}
-                   ]},
-                  {"day": "Sat", "calories": 2850, "protein": 185, "carbs": 310, "fat": 88, "fiber": 26, "sugar": 58, "sodium": 2200, "water_ml": 3000, "hydration": "Optimal",
-                   "food_quality_score": 75, "recovery_note": "High calorie surplus. Useful for strength gains, but watch out for processed sugars.",
-                   "micronutrients": {"iron_pct": 115, "calcium_pct": 90, "vit_d_pct": 80, "vit_b12_pct": 150, "magnesium_pct": 85, "potassium_pct": 90},
-                   "meals": [
-                     {"meal": "Breakfast", "items": "Masala Dosa, Sambar, Coconut Chutney, Filter Coffee", "kcal": 520, "protein": 16, "time": "09:00"},
-                     {"meal": "Lunch", "items": "Butter Chicken, Garlic Naan (2), Dal Makhani", "kcal": 920, "protein": 48, "time": "13:30"},
-                     {"meal": "Snack", "items": "Fruit Bowl (Mango, Papaya, Pomegranate)", "kcal": 280, "protein": 4, "time": "16:30"},
-                     {"meal": "Dinner", "items": "Tandoori Prawns, Pulao, Mixed Veg Curry", "kcal": 680, "protein": 42, "time": "20:00"},
-                     {"meal": "Post-Dinner", "items": "Protein Ice Cream, Dark Chocolate (2 squares)", "kcal": 450, "protein": 25, "time": "22:30"}
-                   ]},
-                  {"day": "Sun", "calories": 2200, "protein": 135, "carbs": 232, "fat": 64, "fiber": 22, "sugar": 40, "sodium": 1550, "water_ml": 2600, "hydration": "Optimal",
-                   "food_quality_score": 85, "recovery_note": "Balanced day for active recovery. Magnesium levels could be slightly higher.",
-                   "micronutrients": {"iron_pct": 105, "calcium_pct": 95, "vit_d_pct": 85, "vit_b12_pct": 110, "magnesium_pct": 80, "potassium_pct": 85},
-                   "meals": [
-                     {"meal": "Breakfast", "items": "Idli (4) with Sambar, Coconut Chutney", "kcal": 380, "protein": 14, "time": "08:30"},
-                     {"meal": "Lunch", "items": "Fish Curry, Steamed Rice, Bhindi Fry", "kcal": 620, "protein": 38, "time": "13:00"},
-                     {"meal": "Snack", "items": "Roasted Chana, Green Tea", "kcal": 180, "protein": 12, "time": "16:00"},
-                     {"meal": "Dinner", "items": "Egg Bhurji, 2 Parathas, Curd", "kcal": 580, "protein": 32, "time": "19:30"},
-                     {"meal": "Post-Dinner", "items": "Warm Milk with Honey", "kcal": 180, "protein": 9, "time": "21:30"}
-                   ]}
-                ],
-                "weekly_summary": {
-                  "avg_calories": 2376,
-                  "avg_protein": 149,
-                  "avg_carbs": 254,
-                  "avg_fat": 69,
-                  "total_water_l": 20.9,
-                  "protein_target_hit_days": 5,
-                  "calorie_target": 2400,
-                  "protein_target": 150
-                }
-            }))
-        ]
-        db.bulk_save_objects(seed_data)
-        db.commit()
-        entries = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).order_by(models.ExternalAppSession.timestamp.desc()).all()
-        
+        # No real data yet - return empty list so the UI shows a zero-state
+        return []
     return [
-        {"app_name": e.app_name, "session_data": json.loads(e.session_data), "timestamp": e.timestamp.isoformat()} 
+        {"app_name": e.app_name, "session_data": json.loads(e.session_data), "timestamp": e.timestamp.isoformat()}
         for e in entries
     ]
 
@@ -1555,6 +1466,337 @@ def get_patient_summary(user_id: str, admin_key: str = "", db: Session = Depends
         ],
         "injury_risk": compute_injury_risk(user_id, db),
     }
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MEDICATIONS CRUD
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class MedicationCreate(BaseModel):
+    name: str
+    dosage: str
+    time_of_day: str
+    type: str  # 'medication' | 'supplement'
+
+@app.get("/medications/{user_id}")
+def get_medications(user_id: str, db: Session = Depends(get_db)):
+    meds = db.query(models.Medication).filter(models.Medication.user_id == user_id).order_by(models.Medication.created_at.asc()).all()
+    return [
+        {"id": m.id, "name": m.name, "dosage": m.dosage, "time_of_day": m.time_of_day,
+         "type": m.type, "taken": m.taken, "last_taken_at": m.last_taken_at.isoformat() if m.last_taken_at else None}
+        for m in meds
+    ]
+
+@app.post("/medications/{user_id}")
+def add_medication(user_id: str, payload: MedicationCreate, db: Session = Depends(get_db)):
+    med = models.Medication(
+        user_id=user_id, name=payload.name, dosage=payload.dosage,
+        time_of_day=payload.time_of_day, type=payload.type
+    )
+    db.add(med)
+    db.commit()
+    db.refresh(med)
+    return {"id": med.id, "name": med.name, "dosage": med.dosage,
+            "time_of_day": med.time_of_day, "type": med.type, "taken": med.taken}
+
+@app.patch("/medications/{med_id}/toggle")
+def toggle_medication(med_id: str, db: Session = Depends(get_db)):
+    med = db.query(models.Medication).filter(models.Medication.id == med_id).first()
+    if not med:
+        raise HTTPException(status_code=404, detail="Medication not found")
+    med.taken = not med.taken
+    med.last_taken_at = datetime.datetime.utcnow() if med.taken else None
+    db.commit()
+    return {"id": med.id, "taken": med.taken}
+
+@app.delete("/medications/{med_id}")
+def delete_medication(med_id: str, db: Session = Depends(get_db)):
+    med = db.query(models.Medication).filter(models.Medication.id == med_id).first()
+    if not med:
+        raise HTTPException(status_code=404, detail="Medication not found")
+    db.delete(med)
+    db.commit()
+    return {"status": "deleted"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# COMMUNITY POSTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CommunityPostCreate(BaseModel):
+    author_name: str
+    group_name: str
+    title: str
+    content: str
+
+@app.get("/community/posts")
+def get_community_posts(db: Session = Depends(get_db), limit: int = 20):
+    posts = db.query(models.CommunityPost).order_by(models.CommunityPost.created_at.desc()).limit(limit).all()
+    return [
+        {"id": p.id, "author_name": p.author_name, "group_name": p.group_name,
+         "title": p.title, "content": p.content, "likes": p.likes,
+         "created_at": p.created_at.isoformat()}
+        for p in posts
+    ]
+
+@app.post("/community/posts/{user_id}")
+def create_community_post(user_id: str, payload: CommunityPostCreate, db: Session = Depends(get_db)):
+    post = models.CommunityPost(
+        user_id=user_id, author_name=payload.author_name, group_name=payload.group_name,
+        title=payload.title, content=payload.content
+    )
+    db.add(post)
+    db.commit()
+    db.refresh(post)
+    return {"id": post.id, "title": post.title, "created_at": post.created_at.isoformat()}
+
+@app.post("/community/posts/{post_id}/like")
+def like_community_post(post_id: str, db: Session = Depends(get_db)):
+    post = db.query(models.CommunityPost).filter(models.CommunityPost.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    post.likes = (post.likes or 0) + 1
+    db.commit()
+    return {"id": post_id, "likes": post.likes}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MANUAL WORKOUT LOGGING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ExerciseEntry(BaseModel):
+    name: str
+    sets: int
+    reps: int
+    weight_kg: float = 0.0
+
+class WorkoutLogCreate(BaseModel):
+    name: str
+    duration_min: Optional[int] = None
+    notes: Optional[str] = None
+    exercises: Optional[List[ExerciseEntry]] = []
+    affected_zones: Optional[List[str]] = []
+    load_level: Optional[str] = "Medium"  # 'Low' | 'Medium' | 'High'
+
+@app.get("/workouts/{user_id}")
+def get_workouts(user_id: str, db: Session = Depends(get_db), limit: int = 50):
+    import json as _json
+    logs = db.query(models.WorkoutLog).filter(models.WorkoutLog.user_id == user_id)\
+        .order_by(models.WorkoutLog.timestamp.desc()).limit(limit).all()
+    return [
+        {"id": l.id, "name": l.name, "timestamp": l.timestamp.isoformat(),
+         "duration_min": l.duration_min, "notes": l.notes, "load_level": l.load_level,
+         "volume_kg": l.volume_kg,
+         "exercises": _json.loads(l.exercises_json) if l.exercises_json else [],
+         "affected_zones": _json.loads(l.affected_zones_json) if l.affected_zones_json else []}
+        for l in logs
+    ]
+
+@app.post("/workouts/log/{user_id}")
+def log_workout(user_id: str, payload: WorkoutLogCreate, db: Session = Depends(get_db)):
+    import json as _json
+    exercises_data = [e.dict() for e in (payload.exercises or [])]
+    total_volume = sum(e.sets * e.reps * e.weight_kg for e in (payload.exercises or []))
+    log = models.WorkoutLog(
+        user_id=user_id,
+        name=payload.name,
+        duration_min=payload.duration_min,
+        notes=payload.notes,
+        exercises_json=_json.dumps(exercises_data),
+        affected_zones_json=_json.dumps(payload.affected_zones or []),
+        volume_kg=round(total_volume, 2),
+        load_level=payload.load_level
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return {"id": log.id, "name": log.name, "volume_kg": log.volume_kg, "timestamp": log.timestamp.isoformat()}
+
+@app.delete("/workouts/{log_id}")
+def delete_workout(log_id: str, db: Session = Depends(get_db)):
+    log = db.query(models.WorkoutLog).filter(models.WorkoutLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    db.delete(log)
+    db.commit()
+    return {"status": "deleted"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MANUAL NUTRITION LOGGING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class NutritionLogCreate(BaseModel):
+    meal_name: Optional[str] = None
+    items: Optional[str] = None
+    calories: Optional[int] = None
+    protein_g: Optional[float] = None
+    carbs_g: Optional[float] = None
+    fat_g: Optional[float] = None
+
+@app.get("/nutrition/{user_id}")
+def get_nutrition(user_id: str, db: Session = Depends(get_db), days: int = 7):
+    since = datetime.datetime.utcnow() - datetime.timedelta(days=days)
+    logs = db.query(models.NutritionLog).filter(
+        models.NutritionLog.user_id == user_id,
+        models.NutritionLog.timestamp >= since
+    ).order_by(models.NutritionLog.timestamp.desc()).all()
+    return [
+        {"id": l.id, "meal_name": l.meal_name, "items": l.items, "timestamp": l.timestamp.isoformat(),
+         "calories": l.calories, "protein_g": l.protein_g, "carbs_g": l.carbs_g, "fat_g": l.fat_g}
+        for l in logs
+    ]
+
+@app.post("/nutrition/log/{user_id}")
+def log_nutrition(user_id: str, payload: NutritionLogCreate, db: Session = Depends(get_db)):
+    log = models.NutritionLog(
+        user_id=user_id, meal_name=payload.meal_name, items=payload.items,
+        calories=payload.calories, protein_g=payload.protein_g,
+        carbs_g=payload.carbs_g, fat_g=payload.fat_g
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return {"id": log.id, "meal_name": log.meal_name, "timestamp": log.timestamp.isoformat()}
+
+@app.delete("/nutrition/{log_id}")
+def delete_nutrition(log_id: str, db: Session = Depends(get_db)):
+    log = db.query(models.NutritionLog).filter(models.NutritionLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Nutrition log not found")
+    db.delete(log)
+    db.commit()
+    return {"status": "deleted"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DYNAMIC RISK PROJECTIONS (replacing DEMO_PROJECTION static data)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/analytics/projections/{user_id}")
+def get_dynamic_projections(user_id: str, db: Session = Depends(get_db)):
+    """
+    Compute 3, 6, and 12-month risk projections based on the user's
+    current zone risks, ACWR, recovery score, and rehab adherence.
+    Higher ACWR and lower recovery = faster risk escalation.
+    """
+    import json as _json
+
+    # Get latest capability profile for current zone risks + recovery
+    cp = db.query(models.CapabilityProfile)\
+        .filter(models.CapabilityProfile.user_id == user_id)\
+        .order_by(models.CapabilityProfile.timestamp.desc()).first()
+
+    if not cp:
+        # Return neutral projection if no data yet
+        neutral = {"left_knee": 20, "right_knee": 20, "lumbar": 20, "neck": 15,
+                   "left_shoulder": 15, "right_shoulder": 15, "left_ankle": 15,
+                   "right_ankle": 15, "left_hip": 15, "right_hip": 15, "head": 10,
+                   "chest": 15, "left_arm": 10, "right_arm": 10, "left_forearm": 10,
+                   "right_forearm": 10, "left_thigh": 15, "right_thigh": 15,
+                   "left_shin": 10, "right_shin": 10}
+        return [
+            {"horizon": "In 3 Months", "months": 3, "zones": neutral, "withTreatment": neutral},
+            {"horizon": "In 6 Months", "months": 6, "zones": neutral, "withTreatment": neutral},
+            {"horizon": "In 1 Year",   "months": 12, "zones": neutral, "withTreatment": neutral},
+        ]
+
+    base_zones = _json.loads(cp.zone_risks) if cp.zone_risks else {}
+    recovery = cp.recovery or 70.0
+
+    # ACWR from wearable sessions
+    now = datetime.datetime.utcnow()
+    recent_vs = db.query(models.VisionSession)\
+        .filter(models.VisionSession.user_id == user_id,
+                models.VisionSession.timestamp >= now - datetime.timedelta(days=7)).all()
+    chronic_vs = db.query(models.VisionSession)\
+        .filter(models.VisionSession.user_id == user_id,
+                models.VisionSession.timestamp >= now - datetime.timedelta(days=28)).all()
+    acute = sum(s.rom or 0 for s in recent_vs) / 7.0
+    chronic = sum(s.rom or 0 for s in chronic_vs) / 28.0
+    acwr = acute / chronic if chronic > 0 else 1.0
+
+    # Escalation multiplier: higher ACWR and lower recovery = faster deterioration
+    acwr_factor = max(0.5, min(2.0, acwr))
+    recovery_factor = max(0.5, min(1.5, (100 - recovery) / 50))
+    monthly_escalation = acwr_factor * recovery_factor  # ~1.0 at baseline
+
+    def project(months: int, treat: bool) -> dict:
+        factor = months * monthly_escalation * (0.3 if treat else 0.7)
+        result = {}
+        all_zone_ids = ["head", "neck", "chest", "lumbar", "left_shoulder", "right_shoulder",
+                        "left_arm", "right_arm", "left_forearm", "right_forearm",
+                        "left_hip", "right_hip", "left_thigh", "right_thigh",
+                        "left_knee", "right_knee", "left_shin", "right_shin",
+                        "left_ankle", "right_ankle"]
+        for z in all_zone_ids:
+            current = base_zones.get(z, 15)
+            if treat:
+                projected = max(5, current - factor * 2)
+            else:
+                projected = min(100, current + factor * 3)
+            result[z] = round(projected, 1)
+        return result
+
+    return [
+        {"horizon": "In 3 Months",  "months": 3,  "zones": project(3, False),  "withTreatment": project(3, True)},
+        {"horizon": "In 6 Months",  "months": 6,  "zones": project(6, False),  "withTreatment": project(6, True)},
+        {"horizon": "In 1 Year",    "months": 12, "zones": project(12, False), "withTreatment": project(12, True)},
+    ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ACHIEVEMENTS (computed from real user data)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/analytics/achievements/{user_id}")
+def get_achievements(user_id: str, db: Session = Depends(get_db)):
+    """Compute achievement badge unlock status from real database records."""
+    total_sessions = db.query(models.VisionSession)\
+        .filter(models.VisionSession.user_id == user_id).count()
+
+    max_symmetry_row = db.query(models.VisionSession.symmetry)\
+        .filter(models.VisionSession.user_id == user_id, models.VisionSession.symmetry.isnot(None))\
+        .order_by(models.VisionSession.symmetry.desc()).first()
+    max_symmetry = max_symmetry_row[0] if max_symmetry_row else 0.0
+
+    max_rom_row = db.query(models.VisionSession.rom)\
+        .filter(models.VisionSession.user_id == user_id, models.VisionSession.rom.isnot(None))\
+        .order_by(models.VisionSession.rom.desc()).first()
+    max_rom = max_rom_row[0] if max_rom_row else 0.0
+
+    # Consecutive days with pain logs
+    pain_logs = db.query(models.PainLog.timestamp)\
+        .filter(models.PainLog.user_id == user_id)\
+        .order_by(models.PainLog.timestamp.asc()).all()
+    unique_days = sorted(set(p[0].date() for p in pain_logs))
+    max_streak = 0
+    streak = 1
+    for i in range(1, len(unique_days)):
+        if (unique_days[i] - unique_days[i-1]).days == 1:
+            streak += 1
+            max_streak = max(max_streak, streak)
+        else:
+            streak = 1
+
+    # Cleared for sport: latest capability profile has all metrics >= 85
+    cp = db.query(models.CapabilityProfile)\
+        .filter(models.CapabilityProfile.user_id == user_id)\
+        .order_by(models.CapabilityProfile.timestamp.desc()).first()
+    cleared = cp and all([
+        (cp.mobility or 0) >= 85, (cp.stability or 0) >= 85,
+        (cp.recovery or 0) >= 85, (cp.movement_quality or 0) >= 85
+    ])
+
+    return [
+        {"id": "sessions_10",   "title": "First 10 Sessions",     "desc": "Completed 10 logged sessions.",                               "unlocked": total_sessions >= 10,   "progress": min(total_sessions, 10), "target": 10},
+        {"id": "sessions_100",  "title": "100 Rehab Sessions",   "desc": "Completed 100 logged sessions in the app.",                   "unlocked": total_sessions >= 100,  "progress": min(total_sessions, 100), "target": 100},
+        {"id": "symmetry",      "title": "Perfect Symmetry",     "desc": "Achieved >95% bilateral symmetry in a session.",              "unlocked": max_symmetry >= 0.95,   "progress": round(max_symmetry * 100, 1), "target": 95},
+        {"id": "consistency",   "title": "Iron Consistency",     "desc": "Logged pain data for 30 consecutive days.",                  "unlocked": max_streak >= 30,       "progress": min(max_streak, 30), "target": 30},
+        {"id": "rom_140",       "title": "Full Range of Motion", "desc": "Achieved 140° of Range of Motion in a session.",             "unlocked": max_rom >= 140,         "progress": round(min(max_rom, 140), 1), "target": 140},
+        {"id": "cleared",       "title": "Cleared for Sport",   "desc": "Passed all clinical return-to-sport metrics (all >= 85%).",  "unlocked": bool(cleared),         "progress": round(min((cp.mobility or 0) + (cp.stability or 0) + (cp.recovery or 0), 255) / 3, 1) if cp else 0, "target": 85},
+    ]
 
 
 # ── Serve Built Frontend SPA Static Files (Production Render Deployment) ─────

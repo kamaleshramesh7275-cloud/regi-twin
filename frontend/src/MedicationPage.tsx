@@ -1,22 +1,76 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
-import { Pill, CheckCircle2, Circle, AlertCircle, PlusCircle, Activity } from "lucide-react";
+import { Pill, CheckCircle2, Circle, AlertCircle, PlusCircle, Trash2, X, Activity } from "lucide-react";
+import { api } from "./api";
+import { auth } from "./firebase";
+
+interface Medication {
+  id: string;
+  name: string;
+  dosage: string;
+  time_of_day: string;
+  type: "medication" | "supplement";
+  taken: boolean;
+  last_taken_at: string | null;
+}
 
 export default function MedicationPage() {
-  const [meds, setMeds] = useState([
-    { id: 1, name: "Ibuprofen (NSAID)", dosage: "400mg", time: "Morning w/ food", type: "medication", taken: true },
-    { id: 2, name: "Collagen Peptides", dosage: "20g", time: "Morning", type: "supplement", taken: true },
-    { id: 3, name: "Vitamin D3", dosage: "5000 IU", time: "Morning", type: "supplement", taken: true },
-    { id: 4, name: "Ibuprofen (NSAID)", dosage: "400mg", time: "Evening w/ food", type: "medication", taken: false },
-    { id: 5, name: "Whey Protein", dosage: "30g", time: "Post-workout", type: "supplement", taken: false },
-  ]);
+  const [meds, setMeds] = useState<Medication[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ name: "", dosage: "", time_of_day: "", type: "supplement" });
+  const [saving, setSaving] = useState(false);
 
-  const toggleMed = (id: number) => {
-    setMeds(meds.map(m => m.id === id ? { ...m, taken: !m.taken } : m));
+  const uid = auth.currentUser?.uid || "test-user";
+
+  useEffect(() => {
+    api.getMedications(uid)
+      .then(setMeds)
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [uid]);
+
+  const toggleMed = async (medId: string) => {
+    try {
+      const updated = await api.toggleMedication(medId);
+      setMeds(prev => prev.map(m => m.id === medId ? { ...m, taken: updated.taken } : m));
+    } catch (e) {
+      console.error("Failed to toggle medication", e);
+    }
+  };
+
+  const deleteMed = async (medId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await api.deleteMedication(medId);
+      setMeds(prev => prev.filter(m => m.id !== medId));
+    } catch (e) {
+      console.error("Failed to delete medication", e);
+    }
+  };
+
+  const addMed = async () => {
+    if (!form.name || !form.dosage || !form.time_of_day) return;
+    setSaving(true);
+    try {
+      const created = await api.addMedication(uid, {
+        name: form.name,
+        dosage: form.dosage,
+        time_of_day: form.time_of_day,
+        type: form.type,
+      });
+      setMeds(prev => [...prev, created]);
+      setForm({ name: "", dosage: "", time_of_day: "", type: "supplement" });
+      setShowAdd(false);
+    } catch (e) {
+      console.error("Failed to add medication", e);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const takenCount = meds.filter(m => m.taken).length;
-  const progress = Math.round((takenCount / meds.length) * 100);
+  const progress = meds.length > 0 ? Math.round((takenCount / meds.length) * 100) : 0;
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0 bg-background">
@@ -29,15 +83,64 @@ export default function MedicationPage() {
             </h1>
             <p className="text-muted-foreground text-sm mt-1">Track your daily adherence to support tissue recovery.</p>
           </div>
-          <button className="btn-primary flex items-center gap-2 px-4 py-2">
+          <button
+            onClick={() => setShowAdd(true)}
+            className="btn-primary flex items-center gap-2 px-4 py-2"
+          >
             <PlusCircle className="w-4 h-4" /> Add Protocol
           </button>
         </header>
 
+        {/* Add Modal */}
+        {showAdd && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setShowAdd(false)}>
+            <div className="card w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-lg">Add Medication / Supplement</h3>
+                <button onClick={() => setShowAdd(false)}><X className="w-5 h-5" /></button>
+              </div>
+              <div className="space-y-3">
+                <input
+                  placeholder="Name (e.g. Ibuprofen)"
+                  value={form.name}
+                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                />
+                <input
+                  placeholder="Dosage (e.g. 400mg)"
+                  value={form.dosage}
+                  onChange={e => setForm(f => ({ ...f, dosage: e.target.value }))}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                />
+                <input
+                  placeholder="Time (e.g. Morning w/ food)"
+                  value={form.time_of_day}
+                  onChange={e => setForm(f => ({ ...f, time_of_day: e.target.value }))}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                />
+                <select
+                  value={form.type}
+                  onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="supplement">Supplement</option>
+                  <option value="medication">Medication</option>
+                </select>
+              </div>
+              <button
+                onClick={addMed}
+                disabled={saving || !form.name}
+                className="btn-primary w-full"
+              >
+                {saving ? "Adding..." : "Add to Protocol"}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
           <div className="lg:col-span-2 space-y-4">
-            
+            {/* Progress */}
             <div className="card space-y-2">
               <div className="flex items-center justify-between">
                 <span className="font-bold">Today's Adherence</span>
@@ -46,12 +149,29 @@ export default function MedicationPage() {
               <div className="h-3 w-full bg-border rounded-full overflow-hidden">
                 <div className="h-full bg-primary transition-all duration-500" style={{ width: `${progress}%` }} />
               </div>
+              <p className="text-xs text-muted-foreground">{takenCount} of {meds.length} taken today</p>
             </div>
 
             <h3 className="font-bold text-lg pt-2">Today's Schedule</h3>
+
+            {loading && (
+              <div className="card text-center text-muted-foreground py-10">Loading medications...</div>
+            )}
+
+            {!loading && meds.length === 0 && (
+              <div className="card text-center py-12 space-y-3">
+                <Pill className="w-10 h-10 text-muted-foreground mx-auto" />
+                <p className="text-muted-foreground">No medications added yet.</p>
+                <button onClick={() => setShowAdd(true)} className="btn-primary mx-auto flex items-center gap-2 px-4 py-2">
+                  <PlusCircle className="w-4 h-4" /> Add Your First Protocol
+                </button>
+              </div>
+            )}
+
             <div className="space-y-3">
               {meds.map(med => (
-                <div key={med.id} 
+                <div
+                  key={med.id}
                   onClick={() => toggleMed(med.id)}
                   className={`card flex items-center p-4 transition-colors hover:border-primary/50 cursor-pointer ${med.taken ? 'opacity-70 bg-card/50' : 'border-border'}`}
                 >
@@ -68,81 +188,63 @@ export default function MedicationPage() {
                       </span>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {med.dosage} • {med.time}
+                      {med.dosage} • {med.time_of_day}
                     </div>
                   </div>
+                  <button
+                    onClick={(e) => deleteMed(med.id, e)}
+                    className="ml-3 p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               ))}
             </div>
           </div>
 
           <div className="space-y-6">
-            
-            <div className="card space-y-3">
-              <div className="flex items-center justify-between border-b border-border pb-2 mb-2">
-                <h3 className="font-bold flex items-center gap-2 text-emerald-400">
-                  <Activity className="w-4 h-4" /> HealthifyMe Nutrition
+            {meds.length > 0 && (
+              <div className="card bg-amber-500/10 border-amber-500/20">
+                <h3 className="font-bold text-amber-500 flex items-center gap-2 mb-2">
+                  <AlertCircle className="w-4 h-4" /> Pharmacological Reasoning
                 </h3>
-                <span className="text-[10px] text-muted-foreground uppercase tracking-widest">Live</span>
+                {meds.some(m => m.name.toLowerCase().includes("ibuprofen") || m.name.toLowerCase().includes("nsaid")) ? (
+                  <p className="text-sm text-amber-500/90 leading-relaxed">
+                    You are currently taking NSAIDs. Prolonged use post-surgery can inhibit macrophage activity and slow collagen synthesis. Consider transitioning to acetaminophen as acute inflammation subsides.
+                  </p>
+                ) : (
+                  <p className="text-sm text-amber-500/90 leading-relaxed">
+                    Always take medications as directed by your physiotherapist. Supplement timing relative to workouts can impact recovery efficiency.
+                  </p>
+                )}
               </div>
-              
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Protein (Tissue Repair)</span>
-                  <span className="font-bold font-mono-numbers">165g <span className="text-muted-foreground text-xs font-normal">/ 180g</span></span>
-                </div>
-                <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
-                  <div className="h-full bg-emerald-500" style={{ width: '91%' }} />
-                </div>
-              </div>
-              
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Carbs (Energy/Glycogen)</span>
-                  <span className="font-bold font-mono-numbers">210g <span className="text-muted-foreground text-xs font-normal">/ 250g</span></span>
-                </div>
-                <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-400" style={{ width: '84%' }} />
-                </div>
-              </div>
+            )}
 
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Fats (Hormone Health)</span>
-                  <span className="font-bold font-mono-numbers">65g <span className="text-muted-foreground text-xs font-normal">/ 70g</span></span>
-                </div>
-                <div className="h-1.5 w-full bg-border rounded-full overflow-hidden">
-                  <div className="h-full bg-orange-400" style={{ width: '92%' }} />
-                </div>
+            <div className="card space-y-3">
+              <div className="flex items-center gap-2 border-b border-border pb-2 mb-2">
+                <Activity className="w-4 h-4 text-primary" />
+                <h3 className="font-bold">Adherence Summary</h3>
               </div>
-            </div>
-
-            <div className="card bg-amber-500/10 border-amber-500/20">
-              <h3 className="font-bold text-amber-500 flex items-center gap-2 mb-2">
-                <AlertCircle className="w-4 h-4" /> Pharmacological Reasoning
-              </h3>
-              <p className="text-sm text-amber-500/90 leading-relaxed">
-                You are currently taking NSAIDs (Ibuprofen). Prolonged use of anti-inflammatories post-surgery can inhibit macrophage activity and slow down collagen synthesis. Consider transitioning to acetaminophen for pain management as acute inflammation subsides.
-              </p>
-            </div>
-
-            <div className="card space-y-4">
-              <h3 className="font-bold flex items-center gap-2">
-                <Activity className="w-4 h-4 text-primary" /> Weekly Adherence
-              </h3>
-              <div className="flex justify-between items-end h-24 pt-4 border-b border-border pb-2">
-                {[100, 80, 100, 60, 100, 100, progress].map((val, i) => (
-                  <div key={i} className="w-6 bg-primary/20 rounded-t-sm relative group flex flex-col justify-end h-full">
-                    <div className="bg-primary rounded-t-sm w-full transition-all" style={{ height: `${val}%` }} />
-                  </div>
-                ))}
-              </div>
-              <div className="flex justify-between text-[10px] text-muted-foreground font-semibold">
-                <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+              <div className="text-sm text-muted-foreground space-y-2">
+                <div className="flex justify-between">
+                  <span>Total protocols</span>
+                  <span className="font-bold text-foreground">{meds.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Medications</span>
+                  <span className="font-bold text-foreground">{meds.filter(m => m.type === 'medication').length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Supplements</span>
+                  <span className="font-bold text-foreground">{meds.filter(m => m.type === 'supplement').length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Today's progress</span>
+                  <span className={`font-bold ${progress === 100 ? 'text-emerald-400' : progress >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>{progress}%</span>
+                </div>
               </div>
             </div>
           </div>
-
         </div>
       </main>
     </div>

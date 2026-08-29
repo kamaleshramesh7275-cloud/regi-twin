@@ -51,6 +51,7 @@ class VisionSession(Base):
 
     session_id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.user_id"))
+    wearable_session_id = Column(String, ForeignKey("wearable_sessions.session_id"), nullable=True)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     task_type = Column(String)
     pose_landmarks_json = Column(Text)
@@ -61,6 +62,24 @@ class VisionSession(Base):
     stability = Column(Float)
     camera_quality = Column(String)
     annotated_image_url = Column(Text, nullable=True)
+
+class KinematicsData(Base):
+    __tablename__ = "kinematics_data"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    vision_session_id = Column(String, ForeignKey("vision_sessions.session_id"))
+    timestamp_ms = Column(Integer) # offset from start of session
+    joint_angles_json = Column(Text) # JSON mapping of joint angles for this frame
+    stress_levels_json = Column(Text) # JSON mapping of simulated muscle stress
+
+class AnomalyEvent(Base):
+    __tablename__ = "anomaly_events"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    vision_session_id = Column(String, ForeignKey("vision_sessions.session_id"))
+    timestamp_ms = Column(Integer)
+    type = Column(String) # e.g. "knee_valgus", "asymmetry"
+    description = Column(String)
 
 class CapabilityProfile(Base):
 
@@ -151,3 +170,62 @@ class KinesiophobiaRecord(Base):
     score = Column(Integer)  # 11 to 44
     answers_json = Column(Text)  # Store JSON array of 11 questions
 
+
+class Medication(Base):
+    """User-managed medication and supplement adherence tracker."""
+    __tablename__ = "medications"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"))
+    name = Column(String)                   # e.g. "Ibuprofen (NSAID)"
+    dosage = Column(String)                 # e.g. "400mg"
+    time_of_day = Column(String)            # e.g. "Morning w/ food"
+    type = Column(String)                   # 'medication' | 'supplement'
+    taken = Column(Boolean, default=False)  # toggled each day
+    last_taken_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class CommunityPost(Base):
+    """User-generated post in the community recovery feed."""
+    __tablename__ = "community_posts"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"))
+    author_name = Column(String)            # Display name for the post
+    group_name = Column(String)             # e.g. "ACL Reconstruction Support"
+    title = Column(String)
+    content = Column(Text)
+    likes = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class WorkoutLog(Base):
+    """Manually logged workout session (used when no Hevy/wearable sync is available)."""
+    __tablename__ = "workout_logs"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"))
+    name = Column(String)                   # e.g. "Leg Day"
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    duration_min = Column(Integer, nullable=True)
+    notes = Column(Text, nullable=True)
+    exercises_json = Column(Text, nullable=True)  # JSON array of {name, sets, reps, weight_kg}
+    affected_zones_json = Column(Text, nullable=True)  # JSON array of zone IDs
+    volume_kg = Column(Float, nullable=True)
+    load_level = Column(String, nullable=True)  # 'Low' | 'Medium' | 'High'
+
+
+class NutritionLog(Base):
+    """Manually logged daily nutrition entry."""
+    __tablename__ = "nutrition_logs"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"))
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    meal_name = Column(String, nullable=True)   # e.g. "Breakfast"
+    items = Column(Text, nullable=True)          # Free text description
+    calories = Column(Integer, nullable=True)
+    protein_g = Column(Float, nullable=True)
+    carbs_g = Column(Float, nullable=True)
+    fat_g = Column(Float, nullable=True)

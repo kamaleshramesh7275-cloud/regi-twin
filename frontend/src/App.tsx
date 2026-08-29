@@ -11,6 +11,8 @@ import { WorkoutStrain } from "./WorkoutStrain";
 import { Camera, Brain, Target, Shield, ArrowRight } from "lucide-react";
 import { AvatarProvider } from "./AvatarContext";
 
+
+
 function LandingPage() {
   return (
     <div className="relative min-h-screen flex flex-col items-center overflow-hidden bg-slate-950 text-slate-100">
@@ -145,6 +147,7 @@ function LandingPage() {
   );
 }
 
+import CapturesPage from "./CapturesPage";
 import { HistoryPage, TimelinePage, InsightsPage } from "./DummyPages";
 import TwinPage from "./TwinPage";
 import LeaderboardPage from "./LeaderboardPage";
@@ -201,7 +204,7 @@ function AppContent() {
         
         {/* Protected Routes */}
         <Route path="/twin"><ProtectedRoute component={TwinPage} /></Route>
-        <Route path="/history"><ProtectedRoute component={HistoryPage} /></Route>
+        <Route path="/history"><ProtectedRoute component={CapturesPage} /></Route>
         <Route path="/projection"><ProtectedRoute component={TwinPage} /></Route>
         <Route path="/leaderboard"><ProtectedRoute component={LeaderboardPage} /></Route>
         <Route path="/nutrition-recovery"><ProtectedRoute component={NutritionRecovery} /></Route>
