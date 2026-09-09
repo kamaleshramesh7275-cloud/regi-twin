@@ -103,7 +103,7 @@ export default function TwinPage() {
   
   const [showCaptureToast, setShowCaptureToast] = useState(() => window.location.search.includes("captured=true"));
   const [selectedZone, setSelectedZone] = useState<ZoneId | null>(null);
-  const [viewMode, setViewMode] = useState<"scan" | "3d">("scan");
+  const [viewMode, setViewMode] = useState<"scan" | "3d">("3d");
   const [histCursor, setHistCursor]     = useState(0);
   const [showTreatment, setShowTreatment] = useState(false);
   const [syncedData, setSyncedData] = useState<any>(null);
