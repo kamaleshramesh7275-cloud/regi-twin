@@ -96,6 +96,7 @@ class CapabilityProfile(Base):
     capability_reserve = Column(Float)
     confidence = Column(String) # 'Low' | 'Medium' | 'High'
     zone_risks = Column(Text, nullable=True) # JSON string mapping zone_id to risk 0-100
+    zone_confidence_json = Column(Text, nullable=True) # JSON string mapping zone_id to 'high'|'medium'|'low'|'none'
     trend_data = Column(Text, nullable=True) # JSON string of historical trend data
 
 

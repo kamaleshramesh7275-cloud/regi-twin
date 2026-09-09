@@ -62,6 +62,7 @@ class AnalyticsDashboardResponse(BaseModel):
     confidence: str
     change_point_alert: Optional[str] = None
     zone_risks: Optional[Any] = None
+    zone_confidence: Optional[Any] = None
     trend_data: Optional[Any] = None
     capability_mark: Optional[int] = None
     acwr: Optional[float] = None
@@ -514,6 +515,7 @@ def get_dashboard(user_id: str, db: Session = Depends(get_db), min_hours_ago: Op
         return AnalyticsDashboardResponse(
             mobility=0.0, stability=0.0, quality=0.0, cardio=0.0, recovery=0.0, reserve=0.0, confidence="None",
             zone_risks=default_zone_risks,
+            zone_confidence={k: "none" for k in default_zone_risks.keys()},
             trend_data=default_trend_data,
             capability_mark=0,
             acwr=0.0,
@@ -631,6 +633,7 @@ def get_dashboard(user_id: str, db: Session = Depends(get_db), min_hours_ago: Op
         confidence=profile.confidence,
         change_point_alert=alert,
         zone_risks=json.loads(profile.zone_risks) if profile.zone_risks else default_zone_risks,
+        zone_confidence=json.loads(profile.zone_confidence_json) if hasattr(profile, 'zone_confidence_json') and profile.zone_confidence_json else {k: "none" for k in default_zone_risks.keys()},
         trend_data=json.loads(profile.trend_data) if profile.trend_data else default_trend_data,
         capability_mark=capability_mark,
         acwr=acwr,

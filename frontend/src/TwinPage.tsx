@@ -113,6 +113,7 @@ export default function TwinPage() {
   const [liveRisk, setLiveRisk] = useState<ZoneRisk>({
     left_knee: 0, right_knee: 0, lumbar: 0, neck: 0, left_shoulder: 0, right_shoulder: 0, left_ankle: 0, right_ankle: 0, left_hip: 0, right_hip: 0
   });
+  const [liveConfidence, setLiveConfidence] = useState<Record<string, string>>({});
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [projections, setProjections] = useState<ProjectionFrame[]>([]);
 
@@ -134,6 +135,9 @@ export default function TwinPage() {
           if (highest && highest[0]) {
             setSelectedZone(highest[0] as ZoneId);
           }
+        }
+        if (dash.zone_confidence) {
+          setLiveConfidence(dash.zone_confidence);
         }
         if (hist && hist.length > 0) {
           setHistoryData(hist.reverse()); // Chronological
@@ -203,11 +207,33 @@ export default function TwinPage() {
       {/* ── 3D / Holographic Twin Model ── */}
       <HoloModel3D 
         riskData={displayRisk}
+        confidenceData={liveConfidence}
         selectedZone={selectedZone}
         onZoneClick={(id) => setSelectedZone(prev => prev === id ? null : id)}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
       />
+      
+      {/* Legend */}
+      <div className="absolute bottom-4 right-4 pointer-events-none z-10 bg-black/40 backdrop-blur-md border border-white/10 p-3 rounded-xl flex flex-col gap-2 shadow-2xl">
+        <div className="text-[10px] text-white/70 uppercase tracking-widest font-bold mb-1">Strain Level</div>
+        <div className="flex items-center gap-2 text-[11px] text-gray-300">
+          <span className="w-3 h-3 rounded-full bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+          <span>Low (0-30)</span>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-gray-300">
+          <span className="w-3 h-3 rounded-full bg-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
+          <span>Moderate (31-60)</span>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-gray-300">
+          <span className="w-3 h-3 rounded-full bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.6)] animate-pulse" />
+          <span>High (61-100)</span>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-gray-400 mt-1 pt-2 border-t border-white/10">
+          <span className="w-3 h-3 rounded-full bg-gray-500/40 border border-gray-400/50" />
+          <span>No Data</span>
+        </div>
+      </div>
 
       <Sidebar />
 

@@ -62,13 +62,47 @@ def compute_capability_profile(user_id: str, db: Session):
     reserve = 0.0
     
     zone_risks = {
-        "head": 0, "neck": 0, "chest": 0, "lumbar": 0,
-        "left_shoulder": 0, "right_shoulder": 0, "left_arm": 0, "right_arm": 0,
-        "left_forearm": 0, "right_forearm": 0, "left_hip": 0, "right_hip": 0,
-        "left_thigh": 0, "right_thigh": 0, "left_knee": 0, "right_knee": 0,
-        "left_shin": 0, "right_shin": 0, "left_ankle": 0, "right_ankle": 0
+        "head": None, "neck": None, "chest": None, "lumbar": None,
+        "left_shoulder": None, "right_shoulder": None, "left_arm": None, "right_arm": None,
+        "left_forearm": None, "right_forearm": None, "left_hip": None, "right_hip": None,
+        "left_thigh": None, "right_thigh": None, "left_knee": None, "right_knee": None,
+        "left_shin": None, "right_shin": None, "left_ankle": None, "right_ankle": None
     }
+    zone_confidence = {k: "none" for k in zone_risks.keys()}
     trend_data = []
+
+    # Calculate pain logs influence
+    recent_pain = db.query(models.PainLog).filter(models.PainLog.user_id == user_id).order_by(models.PainLog.timestamp.desc()).limit(20).all()
+    pain_map = {}
+    for p in recent_pain:
+        if p.zone not in pain_map:
+            pain_map[p.zone] = []
+        pain_map[p.zone].append(p.score)
+        
+    for zone, scores in pain_map.items():
+        if zone in zone_risks:
+            avg_pain = sum(scores) / len(scores)
+            # Pain score 1-10 mapped to 10-100
+            zone_risks[zone] = int(avg_pain * 10)
+            zone_confidence[zone] = "high" if len(scores) >= 3 else ("medium" if len(scores) > 0 else "low")
+            
+    # Calculate anomaly events influence
+    recent_anomalies = db.query(models.AnomalyEvent).join(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.AnomalyEvent.timestamp_ms.desc()).limit(50).all()
+    for a in recent_anomalies:
+        target_zones = []
+        if "valgus" in a.type.lower():
+            target_zones.extend(["left_knee", "right_knee"])
+        elif "hip" in a.type.lower() or "asymmetry" in a.type.lower():
+            target_zones.extend(["left_hip", "right_hip", "lumbar"])
+        
+        for tz in target_zones:
+            if tz in zone_risks:
+                current = zone_risks[tz] or 0
+                zone_risks[tz] = min(100, current + 15)
+                if zone_confidence[tz] == "none":
+                    zone_confidence[tz] = "low"
+                elif zone_confidence[tz] == "low":
+                    zone_confidence[tz] = "medium"
 
     if session_count > 0:
         # Calculate core metrics dynamically from the latest 5 sessions
@@ -101,60 +135,62 @@ def compute_capability_profile(user_id: str, db: Session):
                 hip_tilt = abs(float(angles.get("Hip Tilt") or angles.get("hipTilt") or 0))
                 head_fwd = abs(float(angles.get("Head Forward") or angles.get("headForward") or 0))
                 knee_valgus = abs(float(angles.get("Knee Valgus") or angles.get("kneeValgus") or 0))
+                trunk_lean = abs(float(angles.get("Trunk Lean") or angles.get("trunkLean") or 0))
                 raw_symmetry = float(latest_session.symmetry or 0.95)
                 asym = max(0.0, (1.0 - raw_symmetry) * 100)
                 
-                # Base calculated risks based on biomechanical tolerances
-                # Neck/Cervical: Head forward translation > 5 deg begins loading cervical spine
-                neck_risk = min(100, int(head_fwd * 5.5 + shoulder_tilt * 1.5))
+                def apply_risk(z, calculated_risk):
+                    current = zone_risks[z] or 0
+                    zone_risks[z] = min(100, max(current, int(calculated_risk)))
+                    zone_confidence[z] = "high" if session_count >= 3 else ("medium" if session_count > 0 else "low")
                 
-                # Lumbar: Combined pelvic tilt and shoulder tilt create torque on L4/L5
-                lumbar_risk = min(100, int(25 + (shoulder_tilt * 3.5) + (hip_tilt * 4.0) + asym * 1.2))
+                if head_fwd > 0 or shoulder_tilt > 0:
+                    neck_risk = min(100, int(head_fwd * 5.5 + shoulder_tilt * 1.5))
+                    apply_risk("neck", neck_risk)
+                    apply_risk("head", neck_risk * 0.6)
+                    apply_risk("chest", min(100, int(15 + head_fwd * 2.0 + shoulder_tilt * 2.0)))
                 
-                # Shoulders: Asymmetrical loading and tilt
-                l_shoulder_risk = min(100, int(20 + shoulder_tilt * 5.0 + asym * 0.8))
-                r_shoulder_risk = min(100, int(20 + shoulder_tilt * 4.0 + asym * 0.5))
+                if shoulder_tilt > 0 or asym > 0:
+                    l_shoulder_risk = min(100, int(20 + shoulder_tilt * 5.0 + asym * 0.8))
+                    r_shoulder_risk = min(100, int(20 + shoulder_tilt * 4.0 + asym * 0.5))
+                    apply_risk("left_shoulder", l_shoulder_risk)
+                    apply_risk("right_shoulder", r_shoulder_risk)
+                    apply_risk("left_arm", l_shoulder_risk * 0.6)
+                    apply_risk("right_arm", r_shoulder_risk * 0.6)
+                    apply_risk("left_forearm", l_shoulder_risk * 0.4)
+                    apply_risk("right_forearm", r_shoulder_risk * 0.4)
                 
-                # Knees: Knee valgus and pelvic obliquity (hip drop) directly strain patellofemoral joint
-                l_knee_risk = min(100, int(22 + (hip_tilt * 4.5) + (knee_valgus * 3.0) + asym * 1.5))
-                r_knee_risk = min(100, int(20 + (hip_tilt * 3.5) + (knee_valgus * 2.5) + asym * 1.0))
+                if hip_tilt > 0 or shoulder_tilt > 0 or trunk_lean > 0:
+                    lumbar_risk = min(100, int(25 + (shoulder_tilt * 3.5) + (hip_tilt * 4.0) + (trunk_lean * 3.0) + asym * 1.2))
+                    apply_risk("lumbar", lumbar_risk)
+                    
+                if hip_tilt > 0 or asym > 0:
+                    l_hip_risk = min(100, int(20 + hip_tilt * 5.0 + asym * 1.0))
+                    r_hip_risk = min(100, int(18 + hip_tilt * 4.0))
+                    apply_risk("left_hip", l_hip_risk)
+                    apply_risk("right_hip", r_hip_risk)
                 
-                # Hips: Hip drop and glute medius weakness
-                l_hip_risk = min(100, int(20 + hip_tilt * 5.0 + asym * 1.0))
-                r_hip_risk = min(100, int(18 + hip_tilt * 4.0))
+                if knee_valgus > 0 or hip_tilt > 0:
+                    l_knee_risk = min(100, int(22 + (hip_tilt * 4.5) + (knee_valgus * 3.0) + asym * 1.5))
+                    r_knee_risk = min(100, int(20 + (hip_tilt * 3.5) + (knee_valgus * 2.5) + asym * 1.0))
+                    apply_risk("left_knee", l_knee_risk)
+                    apply_risk("right_knee", r_knee_risk)
+                    
+                    thigh_risk = min(100, int(15 + knee_valgus * 2.5 + asym * 1.2))
+                    apply_risk("left_thigh", thigh_risk)
+                    apply_risk("right_thigh", thigh_risk * 0.9)
+                    apply_risk("left_shin", l_knee_risk * 0.5)
+                    apply_risk("right_shin", r_knee_risk * 0.5)
                 
-                # Thighs & Ankles
-                thigh_risk = min(100, int(15 + knee_valgus * 2.5 + asym * 1.2))
-                ankle_risk = min(100, int(15 + hip_tilt * 2.0 + asym * 1.0))
-                chest_risk = min(100, int(15 + head_fwd * 2.0 + shoulder_tilt * 2.0))
-                
-                zone_risks = {
-                    "head": min(100, int(neck_risk * 0.6)),
-                    "neck": neck_risk,
-                    "cervical": neck_risk,
-                    "chest": chest_risk,
-                    "lumbar": lumbar_risk,
-                    "left_shoulder": l_shoulder_risk,
-                    "right_shoulder": r_shoulder_risk,
-                    "left_arm": min(100, int(l_shoulder_risk * 0.6)),
-                    "right_arm": min(100, int(r_shoulder_risk * 0.6)),
-                    "left_forearm": min(100, int(l_shoulder_risk * 0.4)),
-                    "right_forearm": min(100, int(r_shoulder_risk * 0.4)),
-                    "left_hip": l_hip_risk,
-                    "right_hip": r_hip_risk,
-                    "left_thigh": thigh_risk,
-                    "right_thigh": min(100, int(thigh_risk * 0.9)),
-                    "left_knee": l_knee_risk,
-                    "right_knee": r_knee_risk,
-                    "left_shin": min(100, int(l_knee_risk * 0.5)),
-                    "right_shin": min(100, int(r_knee_risk * 0.5)),
-                    "left_ankle": ankle_risk,
-                    "right_ankle": min(100, int(ankle_risk * 0.9))
-                }
+                if hip_tilt > 0 or asym > 0:
+                    ankle_risk = min(100, int(15 + hip_tilt * 2.0 + asym * 1.0))
+                    apply_risk("left_ankle", ankle_risk)
+                    apply_risk("right_ankle", ankle_risk * 0.9)
+                    
             except Exception as e:
                 print(f"Error parsing joint angles for zone risks: {e}")
     else:
-        # No sessions = empty trend data and clean risks
+        # No sessions = empty trend data
         trend_data = []
 
     # Integrate External Apps (Hevy/HealthifyMe)
@@ -211,7 +247,8 @@ def compute_capability_profile(user_id: str, db: Session):
         capability_reserve=round(reserve, 1),
         confidence="High" if session_count >= 3 else ("Medium" if session_count > 0 else "Low"),
         trend_data=json.dumps(trend_data),
-        zone_risks=json.dumps(zone_risks) if zone_risks else None
+        zone_risks=json.dumps(zone_risks) if zone_risks else None,
+        zone_confidence_json=json.dumps(zone_confidence)
     )
     db.add(profile)
     
@@ -444,6 +481,8 @@ def chat_with_twin(user_id: str, messages_history: list[dict], db: Session):
     stats = "No data yet."
     if profile:
         stats = f"Mobility: {profile.mobility}, Stability: {profile.stability}, Quality: {profile.movement_quality}, Cardio: {profile.cardiovascular_efficiency}, Recovery: {profile.recovery}, Reserve: {profile.capability_reserve}"
+        if profile.zone_confidence_json:
+            stats += f"\n    Zone Confidence: {profile.zone_confidence_json}"
         
     # Feature 10: Prepend case notes to twin system prompt for context memory
     case_notes = db.query(models.TwinNote).filter(
