@@ -161,9 +161,8 @@ function JointBeacon({
 }
 
 // ── Realistic 3D Humanoid Model with Automatic Anatomical Bounding Alignment ──
-function RealHumanoid3D({ riskData, confidenceData, selectedZone, onZoneClick }: HoloModel3DProps) {
+function RealHumanoid3D({ riskData, confidenceData, selectedZone, onZoneClick, debugScale, debugY }: HoloModel3DProps & { debugScale: number, debugY: number }) {
   const { scene } = useGLTF("/model.glb");
-  const { userHeight } = useAvatar(); // e.g. height in cm
 
   const cloned = useMemo(() => {
     const c = scene.clone();
@@ -185,43 +184,11 @@ function RealHumanoid3D({ riskData, confidenceData, selectedZone, onZoneClick }:
       }
     });
 
-    // Base standard height on 175cm. If userHeight is available, scale proportionally.
-    const targetHeight = userHeight ? (2.4 * (userHeight / 175)) : 2.4;
-
-    // Compute bounding box strictly using visible meshes to ignore hidden armatures/bones.
-    c.updateMatrixWorld(true);
-    const box = new THREE.Box3();
-    c.traverse((node: any) => {
-      if (node.isMesh && node.geometry) {
-        node.geometry.computeBoundingBox();
-        const meshBox = new THREE.Box3().copy(node.geometry.boundingBox);
-        meshBox.applyMatrix4(node.matrixWorld);
-        box.union(meshBox);
-      }
-    });
-
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    
-    const scale = targetHeight / (size.y || 1);
-    c.scale.set(scale, scale, scale);
-    c.updateMatrixWorld(true);
-
-    const scaledBox = new THREE.Box3();
-    c.traverse((node: any) => {
-      if (node.isMesh && node.geometry) {
-        const meshBox = new THREE.Box3().copy(node.geometry.boundingBox);
-        meshBox.applyMatrix4(node.matrixWorld);
-        scaledBox.union(meshBox);
-      }
-    });
-
-    c.position.y = -scaledBox.min.y; // Aligns feet exactly to y=0
-    c.position.x = -(scaledBox.min.x + scaledBox.max.x) / 2; // Centers horizontally
-    c.position.z = -(scaledBox.min.z + scaledBox.max.z) / 2; // Centers depth
+    c.scale.set(debugScale, debugScale, debugScale);
+    c.position.set(0, debugY, 0);
 
     return c;
-  }, [scene, userHeight]);
+  }, [scene, debugScale, debugY]);
 
   const getConf = (zone: ZoneId) => (confidenceData && confidenceData[zone]) || "none";
 
@@ -263,8 +230,29 @@ export default function HoloModel3D(props: HoloModel3DProps) {
   const [internalMode, setInternalMode] = useState<"scan" | "3d">("scan");
   const activeMode = props.viewMode ?? internalMode;
 
+  const [debugScale, setDebugScale] = useState<number>(1.0);
+  const [debugY, setDebugY] = useState<number>(0);
+
   return (
     <div className="absolute inset-0 z-0 bg-[#020a14] overflow-hidden">
+      {/* Debug Controls */}
+      {activeMode === "3d" && (
+        <div className="absolute top-20 left-4 z-50 bg-black/80 border border-white/20 p-4 rounded-xl text-white text-xs w-64">
+          <div className="mb-2 font-bold text-cyan-400">Alignment Debugger</div>
+          <div className="mb-4">
+            <label className="block mb-1">Scale: {debugScale.toFixed(2)}</label>
+            <input type="range" min="0.1" max="4" step="0.01" value={debugScale} onChange={e => setDebugScale(parseFloat(e.target.value))} className="w-full" />
+          </div>
+          <div>
+            <label className="block mb-1">Y-Offset: {debugY.toFixed(2)}</label>
+            <input type="range" min="-3" max="3" step="0.01" value={debugY} onChange={e => setDebugY(parseFloat(e.target.value))} className="w-full" />
+          </div>
+          <div className="mt-3 text-[10px] text-gray-400">
+            Slide until the blue mesh fits the green spots, then tell me the numbers!
+          </div>
+        </div>
+      )}
+
       {activeMode === "scan" ? (
         /* Authentic High-Definition Human Skeletal Anatomy Hologram */
         <HoloOverlay {...props} />
@@ -281,7 +269,7 @@ export default function HoloModel3D(props: HoloModel3DProps) {
           <pointLight position={[0, -2, -2]} intensity={0.8} color="#8b5cf6" />
 
           <Suspense fallback={null}>
-            <RealHumanoid3D {...props} />
+            <RealHumanoid3D {...props} debugScale={debugScale} debugY={debugY} />
           </Suspense>
 
           <OrbitControls
