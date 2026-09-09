@@ -185,20 +185,16 @@ function RealHumanoid3D({ riskData, confidenceData, selectedZone, onZoneClick }:
       }
     });
 
-    // Compute bounding box to ground the model at y=0 and normalize height
     // Base standard height on 175cm. If userHeight is available, scale proportionally.
     const targetHeight = userHeight ? (2.4 * (userHeight / 175)) : 2.4;
 
-    const box = new THREE.Box3().setFromObject(c);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const scale = targetHeight / (size.y || 1);
-    c.scale.set(scale, scale, scale);
-
-    const scaledBox = new THREE.Box3().setFromObject(c);
-    c.position.y = -scaledBox.min.y; // Aligns feet exactly to y=0
-    c.position.x = -(scaledBox.min.x + scaledBox.max.x) / 2; // Centers horizontally
-    c.position.z = -(scaledBox.min.z + scaledBox.max.z) / 2; // Centers depth
+    // The dynamic Box3 calculation shrinks models if they have large hidden armatures.
+    // Use a fixed scale assuming standard ~1.75m model to fit 2.4m height space.
+    const scaleMultiplier = targetHeight / 1.75;
+    c.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
+    
+    // Reset position to center, assuming model origin is at feet.
+    c.position.set(0, 0, 0);
 
     return c;
   }, [scene, userHeight]);
