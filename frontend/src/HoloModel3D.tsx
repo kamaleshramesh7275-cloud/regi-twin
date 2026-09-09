@@ -188,13 +188,37 @@ function RealHumanoid3D({ riskData, confidenceData, selectedZone, onZoneClick }:
     // Base standard height on 175cm. If userHeight is available, scale proportionally.
     const targetHeight = userHeight ? (2.4 * (userHeight / 175)) : 2.4;
 
-    // The dynamic Box3 calculation shrinks models if they have large hidden armatures.
-    // Use a fixed scale assuming standard ~1.75m model to fit 2.4m height space.
-    const scaleMultiplier = targetHeight / 1.75;
-    c.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier);
+    // Compute bounding box strictly using visible meshes to ignore hidden armatures/bones.
+    c.updateMatrixWorld(true);
+    const box = new THREE.Box3();
+    c.traverse((node: any) => {
+      if (node.isMesh && node.geometry) {
+        node.geometry.computeBoundingBox();
+        const meshBox = new THREE.Box3().copy(node.geometry.boundingBox);
+        meshBox.applyMatrix4(node.matrixWorld);
+        box.union(meshBox);
+      }
+    });
+
+    const size = new THREE.Vector3();
+    box.getSize(size);
     
-    // Reset position to center, assuming model origin is at feet.
-    c.position.set(0, 0, 0);
+    const scale = targetHeight / (size.y || 1);
+    c.scale.set(scale, scale, scale);
+    c.updateMatrixWorld(true);
+
+    const scaledBox = new THREE.Box3();
+    c.traverse((node: any) => {
+      if (node.isMesh && node.geometry) {
+        const meshBox = new THREE.Box3().copy(node.geometry.boundingBox);
+        meshBox.applyMatrix4(node.matrixWorld);
+        scaledBox.union(meshBox);
+      }
+    });
+
+    c.position.y = -scaledBox.min.y; // Aligns feet exactly to y=0
+    c.position.x = -(scaledBox.min.x + scaledBox.max.x) / 2; // Centers horizontally
+    c.position.z = -(scaledBox.min.z + scaledBox.max.z) / 2; // Centers depth
 
     return c;
   }, [scene, userHeight]);
