@@ -3,13 +3,14 @@ import { Link, useLocation } from "wouter";
 import {
   Activity, Camera, History, Clock, Brain, Settings, User,
   AlertTriangle, TrendingUp, TrendingDown,
-  ChevronRight, ChevronLeft, BarChart2, Target, ShieldAlert
+  ChevronRight, ChevronLeft, BarChart2, Target, ShieldAlert, CheckCircle2,
+  Sparkles, Box
 } from "lucide-react";
 import HoloModel3D from "./HoloModel3D";
 import { Sidebar } from "./components/Sidebar";
 import type { ZoneId, ZoneRisk } from "./HoloModel3D";
 import { useAuth } from "./context/AuthContext";
-import { fetchGoogleFitData } from "./lib/googleFitApi";
+import { fetchGoogleHealthData } from "./lib/googleHealthApi";
 import { api } from "./api";
 
 // ── Zone risk colour helpers ───────────────────────────────
@@ -100,7 +101,9 @@ export default function TwinPage() {
 
   const { user, googleFitToken } = useAuth();
   
+  const [showCaptureToast, setShowCaptureToast] = useState(() => window.location.search.includes("captured=true"));
   const [selectedZone, setSelectedZone] = useState<ZoneId | null>(null);
+  const [viewMode, setViewMode] = useState<"scan" | "3d">("scan");
   const [histCursor, setHistCursor]     = useState(0);
   const [showTreatment, setShowTreatment] = useState(false);
   const [syncedData, setSyncedData] = useState<any>(null);
@@ -125,6 +128,12 @@ export default function TwinPage() {
         ]);
         if (dash.zone_risks) {
           setLiveRisk(dash.zone_risks);
+          const highest = Object.entries(dash.zone_risks)
+            .filter(([_, v]) => typeof v === "number" && (v as number) > 0)
+            .sort((a, b) => (b[1] as number) - (a[1] as number))[0];
+          if (highest && highest[0]) {
+            setSelectedZone(highest[0] as ZoneId);
+          }
         }
         if (hist && hist.length > 0) {
           setHistoryData(hist.reverse()); // Chronological
@@ -145,36 +154,15 @@ export default function TwinPage() {
   const handleSyncFit = async () => {
     setIsSyncing(true);
     try {
-      const data = await fetchGoogleFitData(googleFitToken || "dummy_simulation_token");
-      const updatedRisk = await api.calculateDynamicRisk(liveRisk, data);
-      
-      // Sync the parsed Hevy/HealthifyMe data to the backend for the Dashboard to use
       const uid = user?.uid || "demo_user";
-      await api.syncExternalApps(uid, data.workouts, data.nutrition);
-
-      // Fix 5: Persist wearable vitals to wearable_sessions so VitalsPage and
-      // the analytics engine can use real HR/HRV data instead of hardcoded values.
-      if (data.liveVitals) {
-        await api.syncWearableData(uid, {
-          source: data.source === "Google Fit API" ? "google_fit" : "mock",
-          heart_rate: data.liveVitals.heartRate ?? undefined,
-          steps: data.liveVitals.steps ?? undefined,
-          // hrv, spo2, sleep_hours are enriched from platform API when available
-          hrv: undefined,
-          spo2: undefined,
-          sleep_hours: undefined,
-          sleep_score: undefined,
-          readiness_score: undefined,
-          calories_burned: undefined,
-          active_minutes: undefined,
-        });
-      }
+      const data = await fetchGoogleHealthData(uid);
+      const updatedRisk = await api.calculateDynamicRisk(liveRisk, data);
       
       setDynamicRisk(updatedRisk);
       setSyncedData(data);
     } catch (e) {
       console.error(e);
-      alert("Failed to sync data.");
+      alert("Failed to sync Google Health data.");
     } finally {
       setIsSyncing(false);
     }
@@ -212,11 +200,13 @@ export default function TwinPage() {
   return (
     <div className="relative w-full h-screen text-foreground overflow-hidden bg-black font-sans">
       
-      {/* ── 3D GLB Model ── */}
+      {/* ── 3D / Holographic Twin Model ── */}
       <HoloModel3D 
         riskData={displayRisk}
         selectedZone={selectedZone}
         onZoneClick={(id) => setSelectedZone(prev => prev === id ? null : id)}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
       />
 
       <Sidebar />
@@ -227,14 +217,56 @@ export default function TwinPage() {
         {/* Main Center Area (Controls overlay) */}
         <div className="flex-1 flex flex-col relative pointer-events-none">
           
-          <div className="pointer-events-auto flex items-center justify-end p-6 shrink-0 mt-4 mx-4">
-            
-            <div className="flex items-center gap-4 bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl pr-2 pl-4 py-1.5 shadow-2xl">
-              <div className="text-right">
-                <div className="text-[11px] font-medium text-muted-foreground">{modeLabel}</div>
-                <div className="text-sm font-black">Twin Score</div>
+          <div className="pointer-events-auto flex items-center justify-between p-6 shrink-0 mt-2 mx-4 gap-3">
+            {/* View Mode Switcher */}
+            <div className="bg-black/60 backdrop-blur-xl border border-white/10 p-1.5 rounded-2xl flex items-center gap-1.5 shadow-2xl">
+              <button
+                onClick={() => setViewMode("scan")}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  viewMode === "scan"
+                    ? "bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-lg shadow-cyan-500/20"
+                    : "text-muted-foreground hover:text-white"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> Human Anatomy Scan
+              </button>
+              <button
+                onClick={() => setViewMode("3d")}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  viewMode === "3d"
+                    ? "bg-blue-600/30 text-blue-300 border border-blue-500/50 shadow-lg shadow-blue-500/20"
+                    : "text-muted-foreground hover:text-white"
+                }`}
+              >
+                <Box className="w-3.5 h-3.5 text-blue-400" /> 3D Humanoid Mesh
+              </button>
+            </div>
+
+            {/* Twin Score & Notification */}
+            <div className="flex items-center gap-3">
+              {showCaptureToast && (
+                <div className="p-3.5 rounded-2xl bg-emerald-500/20 backdrop-blur-xl border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-3 shadow-2xl animate-in fade-in slide-in-from-top-3 max-w-md">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <div className="leading-snug">
+                    <div>Kinematic Assessment Complete!</div>
+                    <div className="text-[11px] font-normal text-emerald-200/80">Digital Twin updated with your live joint angles.</div>
+                  </div>
+                  <button 
+                    onClick={() => setShowCaptureToast(false)} 
+                    className="ml-auto text-emerald-400/60 hover:text-white p-1 transition-colors cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              
+              <div className="flex items-center gap-4 bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl pr-2 pl-4 py-1.5 shadow-2xl">
+                <div className="text-right">
+                  <div className="text-[11px] font-medium text-muted-foreground">{modeLabel}</div>
+                  <div className="text-sm font-black">Twin Score</div>
+                </div>
+                <ScoreRing score={score} size={54} />
               </div>
-              <ScoreRing score={score} size={54} />
             </div>
           </div>
 

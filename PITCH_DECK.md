@@ -34,7 +34,7 @@
 
 ---
 
-### 🔹 Slide 2: The Problem (The Global Musculoskeletal Crisis)
+🔹 Slide 2: The Problem (The Global Musculoskeletal Crisis)
 * **Header:** **The Monopoly on Physical Healthcare**
 * **Core Problem Pillars:**
   1. **Prohibitive Costs & Inaccessibility:** Clinical gait analysis, post-op rehabilitation, and orthopedic assessments cost thousands of dollars and require specialized hospital infrastructure.

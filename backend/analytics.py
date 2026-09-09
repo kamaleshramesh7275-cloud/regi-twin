@@ -97,21 +97,59 @@ def compute_capability_profile(user_id: str, db: Session):
         if latest_session.joint_angles_json:
             try:
                 angles = json.loads(latest_session.joint_angles_json)
-                shoulder_tilt = abs(angles.get("Shoulder Tilt", 0))
-                hip_tilt = abs(angles.get("Hip Tilt", 0))
-                head_fwd = abs(angles.get("Head Forward", 0))
+                shoulder_tilt = abs(float(angles.get("Shoulder Tilt") or angles.get("shoulderTilt") or 0))
+                hip_tilt = abs(float(angles.get("Hip Tilt") or angles.get("hipTilt") or 0))
+                head_fwd = abs(float(angles.get("Head Forward") or angles.get("headForward") or 0))
+                knee_valgus = abs(float(angles.get("Knee Valgus") or angles.get("kneeValgus") or 0))
+                raw_symmetry = float(latest_session.symmetry or 0.95)
+                asym = max(0.0, (1.0 - raw_symmetry) * 100)
+                
+                # Base calculated risks based on biomechanical tolerances
+                # Neck/Cervical: Head forward translation > 5 deg begins loading cervical spine
+                neck_risk = min(100, int(head_fwd * 5.5 + shoulder_tilt * 1.5))
+                
+                # Lumbar: Combined pelvic tilt and shoulder tilt create torque on L4/L5
+                lumbar_risk = min(100, int(25 + (shoulder_tilt * 3.5) + (hip_tilt * 4.0) + asym * 1.2))
+                
+                # Shoulders: Asymmetrical loading and tilt
+                l_shoulder_risk = min(100, int(20 + shoulder_tilt * 5.0 + asym * 0.8))
+                r_shoulder_risk = min(100, int(20 + shoulder_tilt * 4.0 + asym * 0.5))
+                
+                # Knees: Knee valgus and pelvic obliquity (hip drop) directly strain patellofemoral joint
+                l_knee_risk = min(100, int(22 + (hip_tilt * 4.5) + (knee_valgus * 3.0) + asym * 1.5))
+                r_knee_risk = min(100, int(20 + (hip_tilt * 3.5) + (knee_valgus * 2.5) + asym * 1.0))
+                
+                # Hips: Hip drop and glute medius weakness
+                l_hip_risk = min(100, int(20 + hip_tilt * 5.0 + asym * 1.0))
+                r_hip_risk = min(100, int(18 + hip_tilt * 4.0))
+                
+                # Thighs & Ankles
+                thigh_risk = min(100, int(15 + knee_valgus * 2.5 + asym * 1.2))
+                ankle_risk = min(100, int(15 + hip_tilt * 2.0 + asym * 1.0))
+                chest_risk = min(100, int(15 + head_fwd * 2.0 + shoulder_tilt * 2.0))
                 
                 zone_risks = {
-                    "left_knee": min(100, 20 + hip_tilt * 5),
-                    "right_knee": min(100, 20 + hip_tilt * 5),
-                    "lumbar": min(100, 30 + (shoulder_tilt + hip_tilt) * 2),
-                    "cervical": min(100, 30 + head_fwd * 3),
-                    "left_shoulder": min(100, 20 + shoulder_tilt * 4),
-                    "right_shoulder": min(100, 20 + shoulder_tilt * 4),
-                    "left_ankle": 0,
-                    "right_ankle": 0,
-                    "left_hip": min(100, 20 + hip_tilt * 4),
-                    "right_hip": min(100, 20 + hip_tilt * 4)
+                    "head": min(100, int(neck_risk * 0.6)),
+                    "neck": neck_risk,
+                    "cervical": neck_risk,
+                    "chest": chest_risk,
+                    "lumbar": lumbar_risk,
+                    "left_shoulder": l_shoulder_risk,
+                    "right_shoulder": r_shoulder_risk,
+                    "left_arm": min(100, int(l_shoulder_risk * 0.6)),
+                    "right_arm": min(100, int(r_shoulder_risk * 0.6)),
+                    "left_forearm": min(100, int(l_shoulder_risk * 0.4)),
+                    "right_forearm": min(100, int(r_shoulder_risk * 0.4)),
+                    "left_hip": l_hip_risk,
+                    "right_hip": r_hip_risk,
+                    "left_thigh": thigh_risk,
+                    "right_thigh": min(100, int(thigh_risk * 0.9)),
+                    "left_knee": l_knee_risk,
+                    "right_knee": r_knee_risk,
+                    "left_shin": min(100, int(l_knee_risk * 0.5)),
+                    "right_shin": min(100, int(r_knee_risk * 0.5)),
+                    "left_ankle": ankle_risk,
+                    "right_ankle": min(100, int(ankle_risk * 0.9))
                 }
             except Exception as e:
                 print(f"Error parsing joint angles for zone risks: {e}")

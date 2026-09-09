@@ -19,3 +19,4 @@ googleProvider.addScope('https://www.googleapis.com/auth/fitness.activity.read')
 googleProvider.addScope('https://www.googleapis.com/auth/fitness.nutrition.read');
 googleProvider.addScope('https://www.googleapis.com/auth/fitness.body.read');
 googleProvider.addScope('https://www.googleapis.com/auth/fitness.sleep.read');
+googleProvider.setCustomParameters({ prompt: 'select_account' });

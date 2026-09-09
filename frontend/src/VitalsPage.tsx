@@ -10,6 +10,7 @@ import { Link } from "wouter";
 import WearableImportModal from "./WearableImportModal";
 
 const SOURCE_LABELS: Record<string, string> = {
+  google_health_connect: 'Google Health Connect',
   google_fit: 'Google Fit', garmin: 'Garmin Connect', fitbit: 'Fitbit',
   apple_health: 'Apple Health', samsung_health: 'Samsung Health', mock: 'Demo Data', not_synced: 'Not synced',
 };

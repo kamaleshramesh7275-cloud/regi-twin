@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { api } from "./api";
 import { auth } from "./firebase";
+import { useAuth } from "./context/AuthContext";
 import { Sidebar } from "./components/Sidebar";
 import * as ort from "onnxruntime-web";
 
@@ -104,6 +105,8 @@ function PostureBar({ label, value, good }: { label: string; value: number; good
 // ─── Main Component ──────────────────────────────────────────────────────────
 function CaptureEngineContent() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  const currentUserId = user?.uid || auth.currentUser?.uid || "demo_user";
 
   // Mode & stage
   const [mode, setMode] = useState<Mode>("sit-to-stand");
@@ -670,12 +673,44 @@ function CaptureEngineContent() {
     advance("capture", "running"); await delay(600); advance("capture", "done");
     advance("pose", "running"); await delay(900); advance("pose", "done");
     advance("biomech", "running");
+    
+    // Prepare biomechanical joint angles based on session data
+    let anglesToSubmit: Record<string, number> = {};
+    if (mode === "standing-posture") {
+      anglesToSubmit = {
+        "Shoulder Tilt": sessionResult.shoulderTilt || 0,
+        "Hip Tilt": sessionResult.hipTilt || 0,
+        "Head Forward": sessionResult.headForward || 0,
+        "Symmetry": sessionResult.symmetry || 0.95
+      };
+    } else if (mode === "sit-to-stand" || mode === "squat-analysis") {
+      const m = metricsRef.current;
+      const asym = Math.max(0, 1 - (sessionResult.symmetry || 0.95));
+      anglesToSubmit = {
+        "Left Knee Angle": m.minKneeAngle || 90,
+        "Right Knee Angle": m.maxKneeAngle || 170,
+        "Knee Valgus": asym * 18,
+        "Hip Tilt": asym * 12,
+        "Shoulder Tilt": asym * 8,
+        "ROM": sessionResult.rom || 95,
+        "Symmetry": sessionResult.symmetry || 0.95
+      };
+    } else if (mode === "gait-analysis") {
+      anglesToSubmit = {
+        "Hip Tilt": gaitRef.current.maxHipDrop || 5.2,
+        "Hip Drop": gaitRef.current.maxHipDrop || 5.2,
+        "Cadence": liveCadence || 84,
+        "Knee Valgus": (gaitRef.current.maxHipDrop || 5.2) * 0.9,
+        "Symmetry": sessionResult.symmetry || 0.96
+      };
+    }
+
     try {
       await api.submitVisionSession({
-        user_id: auth.currentUser?.uid || "test-user",
-        task_type: mode === "sit-to-stand" ? "Sit-to-Stand" : "Standing-Posture",
+        user_id: currentUserId,
+        task_type: mode === "sit-to-stand" ? "Sit-to-Stand" : mode === "squat-analysis" ? "Squat-Analysis" : mode === "gait-analysis" ? "Gait-Analysis" : "Standing-Posture",
         pose_landmarks_json: "{}",
-        joint_angles_json: "{}",
+        joint_angles_json: JSON.stringify(anglesToSubmit),
         rom: sessionResult.rom,
         movement_speed: sessionResult.movementSpeed,
         symmetry: sessionResult.symmetry,
@@ -689,15 +724,14 @@ function CaptureEngineContent() {
     advance("profile", "running"); await delay(800); advance("profile", "done");
     advance("insights", "running");
     try {
-      const uid = auth.currentUser?.uid || "test-user";
-      const res = await api.getDeepInsights(uid);
+      const res = await api.getDeepInsights(currentUserId);
       sessionStorage.setItem("lastInsights", res.insights || "");
       await delay(300); advance("insights", "done");
     } catch { advance("insights", "done"); }
 
     setStage("done");
     await delay(800);
-    setLocation("/insights");
+    setLocation("/twin?captured=true");
   };
 
   const formatTime = (s: number) =>
@@ -1099,10 +1133,18 @@ function CaptureEngineContent() {
       
       try {
         await api.submitVisionSession({
-          user_id: auth.currentUser?.uid || "test-user",
+          user_id: currentUserId,
           task_type: "Static-Image-Posture",
           pose_landmarks_json: JSON.stringify(results.landmarks || []),
-          joint_angles_json: JSON.stringify({ shoulderTilt: avgShoulderTilt, hipTilt: avgHipTilt, headForward: avgHeadForward }),
+          joint_angles_json: JSON.stringify({ 
+            "Shoulder Tilt": avgShoulderTilt, 
+            "Hip Tilt": avgHipTilt, 
+            "Head Forward": avgHeadForward,
+            shoulderTilt: avgShoulderTilt, 
+            hipTilt: avgHipTilt, 
+            headForward: avgHeadForward,
+            symmetry: sessionResult.symmetry 
+          }),
           rom: sessionResult.rom,
           movement_speed: sessionResult.movementSpeed,
           symmetry: sessionResult.symmetry,
@@ -1119,15 +1161,14 @@ function CaptureEngineContent() {
       // Step 6: Synthesize deep AI insights
       advance("insights", "running");
       try {
-        const uid = auth.currentUser?.uid || "test-user";
-        const res = await api.getDeepInsights(uid);
+        const res = await api.getDeepInsights(currentUserId);
         sessionStorage.setItem("lastInsights", res.insights || "");
         await delay(300); advance("insights", "done");
       } catch { advance("insights", "done"); }
 
       setStage("done");
       await delay(800);
-      setLocation("/insights");
+      setLocation("/twin?captured=true");
     };
 
     return (

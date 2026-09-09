@@ -141,6 +141,18 @@ export const api = {
     return res.json();
   },
 
+  async syncHealthConnect(userId: string, workouts: any[], nutrition: any) {
+    const res = await fetchWithTimeout(`${API_BASE}/health-connect/sync/${userId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ workouts, nutrition }),
+    });
+    if (!res.ok) throw new Error("Failed to sync Health Connect");
+    return res.json();
+  },
+
   /** Push a vitals snapshot synced from a consumer smartwatch/band platform API */
   async syncWearableData(userId: string, data: {
     source: string;          // 'google_fit' | 'garmin' | 'fitbit' | 'apple_health' | 'samsung_health'
@@ -376,6 +388,30 @@ export const api = {
   },
 
   // ── MANUAL NUTRITION LOGGING ─────────────────────────────────────────────────
+
+  async searchFoods(query: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/search?q=${encodeURIComponent(query)}`);
+    if (!res.ok) throw new Error("Failed to search foods");
+    return res.json();
+  },
+
+  async seedNutritionWeek(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/seed-week/${userId}`, { method: "POST" });
+    if (!res.ok) throw new Error("Failed to seed nutrition week");
+    return res.json();
+  },
+
+  async seedWorkoutWeek(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/seed-week/${userId}`, { method: "POST" });
+    if (!res.ok) throw new Error("Failed to seed workout week");
+    return res.json();
+  },
+
+  async syncStrava(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/strava/sync/${userId}`, { method: "POST" });
+    if (!res.ok) throw new Error("Failed to sync Strava");
+    return res.json();
+  },
 
   async getNutrition(userId: string, days = 7) {
     const res = await fetchWithTimeout(`${API_BASE}/nutrition/${userId}?days=${days}`);

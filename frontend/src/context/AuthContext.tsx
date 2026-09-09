@@ -9,6 +9,7 @@ interface AuthContextType {
   googleFitToken: string | null;
   loading: boolean;
   loginWithGoogle: () => Promise<void>;
+  connectGoogleFit: () => Promise<string | null>;
   loginWithEmail: (e: string, p: string) => Promise<void>;
   registerWithEmail: (e: string, p: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -31,14 +32,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
-  const loginWithGoogle = async () => {
+  const connectGoogleFit = async (): Promise<string | null> => {
     try {
       const result = await signInWithPopup(auth, googleProvider);
       const credential = GoogleAuthProvider.credentialFromResult(result);
       if (credential && credential.accessToken) {
         setGoogleFitToken(credential.accessToken);
         localStorage.setItem("googleFitToken", credential.accessToken);
+        return credential.accessToken;
       }
+      return null;
+    } catch (error) {
+      console.error("Google Fit authorization failed", error);
+      throw error;
+    }
+  };
+
+  const loginWithGoogle = async () => {
+    try {
+      await connectGoogleFit();
     } catch (error) {
       console.error("Login failed", error);
       throw error;
@@ -70,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, googleFitToken, loading, loginWithGoogle, loginWithEmail, registerWithEmail, logout }}>
+    <AuthContext.Provider value={{ user, googleFitToken, loading, loginWithGoogle, connectGoogleFit, loginWithEmail, registerWithEmail, logout }}>
       {children}
     </AuthContext.Provider>
   );
