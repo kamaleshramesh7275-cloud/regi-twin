@@ -162,6 +162,8 @@ import VitalsPage from "./VitalsPage";
 import MentalReadinessPage from "./MentalReadinessPage";
 import WikiPage from "./WikiPage";
 import AchievementsPage from "./AchievementsPage";
+import ExerciseLibrary from "./ExerciseLibrary";
+import WorkoutLogger from "./WorkoutLogger";
 import LoginPage from "./LoginPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 
@@ -209,6 +211,8 @@ function AppContent() {
         <Route path="/leaderboard"><ProtectedRoute component={LeaderboardPage} /></Route>
         <Route path="/nutrition-recovery"><ProtectedRoute component={NutritionRecovery} /></Route>
         <Route path="/muscular-strain"><ProtectedRoute component={WorkoutStrain} /></Route>
+        <Route path="/exercises"><ProtectedRoute component={ExerciseLibrary} /></Route>
+        <Route path="/workout-logger"><ProtectedRoute component={WorkoutLogger} /></Route>
         <Route path="/timeline"><ProtectedRoute component={TimelinePage} /></Route>
         <Route path="/insights"><ProtectedRoute component={InsightsPage} /></Route>
         <Route path="/settings"><ProtectedRoute component={SettingsPage} /></Route>

@@ -259,69 +259,43 @@ import { api } from "../api";
 
 export async function fetchGoogleHealthData(userId: string) {
   try {
-    const [res, weeklyNutrition, manualWorkouts] = await Promise.all([
-      api.getExternalApps(userId).catch(() => []),
+    const [weeklyNutrition, nativeWorkouts, stats] = await Promise.all([
       api.getWeeklyNutrition(userId).catch(() => null),
-      api.getWorkouts(userId, 20).catch(() => [])
+      api.getWorkouts(userId, 20).catch(() => []),
+      api.getWorkoutStats(userId).catch(() => null)
     ]);
 
     let workouts: any[] = [];
     let nutritionHistory: any[] = [];
     let weeklySummary: any = null;
 
-    // 1. Process Google Health / Hevy sessions
-    for (const session of res) {
-      const data = session.session_data;
-      if (data?.activities) {
-        workouts = workouts.concat(data.activities.map((act: any) => ({
-          name: act.name,
-          load: act.intensity_zone?.includes("High") || (act.load_score && act.load_score > 50) ? "High" : "Medium",
-          load_score: act.load_score,
-          duration_min: act.duration_minutes || act.duration_min || 30,
-          avg_heart_rate: act.avg_heart_rate,
-          muscle_target: act.muscle_target || []
-        })));
-      }
-      if (data?.workouts) {
-        workouts = workouts.concat(data.workouts);
-      }
-      if (data?.nutrition) {
-        nutritionHistory = nutritionHistory.concat(data.nutrition);
-      }
-      if (data?.weekly_summary) {
-        weeklySummary = data.weekly_summary;
-      }
+    // 1. Process Native Workouts
+    if (nativeWorkouts && nativeWorkouts.length > 0) {
+      workouts = nativeWorkouts.map((nw: any) => ({
+        name: nw.name,
+        load: (nw.total_volume_kg && nw.total_volume_kg > 4000) ? "High" : "Medium",
+        volume_kg: nw.total_volume_kg || 2500,
+        exercises: nw.exercises || [],
+        duration_min: Math.round((nw.duration_seconds || 2700) / 60)
+      }));
     }
 
-    // 2. Include manual workouts if present
-    if (manualWorkouts && manualWorkouts.length > 0) {
-      workouts = workouts.concat(manualWorkouts.map((mw: any) => ({
-        name: mw.name,
-        load: mw.load_level || "Medium",
-        volume_kg: mw.volume_kg || 3000,
-        exercises: mw.exercises || [],
-        duration_min: mw.duration_min || 45
-      })));
-    }
-
-    // 3. Include Nutritionix weekly rollup if available
+    // 2. Process Native Weekly Nutrition
     if (weeklyNutrition?.nutrition && weeklyNutrition.nutrition.length > 0) {
-      const activeDays = weeklyNutrition.nutrition.filter((d: any) => d.calories > 0 || d.protein > 0);
-      if (activeDays.length > 0) {
-        nutritionHistory = activeDays;
-        weeklySummary = weeklyNutrition.weekly_summary;
-      }
+      nutritionHistory = weeklyNutrition.nutrition;
+      weeklySummary = weeklyNutrition.weekly_summary;
     }
 
     return {
-      source: "Live Activity & Nutrition Engine (Google Health API + Nutritionix)",
+      source: "Native PhysioTwin Biomechanics & Recovery Engine",
       workouts,
       nutrition: nutritionHistory,
-      weeklySummary
+      weeklySummary,
+      stats
     };
 
   } catch (error) {
-    console.error("Failed to fetch fit/nutrition data for dynamic twin:", error);
+    console.error("Failed to fetch native fit/nutrition data for dynamic twin:", error);
     throw error;
   }
 }

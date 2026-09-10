@@ -356,7 +356,26 @@ export const api = {
     return res.json();
   },
 
-  // ── MANUAL WORKOUT LOGGING ───────────────────────────────────────────────────
+  // ── NATIVE EXERCISE CATALOG ──────────────────────────────────────────────────
+
+  async getExercises(params?: { category?: string; equipment?: string; search?: string }) {
+    const query = new URLSearchParams();
+    if (params?.category) query.append('category', params.category);
+    if (params?.equipment) query.append('equipment', params.equipment);
+    if (params?.search) query.append('search', params.search);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithTimeout(`${API_BASE}/exercises${qs}`);
+    if (!res.ok) throw new Error("Failed to fetch exercises");
+    return res.json();
+  },
+
+  async getExercise(exerciseId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/exercises/${exerciseId}`);
+    if (!res.ok) throw new Error("Failed to fetch exercise details");
+    return res.json();
+  },
+
+  // ── NATIVE WORKOUT LOGGER & STRAIN ──────────────────────────────────────────
 
   async getWorkouts(userId: string, limit = 50) {
     const res = await fetchWithTimeout(`${API_BASE}/workouts/${userId}?limit=${limit}`);
@@ -364,110 +383,92 @@ export const api = {
     return res.json();
   },
 
-  async logWorkout(userId: string, data: {
-    name: string;
-    duration_min?: number;
-    notes?: string;
-    exercises?: { name: string; sets: number; reps: number; weight_kg: number }[];
-    affected_zones?: string[];
-    load_level?: string;
-  }) {
-    const res = await fetchWithTimeout(`${API_BASE}/workouts/log/${userId}`, {
+  async createWorkout(userId: string, data: { name?: string; notes?: string; template_id?: string } = {}) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/${userId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to log workout");
+    if (!res.ok) throw new Error("Failed to create workout session");
     return res.json();
   },
 
-  async deleteWorkout(logId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/workouts/${logId}`, { method: "DELETE" });
+  async addWorkoutExercise(workoutId: string, data: { exercise_id: string; order_index?: number }) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/${workoutId}/exercises`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Failed to add exercise to workout");
+    return res.json();
+  },
+
+  async logSet(workoutId: string, workoutExerciseId: string, data: {
+    set_number: number;
+    set_type?: string;
+    weight_kg?: number;
+    reps?: number;
+    rpe?: number;
+    is_completed?: boolean;
+  }) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/${workoutId}/exercises/${workoutExerciseId}/sets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Failed to log set");
+    return res.json();
+  },
+
+  async finishWorkout(workoutId: string, data: { name?: string; notes?: string; duration_seconds?: number } = {}) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/${workoutId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error("Failed to complete workout");
+    return res.json();
+  },
+
+  async deleteWorkout(workoutId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/${workoutId}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Failed to delete workout");
     return res.json();
   },
 
-  // ── INTEGRATIONS (GOOGLE HEALTH, HEVY PRO & NUTRITIONIX) ────────────────────
-
-  async getIntegrationStatus(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/users/${userId}/integrations/status`);
-    if (!res.ok) throw new Error("Failed to fetch integration status");
-    return res.json() as Promise<{
-      google_health: boolean;
-      hevy: boolean;
-      nutritionix_enabled: boolean;
-    }>;
-  },
-
-  async getGoogleHealthAuthorizeUrl(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/users/${userId}/integrations/google-health/authorize`);
-    if (!res.ok) throw new Error("Failed to get Google Health authorize URL");
-    return res.json() as Promise<{ url: string; user_id: string }>;
-  },
-
-  async disconnectGoogleHealth(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/users/${userId}/integrations/google-health`, {
-      method: "DELETE",
-    });
-    if (!res.ok) throw new Error("Failed to disconnect Google Health");
-    return res.json();
-  },
-
-  async syncGoogleHealth(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/integrations/google-health/sync/${userId}`, {
+  async uploadWorkoutImage(workoutId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE}/workouts/${workoutId}/image`, {
       method: "POST",
+      body: formData,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to sync Google Health activities");
+      throw new Error(err.detail || "Failed to upload workout photo");
     }
     return res.json();
   },
 
-  async connectHevy(userId: string, apiKey: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/users/${userId}/integrations/hevy`, {
+  async getWorkoutTemplates(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/${userId}/templates`);
+    if (!res.ok) throw new Error("Failed to fetch workout templates");
+    return res.json();
+  },
+
+  async createWorkoutTemplate(userId: string, data: { name: string; description?: string; exercises_json?: string }) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/${userId}/templates`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: apiKey }),
+      body: JSON.stringify(data),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to connect Hevy API key");
-    }
+    if (!res.ok) throw new Error("Failed to save template");
     return res.json();
   },
 
-  async disconnectHevy(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/users/${userId}/integrations/hevy`, {
-      method: "DELETE",
-    });
-    if (!res.ok) throw new Error("Failed to disconnect Hevy");
-    return res.json();
-  },
-
-  async syncHevy(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/integrations/hevy/sync/${userId}`, {
-      method: "POST",
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to sync Hevy workouts");
-    }
-    return res.json();
-  },
-
-
-  // ── MANUAL & NUTRITIONIX LOGGING ──────────────────────────────────────────
-
-  async searchFoods(query: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/nutrition/search?q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new Error("Failed to search foods");
-    return res.json();
-  },
-
-  async seedNutritionWeek(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/nutrition/seed-week/${userId}`, { method: "POST" });
-    if (!res.ok) throw new Error("Failed to seed nutrition week");
+  async getWorkoutStats(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/workouts/${userId}/stats`);
+    if (!res.ok) throw new Error("Failed to fetch workout strain statistics");
     return res.json();
   },
 
@@ -477,15 +478,67 @@ export const api = {
     return res.json();
   },
 
-  async syncStrava(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/strava/sync/${userId}`, { method: "POST" });
-    if (!res.ok) throw new Error("Failed to sync Strava");
+  // ── NATIVE FOOD DATABASE & NUTRITION TRACKING ────────────────────────────────
+
+  async searchFoods(query: string, category?: string) {
+    const params = new URLSearchParams();
+    if (query) params.append('q', query);
+    if (category) params.append('category', category);
+    const res = await fetchWithTimeout(`${API_BASE}/foods/search?${params.toString()}`);
+    if (!res.ok) throw new Error("Failed to search foods");
     return res.json();
   },
 
-  async getNutrition(userId: string, days = 7) {
-    const res = await fetchWithTimeout(`${API_BASE}/nutrition/${userId}?days=${days}`);
-    if (!res.ok) throw new Error("Failed to fetch nutrition logs");
+  async getFood(foodId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/foods/${foodId}`);
+    if (!res.ok) throw new Error("Failed to fetch food details");
+    return res.json();
+  },
+
+  async logNutrition(userId: string, data: {
+    meal_type: string;
+    items: {
+      food_id?: string;
+      name: string;
+      portion_g: number;
+      calories: number;
+      protein_g: number;
+      carbs_g: number;
+      fat_g: number;
+      micros?: any;
+    }[];
+    notes?: string;
+    logged_at?: string;
+  }) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/log/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to log meal");
+    }
+    return res.json();
+  },
+
+  async uploadMealImage(logId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`${API_BASE}/nutrition/log/${logId}/image`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to upload meal photo");
+    }
+    return res.json();
+  },
+
+  async deleteNutritionLog(logId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/${logId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Failed to delete nutrition log");
     return res.json();
   },
 
@@ -502,31 +555,42 @@ export const api = {
     return res.json();
   },
 
-  async logNutrition(userId: string, data: {
-    text?: string;
-    meal_name?: string;
-    items?: string;
-    calories?: number;
-    protein_g?: number;
-    carbs_g?: number;
-    fat_g?: number;
-    micros?: any;
-  }) {
-    const res = await fetchWithTimeout(`${API_BASE}/nutrition/log/${userId}`, {
+  async logWater(userId: string, amount_ml: number, date?: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/water/${userId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ amount_ml, date }),
     });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || "Failed to log nutrition");
-    }
+    if (!res.ok) throw new Error("Failed to log water");
     return res.json();
   },
 
-  async deleteNutritionLog(logId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/nutrition/${logId}`, { method: "DELETE" });
-    if (!res.ok) throw new Error("Failed to delete nutrition log");
+  async getWater(userId: string, date?: string) {
+    const url = date ? `${API_BASE}/nutrition/water/${userId}?date=${date}` : `${API_BASE}/nutrition/water/${userId}`;
+    const res = await fetchWithTimeout(url);
+    if (!res.ok) throw new Error("Failed to fetch water log");
+    return res.json();
+  },
+
+  async logWeight(userId: string, weight_kg: number, date?: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/weight/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ weight_kg, date }),
+    });
+    if (!res.ok) throw new Error("Failed to log weight");
+    return res.json();
+  },
+
+  async getWeightHistory(userId: string, limit = 30) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/weight/${userId}?limit=${limit}`);
+    if (!res.ok) throw new Error("Failed to fetch weight history");
+    return res.json();
+  },
+
+  async seedNutritionWeek(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/seed-week/${userId}`, { method: "POST" });
+    if (!res.ok) throw new Error("Failed to seed nutrition week");
     return res.json();
   },
 
@@ -576,4 +640,5 @@ export const api = {
     return res.json();
   },
 };
+
 

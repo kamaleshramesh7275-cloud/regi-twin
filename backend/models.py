@@ -21,11 +21,6 @@ class User(Base):
     goals = Column(String, nullable=True) # Stored as comma separated string or JSON array string
     consent = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-    
-    # Integrations
-    hevy_api_key_encrypted = Column(String, nullable=True)
-    google_health_refresh_token_encrypted = Column(String, nullable=True)
-
 
 class WearableSession(Base):
     """Vitals synced from consumer smartwatches/fitness bands via software APIs
@@ -86,7 +81,6 @@ class AnomalyEvent(Base):
     description = Column(String)
 
 class CapabilityProfile(Base):
-
     __tablename__ = "capability_profiles"
 
     id = Column(String, primary_key=True, default=generate_uuid)
@@ -102,7 +96,6 @@ class CapabilityProfile(Base):
     zone_risks = Column(Text, nullable=True) # JSON string mapping zone_id to risk 0-100
     zone_confidence_json = Column(Text, nullable=True) # JSON string mapping zone_id to 'high'|'medium'|'low'|'none'
     trend_data = Column(Text, nullable=True) # JSON string of historical trend data
-
 
 class BaselineHistory(Base):
     __tablename__ = "baseline_history"
@@ -142,7 +135,7 @@ class ExternalAppSession(Base):
     
     id = Column(String, primary_key=True, default=generate_uuid)
     user_id = Column(String, ForeignKey("users.user_id"))
-    app_name = Column(String) # 'Hevy', 'HealthifyMe'
+    app_name = Column(String) # 'Native Workout', 'Native Nutrition'
     session_data = Column(Text) # JSON string with the workout/nutrition details
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
@@ -175,7 +168,6 @@ class KinesiophobiaRecord(Base):
     score = Column(Integer)  # 11 to 44
     answers_json = Column(Text)  # Store JSON array of 11 questions
 
-
 class Medication(Base):
     """User-managed medication and supplement adherence tracker."""
     __tablename__ = "medications"
@@ -190,7 +182,6 @@ class Medication(Base):
     last_taken_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-
 class CommunityPost(Base):
     """User-generated post in the community recovery feed."""
     __tablename__ = "community_posts"
@@ -204,39 +195,196 @@ class CommunityPost(Base):
     likes = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+# ==============================================================================
+# PHASE 1 & 2: NATIVE EXERCISE & WORKOUT TRACKING MODELS
+# ==============================================================================
 
-class WorkoutLog(Base):
-    """Manually logged workout session (used when no Hevy/wearable sync is available)."""
-    __tablename__ = "workout_logs"
+class Exercise(Base):
+    """In-app exercise reference database."""
+    __tablename__ = "exercises"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.user_id"))
-    name = Column(String)                   # e.g. "Leg Day"
-    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    duration_min = Column(Integer, nullable=True)
-    notes = Column(Text, nullable=True)
-    exercises_json = Column(Text, nullable=True)  # JSON array of {name, sets, reps, weight_kg}
-    affected_zones_json = Column(Text, nullable=True)  # JSON array of zone IDs
-    volume_kg = Column(Float, nullable=True)
-    load_level = Column(String, nullable=True)  # 'Low' | 'Medium' | 'High'
+    name = Column(String, index=True)
+    category = Column(String, default="General", index=True)
+    primary_muscle = Column(String, default="General", index=True)
+    secondary_muscles = Column(String, nullable=True)
+    muscle_group = Column(String, index=True, default="full_body")
+    equipment = Column(String, index=True, default="bodyweight")
+    difficulty = Column(String, default="Intermediate")
+    instructions = Column(Text, nullable=True)
+    tips = Column(Text, nullable=True)
+    icon_svg = Column(String, nullable=True)
+    image_path = Column(String, nullable=True)
+    gif_url = Column(String, nullable=True)
+    gifUrl = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+class Workout(Base):
+    """Native logged workout session with optional cover image."""
+    __tablename__ = "workouts"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    name = Column(String, default="Workout Session")
+    date = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    duration_seconds = Column(Integer, default=0)
+    notes = Column(Text, nullable=True)
+    template_id = Column(String, nullable=True)
+    is_completed = Column(Integer, default=1)
+    cover_image_path = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
+    total_volume_kg = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    exercises = relationship("WorkoutExercise", back_populates="workout", cascade="all, delete-orphan")
+
+class WorkoutExercise(Base):
+    """An exercise performed within a workout session."""
+    __tablename__ = "workout_exercises"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    workout_id = Column(String, ForeignKey("workouts.id"), index=True)
+    exercise_id = Column(String, ForeignKey("exercises.id"), nullable=True)
+    exercise_name = Column(String, nullable=True)
+    muscle_group = Column(String, default="full_body")
+    order = Column(Integer, default=0)
+    order_index = Column(Integer, default=0)
+
+    workout = relationship("Workout", back_populates="exercises")
+    sets = relationship("SetLog", back_populates="workout_exercise", cascade="all, delete-orphan")
+
+class SetLog(Base):
+    """Individual set logged with reps, weight, RPE and PR tracking."""
+    __tablename__ = "set_logs"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    workout_exercise_id = Column(String, ForeignKey("workout_exercises.id"), index=True)
+    set_number = Column(Integer, default=1)
+    set_type = Column(String, default="normal")
+    reps = Column(Integer, default=10)
+    weight = Column(Float, default=0.0)
+    weight_kg = Column(Float, default=0.0)
+    rpe = Column(Float, nullable=True)
+    completed = Column(Integer, default=1)
+    is_pr = Column(Integer, default=0)
+    estimated_1rm = Column(Float, nullable=True)
+
+    workout_exercise = relationship("WorkoutExercise", back_populates="sets")
+
+class WorkoutTemplate(Base):
+    """Saved workout routine / template for quick reuse."""
+    __tablename__ = "workout_templates"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    name = Column(String)
+    description = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    exercises_json = Column(Text, default="[]")
+    is_public = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class PersonalRecord(Base):
+    """Tracked personal bests per user per exercise."""
+    __tablename__ = "personal_records"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    exercise_id = Column(String, index=True)
+    exercise_name = Column(String, nullable=True)
+    max_weight = Column(Float, default=0.0)
+    max_reps_at_weight = Column(Integer, default=0)
+    max_estimated_1rm = Column(Float, default=0.0)
+    estimated_1rm_kg = Column(Float, default=0.0)
+    achieved_weight_kg = Column(Float, default=0.0)
+    achieved_reps = Column(Integer, default=0)
+    achieved_date = Column(DateTime, default=datetime.datetime.utcnow)
+    achieved_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+# ==============================================================================
+# PHASE 4: NATIVE FOOD DATABASE & NUTRITION TRACKING MODELS
+# ==============================================================================
+
+class Food(Base):
+    """Local reference food database (macros & key micronutrients)."""
+    __tablename__ = "foods"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    name = Column(String, index=True)
+    category = Column(String, default="General")
+    serving_unit = Column(String, default="100g")
+    serving_size_g = Column(Float, default=100.0)
+    calories = Column(Float, default=0.0)
+    calories_per_100g = Column(Float, default=0.0)
+    protein_g = Column(Float, default=0.0)
+    protein_g_100g = Column(Float, default=0.0)
+    carbs_g = Column(Float, default=0.0)
+    carbs_g_100g = Column(Float, default=0.0)
+    fat_g = Column(Float, default=0.0)
+    fat_g_100g = Column(Float, default=0.0)
+    fiber_g = Column(Float, default=0.0)
+    fiber_g_100g = Column(Float, default=0.0)
+    sodium_mg = Column(Float, default=0.0)
+    
+    # Key Micronutrients
+    iron_mg = Column(Float, default=0.0)
+    calcium_mg = Column(Float, default=0.0)
+    vitamin_d_iu = Column(Float, default=0.0)
+    b12_mcg = Column(Float, default=0.0)
+    magnesium_mg = Column(Float, default=0.0)
+    potassium_mg = Column(Float, default=0.0)
+    zinc_mg = Column(Float, default=0.0)
+    micros_json = Column(Text, nullable=True)
 
 class NutritionLog(Base):
-    """Manually or API-logged daily nutrition entry."""
+    """Logged meal entry with attached meal photo and micronutrient breakdown."""
     __tablename__ = "nutrition_logs"
 
     id = Column(String, primary_key=True, default=generate_uuid)
-    user_id = Column(String, ForeignKey("users.user_id"))
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    food_id = Column(String, nullable=True)
+    meal_name = Column(String, default="Meal")
+    meal_type = Column(String, default="Lunch")
+    food_name = Column(String, nullable=True)
+    items_json = Column(Text, nullable=True)
+    quantity = Column(Float, default=1.0)
+    serving_unit = Column(String, default="serving")
+    calories = Column(Float, default=0.0)
+    protein_g = Column(Float, default=0.0)
+    carbs_g = Column(Float, default=0.0)
+    fat_g = Column(Float, default=0.0)
+    fiber_g = Column(Float, default=0.0)
+    sodium_mg = Column(Float, default=0.0)
+    micros_json = Column(Text, nullable=True)
+    image_path = Column(String, nullable=True)
+    image_url = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    date = Column(String, index=True, nullable=True)
+    logged_at = Column(DateTime, default=datetime.datetime.utcnow)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
-    meal_name = Column(String, nullable=True)   # e.g. "Breakfast"
-    items = Column(Text, nullable=True)          # Free text description
-    calories = Column(Integer, nullable=True)
-    protein_g = Column(Float, nullable=True)
-    carbs_g = Column(Float, nullable=True)
-    fat_g = Column(Float, nullable=True)
-    micros_json = Column(Text, nullable=True)    # JSON string of micronutrient values (iron, calcium, etc.)
-    raw_data = Column(Text, nullable=True)       # Full JSON from nutrition API
 
+class WaterLog(Base):
+    """Hydration logging."""
+    __tablename__ = "water_logs"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    amount_ml = Column(Integer, default=250)
+    date = Column(String, index=True)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+
+class BodyWeightLog(Base):
+    """Body weight tracker."""
+    __tablename__ = "body_weight_logs"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    weight_kg = Column(Float)
+    notes = Column(Text, nullable=True)
+    date = Column(String, index=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
 
 class ReadinessSurvey(Base):

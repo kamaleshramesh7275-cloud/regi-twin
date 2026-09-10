@@ -40,10 +40,11 @@ export function Sidebar() {
         <NavItem icon={<User className="w-5 h-5 md:w-5 md:h-5" />} label="Twin" href="/twin" active={location === '/twin'} />
         <NavItem icon={<Camera className="w-5 h-5 md:w-5 md:h-5" />} label="Capture" href="/capture" active={location === '/capture'} />
         
-        <NavSection title="Health Metrics" />
+        <NavSection title="Health & Training" />
         <NavItem icon={<HeartPulse className="w-5 h-5 md:w-5 md:h-5" />} label="Vitals" href="/vitals" active={location === '/vitals'} />
         <NavItem icon={<Apple className="w-5 h-5 md:w-5 md:h-5" />} label="Nutrition" href="/nutrition-recovery" active={location === '/nutrition-recovery'} />
         <NavItem icon={<Dumbbell className="w-5 h-5 md:w-5 md:h-5" />} label="Strain" href="/muscular-strain" active={location === '/muscular-strain'} />
+        <NavItem icon={<Dumbbell className="w-5 h-5 md:w-5 md:h-5 text-emerald-400" />} label="Exercises" href="/exercises" active={location === '/exercises'} />
         <NavItem icon={<Pill className="w-5 h-5 md:w-5 md:h-5" />} label="Meds" href="/meds" active={location === '/meds'} />
         <NavItem icon={<BrainCircuit className="w-5 h-5 md:w-5 md:h-5" />} label="Readiness" href="/readiness" active={location === '/readiness'} />
         

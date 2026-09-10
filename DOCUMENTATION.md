@@ -633,6 +633,31 @@ Disconnects the Hevy integration and wipes the encrypted API key.
 
 ---
 
+#### `GET /users/{user_id}/integrations/strava/authorize`
+Generates the official Strava OAuth 2.0 authorization URL (`scope=read,activity:read_all`) for athlete activity, heart-rate, and suffer score data access.
+
+**Response:**
+```json
+{ "url": "https://www.strava.com/oauth/authorize?client_id=...&scope=read,activity:read_all&state=usr_123", "user_id": "usr_123" }
+```
+
+---
+
+#### `GET /oauth/strava/callback`
+OAuth 2.0 callback handler that exchanges the authorization code for an access token and refresh token, symmetrically encrypts the refresh token at rest using AES-128-CBC / Fernet (`STRAVA_TOKEN_ENCRYPTION_SECRET`), fetches the initial 28 days of activity sessions, and redirects the user back to `/settings?strava_connected=true`.
+
+---
+
+#### `DELETE /users/{user_id}/integrations/strava`
+Revokes and clears the stored Strava encrypted refresh token and cached sessions for the user.
+
+---
+
+#### `POST /integrations/strava/sync/{user_id}`
+Triggers an on-demand live sync of the user's running, cycling, swimming, and workout sessions from Strava API v3 (`https://www.strava.com/api/v3/athlete/activities`), computes Suffer Score and TRIMP-style training load scores ($(\text{duration} \times \text{intensity}) + \text{elevation bonus}$), calculates rolling ACWR, and caches the results.
+
+---
+
 #### `GET /users/{user_id}/integrations/google-health/authorize`
 Generates the Google OAuth 2.0 authorization URL for `health.googleapis.com` (Fitbit) activity and heart-rate data access.
 
@@ -664,6 +689,7 @@ Returns connection status of external integrations. **Never echoes raw API keys 
 **Response:**
 ```json
 {
+  "strava": true,
   "google_health": true,
   "hevy": true,
   "nutritionix_enabled": true
@@ -1220,6 +1246,19 @@ Displayed in `WorkoutStrain.tsx` — computed using sports-science training load
 - **API key:** Set via `GROQ_API_KEY` environment variable (hardcoded fallback in `analytics.py`)
 - **Used for:** Weekly letters (300 tokens), deep insight reports (900 tokens), and twin chat (300 tokens)
 - **Fallback:** Static deterministic reports are returned if the Groq API is unreachable
+
+### Strava (Activities & Suffer Score — Live Integration)
+
+- **API:** Official Strava API v3 (`https://www.strava.com/api/v3/athlete/activities`).
+- **Developer App:** Registered at `https://www.strava.com/settings/api` with **Authorization Callback Domain** set to `localhost`.
+- **Authentication:** OAuth 2.0 (`scope=read,activity:read_all`) with per-user encrypted refresh tokens stored in SQLite / PostgreSQL via Fernet (`STRAVA_TOKEN_ENCRYPTION_SECRET`). Short-lived access tokens refreshed on demand.
+- **Strain & TRIMP Model:**
+  - Computes intensity factor:
+    $$\text{Intensity Factor} = 1.0 + \min(1.5, \text{suffer\_score} / 45.0)$$
+    or heart rate fallback (Zone 1: 1.0, Zone 2: 1.3, Zone 3: 1.6, Zone 4: 2.0, Zone 5: 2.5).
+  - Session Load Score:
+    $$\text{Load Score} = (\text{Duration (mins)} \times \text{Intensity Factor}) + (\text{Elevation Gain (m)} / 100 \times 2.0)$$
+  - Acute:Chronic Workload Ratio (ACWR): Computes 7-day rolling acute load vs. 28-day chronic baseline with cold-start detection.
 
 ### Google Health API (Fitbit — Live Integration)
 

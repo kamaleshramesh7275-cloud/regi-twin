@@ -1,30 +1,26 @@
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 import os
+import shutil
+import uuid
 import asyncio
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from pydantic import BaseModel
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 import datetime
+import json
 
 from database import engine, get_db, Base
 import models
 from analytics import compute_capability_profile, generate_weekly_letter, generate_deep_insights, chat_with_twin, simulate_activity, compute_injury_risk
-from crypto_utils import encrypt_secret, decrypt_secret
-from integrations.hevy_client import HevyClient, parse_hevy_workouts
-from integrations.nutritionix_client import NutritionixClient, RDA_TARGETS
-from integrations.google_health import (
-    get_authorization_url, exchange_code_for_tokens, refresh_access_token,
-    fetch_google_health_activities, calculate_google_health_acwr
-)
-import json
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="PhysioTwin API")
+app = FastAPI(title="PhysioTwin API - Native Workout & Nutrition Engine")
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,9 +30,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Pydantic models for request/response
-class HevyConnectRequest(BaseModel):
-    api_key: str
+# Mount local uploads directory for workout photos and meal photos
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(os.path.join(UPLOAD_DIR, "workouts"), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_DIR, "meals"), exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+@app.on_event("startup")
+def startup_seed_catalog():
+    """Auto-seed native exercises and food database on startup if empty."""
+    try:
+        from seed_exercises import seed_exercises
+        from seed_foods import seed_foods
+        seed_exercises()
+        seed_foods()
+    except Exception as e:
+        print(f"Startup catalog seed notice: {e}")
+
+# ==============================================================================
+# PYDANTIC SCHEMAS FOR NATIVE TRACKING
+# ==============================================================================
 
 class UserCreate(BaseModel):
     user_id: str
@@ -48,20 +61,6 @@ class UserCreate(BaseModel):
     mode: str = "General Human"
     goals: Optional[str] = None
     consent: bool = False
-
-class VisionSessionCreate(BaseModel):
-    user_id: str
-    task_type: str
-    pose_landmarks_json: str
-    joint_angles_json: str
-    rom: float
-    movement_speed: float
-    symmetry: float
-    stability: float
-    camera_quality: str
-    annotated_image_url: Optional[str] = None
-    kinematics: Optional[List[dict]] = None
-    wearable_session_id: Optional[str] = None
 
 class AnalyticsDashboardResponse(BaseModel):
     mobility: float
@@ -79,6 +78,20 @@ class AnalyticsDashboardResponse(BaseModel):
     acwr: Optional[float] = None
     acwr_risk: Optional[str] = None
     recovery_score: Optional[int] = None
+
+class VisionSessionCreate(BaseModel):
+    user_id: str
+    wearable_session_id: Optional[str] = None
+    task_type: str = "Squat"
+    pose_landmarks_json: Optional[str] = None
+    joint_angles_json: Optional[str] = None
+    rom: Optional[float] = None
+    movement_speed: Optional[float] = None
+    symmetry: Optional[float] = None
+    stability: Optional[float] = None
+    camera_quality: Optional[str] = "Good"
+    annotated_image_url: Optional[str] = None
+    kinematics: Optional[List[Dict[str, Any]]] = None
 
 
 
@@ -324,249 +337,714 @@ def calculate_dynamic_risk(req: SyncFitRequest):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# GOOGLE HEALTH & HEVY INTEGRATIONS (OAuth & Secure Sync)
+# NATIVE EXTERNAL APPS COMPATIBILITY & SYNC
 # ═══════════════════════════════════════════════════════════════════════════════
-
-@app.get("/users/{user_id}/integrations/google-health/authorize")
-def google_health_authorize(user_id: str, redirect_uri: Optional[str] = None):
-    """
-    Returns the Google OAuth 2.0 consent URL for Google Health API.
-    """
-    auth_url = get_authorization_url(user_id, redirect_uri)
-    return {"url": auth_url, "user_id": user_id}
-
-
-@app.get("/oauth/google-health/callback")
-def google_health_oauth_callback(
-    code: Optional[str] = None,
-    state: Optional[str] = None,
-    error: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    """
-    Handles Google OAuth 2.0 callback, exchanges code for tokens,
-    encrypts the refresh token at rest, and caches initial activities.
-    """
-    if error:
-        return HTMLResponse(content=f"<h3>Google Health Authorization Failed</h3><p>{error}</p><a href='http://localhost:3000/settings'>Return to Settings</a>", status_code=400)
-        
-    if not code:
-        raise HTTPException(status_code=400, detail="Missing authorization code")
-        
-    user_id = state or "default_user"
-    
-    try:
-        token_data = exchange_code_for_tokens(code)
-        refresh_token = token_data.get("refresh_token")
-        access_token = token_data.get("access_token", "")
-        
-        # Symmetrically encrypt refresh token at rest using GHA_TOKEN_ENCRYPTION_SECRET
-        encrypted_refresh_token = encrypt_secret(refresh_token, "GHA_TOKEN_ENCRYPTION_SECRET") if refresh_token else None
-        
-        user = db.query(models.User).filter(models.User.user_id == user_id).first()
-        if not user:
-            user = models.User(
-                user_id=user_id,
-                email=f"{user_id}@physiotwin.local",
-                google_health_refresh_token_encrypted=encrypted_refresh_token
-            )
-            db.add(user)
-        else:
-            if encrypted_refresh_token:
-                user.google_health_refresh_token_encrypted = encrypted_refresh_token
-        db.commit()
-        
-        # Populate initial activity cache
-        if access_token:
-            raw_activities = fetch_google_health_activities(access_token, days=28)
-            acwr_data = calculate_google_health_acwr(raw_activities)
-            
-            db.query(models.ExternalAppSession).filter(
-                models.ExternalAppSession.user_id == user_id,
-                models.ExternalAppSession.app_name == "Google Health (Fitbit)"
-            ).delete()
-            
-            db.add(models.ExternalAppSession(
-                user_id=user_id,
-                app_name="Google Health (Fitbit)",
-                session_data=json.dumps(acwr_data),
-                timestamp=datetime.datetime.utcnow()
-            ))
-            db.commit()
-            
-        # Redirect back to frontend settings
-        frontend_url = "http://localhost:3000/settings?google_health_connected=true"
-        return HTMLResponse(
-            content=f"""
-            <html>
-                <head>
-                    <meta http-equiv="refresh" content="0; url={frontend_url}" />
-                </head>
-                <body style="background:#0B0E12; color:#fff; font-family:sans-serif; text-align:center; padding-top:50px;">
-                    <h2>Google Health Connected!</h2>
-                    <p>Redirecting back to PhysioTwin Settings...</p>
-                    <p><a href="{frontend_url}" style="color:#00F0FF;">Click here if not redirected automatically</a></p>
-                </body>
-            </html>
-            """
-        )
-    except Exception as e:
-        print(f"Google Health OAuth callback error: {e}")
-        return HTMLResponse(
-            content=f"<h3>Google Health Connection Error</h3><p>{str(e)}</p><a href='http://localhost:3000/settings'>Return to Settings</a>",
-            status_code=500
-        )
-
-
-@app.delete("/users/{user_id}/integrations/google-health")
-def disconnect_google_health_integration(user_id: str, db: Session = Depends(get_db)):
-    """
-    Revokes and clears the user's stored Google Health tokens.
-    """
-    user = db.query(models.User).filter(models.User.user_id == user_id).first()
-    if user:
-        user.google_health_refresh_token_encrypted = None
-    db.query(models.ExternalAppSession).filter(
-        models.ExternalAppSession.user_id == user_id,
-        models.ExternalAppSession.app_name == "Google Health (Fitbit)"
-    ).delete()
-    db.commit()
-    return {"status": "disconnected", "google_health": False}
-
-
-@app.post("/integrations/google-health/sync/{user_id}")
-def sync_google_health_activities(user_id: str, db: Session = Depends(get_db)):
-    """
-    Performs on-demand live fetch of Google Health activities, computes strain/load & ACWR.
-    """
-    user = db.query(models.User).filter(models.User.user_id == user_id).first()
-    if not user or not user.google_health_refresh_token_encrypted:
-        raise HTTPException(status_code=400, detail="Google Health is not connected. Connect via Settings.")
-        
-    refresh_token = decrypt_secret(user.google_health_refresh_token_encrypted, "GHA_TOKEN_ENCRYPTION_SECRET")
-    if not refresh_token:
-        raise HTTPException(status_code=400, detail="Could not decrypt stored Google Health token. Please reconnect in Settings.")
-        
-    token_resp = refresh_access_token(refresh_token)
-    access_token = token_resp.get("access_token")
-    if not access_token:
-        raise HTTPException(status_code=400, detail="Failed to obtain fresh Google Health access token.")
-        
-    raw_activities = fetch_google_health_activities(access_token, days=28)
-    acwr_data = calculate_google_health_acwr(raw_activities)
-    
-    # Cache in external_app_sessions
-    db.query(models.ExternalAppSession).filter(
-        models.ExternalAppSession.user_id == user_id,
-        models.ExternalAppSession.app_name == "Google Health (Fitbit)"
-    ).delete()
-    
-    db.add(models.ExternalAppSession(
-        user_id=user_id,
-        app_name="Google Health (Fitbit)",
-        session_data=json.dumps(acwr_data),
-        timestamp=datetime.datetime.utcnow()
-    ))
-    db.commit()
-    
-    return acwr_data
-
-
-@app.post("/users/{user_id}/integrations/hevy")
-def connect_hevy_integration(user_id: str, req: HevyConnectRequest, db: Session = Depends(get_db)):
-    if not req.api_key or not req.api_key.strip():
-        raise HTTPException(status_code=400, detail="API key is required")
-    
-    # Symmetrically encrypt key at rest
-    encrypted_key = encrypt_secret(req.api_key.strip(), "HEVY_KEY_ENCRYPTION_SECRET")
-    
-    user = db.query(models.User).filter(models.User.user_id == user_id).first()
-    if not user:
-        user = models.User(user_id=user_id, email=f"{user_id}@physiotwin.local", hevy_api_key_encrypted=encrypted_key)
-        db.add(user)
-    else:
-        user.hevy_api_key_encrypted = encrypted_key
-    db.commit()
-    
-    # Trigger initial workouts fetch to populate cache
-    client = HevyClient(req.api_key.strip())
-    success, raw_workouts, err = client.fetch_all_workouts(max_pages=3)
-    if success and raw_workouts:
-        parsed = parse_hevy_workouts(raw_workouts)
-        db.query(models.ExternalAppSession).filter(
-            models.ExternalAppSession.user_id == user_id,
-            models.ExternalAppSession.app_name == "Hevy"
-        ).delete()
-        db.add(models.ExternalAppSession(
-            user_id=user_id,
-            app_name="Hevy",
-            session_data=json.dumps(parsed),
-            timestamp=datetime.datetime.utcnow()
-        ))
-        db.commit()
-    
-    return {"status": "connected", "hevy": True, "warning": err if not success else None}
-
-
-@app.delete("/users/{user_id}/integrations/hevy")
-def disconnect_hevy_integration(user_id: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.user_id == user_id).first()
-    if user:
-        user.hevy_api_key_encrypted = None
-    db.query(models.ExternalAppSession).filter(
-        models.ExternalAppSession.user_id == user_id,
-        models.ExternalAppSession.app_name == "Hevy"
-    ).delete()
-    db.commit()
-    return {"status": "disconnected", "hevy": False}
-
 
 @app.get("/users/{user_id}/integrations/status")
 def get_integrations_status(user_id: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.user_id == user_id).first()
-    google_health_connected = bool(user and user.google_health_refresh_token_encrypted)
-    hevy_connected = bool(user and user.hevy_api_key_encrypted)
-    nutri_client = NutritionixClient()
     return {
-        "google_health": google_health_connected,
-        "hevy": hevy_connected,
-        "nutritionix_enabled": nutri_client.is_configured
+        "google_health": False,
+        "strava": False,
+        "hevy": False,
+        "nutritionix_enabled": False,
+        "native_mode": True
     }
 
 
-@app.post("/integrations/hevy/sync/{user_id}")
-def sync_hevy_workouts(user_id: str, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.user_id == user_id).first()
-    if not user or not user.hevy_api_key_encrypted:
-        raise HTTPException(status_code=400, detail="Hevy is not connected. Please enter your Hevy Pro API key in Settings.")
-    
-    raw_key = decrypt_secret(user.hevy_api_key_encrypted, "HEVY_KEY_ENCRYPTION_SECRET")
-    if not raw_key:
-        raise HTTPException(status_code=400, detail="Could not decrypt stored Hevy key. Please reconnect in Settings.")
-        
-    client = HevyClient(raw_key)
-    success, raw_workouts, err = client.fetch_all_workouts(max_pages=5)
-    if not success:
-        raise HTTPException(status_code=400, detail=err or "Failed to communicate with Hevy API.")
-        
-    parsed = parse_hevy_workouts(raw_workouts)
-    
-    # Cache in external_app_sessions
-    db.query(models.ExternalAppSession).filter(
-        models.ExternalAppSession.user_id == user_id,
-        models.ExternalAppSession.app_name == "Hevy"
-    ).delete()
-    
-    db.add(models.ExternalAppSession(
-        user_id=user_id,
-        app_name="Hevy",
-        session_data=json.dumps(parsed),
-        timestamp=datetime.datetime.utcnow()
-    ))
-    db.commit()
-    
-    return parsed
+# ==============================================================================
+# NATIVE WORKOUT & NUTRITION TRACKING SCHEMAS & ENDPOINTS
+# ==============================================================================
 
+class CreateWorkoutRequest(BaseModel):
+    name: Optional[str] = "Workout Session"
+    notes: Optional[str] = None
+    template_id: Optional[str] = None
+
+class AddWorkoutExerciseRequest(BaseModel):
+    exercise_id: str
+    order_index: Optional[int] = 0
+
+class LogSetRequest(BaseModel):
+    set_number: int
+    set_type: Optional[str] = "normal"
+    weight_kg: Optional[float] = 0.0
+    reps: Optional[int] = 0
+    rpe: Optional[float] = None
+    is_completed: Optional[bool] = True
+
+class FinishWorkoutRequest(BaseModel):
+    name: Optional[str] = None
+    notes: Optional[str] = None
+    duration_seconds: Optional[int] = None
+
+class CreateWorkoutTemplateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    exercises_json: Optional[str] = None
+
+class NutritionItemSchema(BaseModel):
+    food_id: Optional[str] = None
+    name: str
+    portion_g: Optional[float] = 100.0
+    calories: Optional[float] = 0.0
+    protein_g: Optional[float] = 0.0
+    carbs_g: Optional[float] = 0.0
+    fat_g: Optional[float] = 0.0
+    micros: Optional[Dict[str, Any]] = None
+
+class NutritionLogRequest(BaseModel):
+    meal_type: str
+    items: List[NutritionItemSchema]
+    notes: Optional[str] = None
+    logged_at: Optional[str] = None
+
+class WaterLogRequest(BaseModel):
+    amount_ml: int
+    date: Optional[str] = None
+
+class WeightLogRequest(BaseModel):
+    weight_kg: float
+    date: Optional[str] = None
+
+
+# ── NATIVE EXERCISE CATALOG ENDPOINTS ─────────────────────────────────────────
+
+@app.get("/exercises")
+def get_exercises(
+    category: Optional[str] = None,
+    equipment: Optional[str] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.Exercise)
+    if category and category.lower() != "all":
+        query = query.filter(models.Exercise.category.ilike(f"%{category}%"))
+    if equipment and equipment.lower() != "all":
+        query = query.filter(models.Exercise.equipment.ilike(f"%{equipment}%"))
+    if search and search.strip():
+        s = f"%{search.strip()}%"
+        query = query.filter(
+            (models.Exercise.name.ilike(s)) |
+            (models.Exercise.primary_muscle.ilike(s)) |
+            (models.Exercise.equipment.ilike(s))
+        )
+    return query.order_by(models.Exercise.name.asc()).all()
+
+@app.get("/exercises/{exercise_id}")
+def get_exercise_by_id(exercise_id: str, db: Session = Depends(get_db)):
+    ex = db.query(models.Exercise).filter(models.Exercise.id == exercise_id).first()
+    if not ex:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+    return ex
+
+
+# ── NATIVE WORKOUT SESSION ENDPOINTS ──────────────────────────────────────────
+
+@app.post("/workouts/{user_id}")
+def create_workout_session(user_id: str, req: CreateWorkoutRequest, db: Session = Depends(get_db)):
+    session_id = f"w_{uuid.uuid4().hex[:12]}"
+    now = datetime.datetime.utcnow()
+    workout = models.Workout(
+        id=session_id,
+        user_id=user_id,
+        name=req.name or "Workout Session",
+        date=now,
+        notes=req.notes,
+        template_id=req.template_id,
+        is_completed=0,
+        total_volume_kg=0.0
+    )
+    db.add(workout)
+    db.commit()
+    db.refresh(workout)
+    return workout
+
+@app.post("/workouts/{workout_id}/exercises")
+def add_exercise_to_workout(workout_id: str, req: AddWorkoutExerciseRequest, db: Session = Depends(get_db)):
+    we_id = f"we_{uuid.uuid4().hex[:12]}"
+    we = models.WorkoutExercise(
+        id=we_id,
+        workout_id=workout_id,
+        exercise_id=req.exercise_id,
+        order_index=req.order_index or 0
+    )
+    db.add(we)
+    db.commit()
+    db.refresh(we)
+    return we
+
+@app.post("/workouts/{workout_id}/exercises/{workout_exercise_id}/sets")
+def log_workout_set(workout_id: str, workout_exercise_id: str, req: LogSetRequest, db: Session = Depends(get_db)):
+    set_id = f"set_{uuid.uuid4().hex[:12]}"
+    w_kg = float(req.weight_kg or 0.0)
+    reps = int(req.reps or 0)
+    
+    # Epley 1RM formula
+    est_1rm = round(w_kg * (1.0 + (reps / 30.0)), 2) if reps > 0 and w_kg > 0 else 0.0
+
+    # Get exercise info for PR check
+    we = db.query(models.WorkoutExercise).filter(models.WorkoutExercise.id == workout_exercise_id).first()
+    workout = db.query(models.Workout).filter(models.Workout.id == workout_id).first()
+    
+    is_new_pr = False
+    if we and workout and est_1rm > 0:
+        existing_pr = db.query(models.PersonalRecord).filter(
+            models.PersonalRecord.user_id == workout.user_id,
+            models.PersonalRecord.exercise_id == we.exercise_id
+        ).first()
+
+        if not existing_pr:
+            new_pr = models.PersonalRecord(
+                id=f"pr_{uuid.uuid4().hex[:12]}",
+                user_id=workout.user_id,
+                exercise_id=we.exercise_id,
+                estimated_1rm_kg=est_1rm,
+                achieved_weight_kg=w_kg,
+                achieved_reps=reps,
+                achieved_date=datetime.datetime.utcnow()
+            )
+            db.add(new_pr)
+            is_new_pr = True
+        elif est_1rm > (existing_pr.estimated_1rm_kg or 0):
+            existing_pr.estimated_1rm_kg = est_1rm
+            existing_pr.achieved_weight_kg = w_kg
+            existing_pr.achieved_reps = reps
+            existing_pr.achieved_date = datetime.datetime.utcnow()
+            is_new_pr = True
+
+    set_log = models.SetLog(
+        id=set_id,
+        workout_exercise_id=workout_exercise_id,
+        set_number=req.set_number,
+        set_type=req.set_type or "normal",
+        weight_kg=w_kg,
+        reps=reps,
+        rpe=req.rpe,
+        completed=1 if req.is_completed else 0,
+        is_pr=1 if is_new_pr else 0,
+        estimated_1rm=est_1rm
+    )
+    db.add(set_log)
+    db.commit()
+
+    return {
+        "status": "success",
+        "set_id": set_id,
+        "is_new_pr": is_new_pr,
+        "new_estimated_1rm": est_1rm
+    }
+
+@app.patch("/workouts/{workout_id}")
+def finish_workout_session(workout_id: str, req: FinishWorkoutRequest, db: Session = Depends(get_db)):
+    workout = db.query(models.Workout).filter(models.Workout.id == workout_id).first()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout session not found")
+
+    if req.name:
+        workout.name = req.name
+    if req.notes:
+        workout.notes = req.notes
+    if req.duration_seconds is not None:
+        workout.duration_seconds = req.duration_seconds
+    
+    workout.is_completed = 1
+
+    # Calculate total completed volume
+    wes = db.query(models.WorkoutExercise).filter(models.WorkoutExercise.id.in_(
+        db.query(models.WorkoutExercise.id).filter(models.WorkoutExercise.workout_id == workout_id)
+    )).all()
+    
+    total_vol = 0.0
+    for we in wes:
+        sets = db.query(models.SetLog).filter(models.SetLog.workout_exercise_id == we.id, models.SetLog.completed == 1).all()
+        for s in sets:
+            total_vol += (s.weight_kg or 0.0) * (s.reps or 0)
+    
+    workout.total_volume_kg = round(total_vol, 1)
+    db.commit()
+    db.refresh(workout)
+    return workout
+
+@app.delete("/workouts/{workout_id}")
+def delete_workout_session(workout_id: str, db: Session = Depends(get_db)):
+    workout = db.query(models.Workout).filter(models.Workout.id == workout_id).first()
+    if not workout:
+        raise HTTPException(status_code=404, detail="Workout not found")
+    
+    # Cascade delete workout exercises and sets
+    wes = db.query(models.WorkoutExercise).filter(models.WorkoutExercise.workout_id == workout_id).all()
+    for we in wes:
+        db.query(models.SetLog).filter(models.SetLog.workout_exercise_id == we.id).delete()
+    db.query(models.WorkoutExercise).filter(models.WorkoutExercise.workout_id == workout_id).delete()
+    db.delete(workout)
+    db.commit()
+    return {"status": "deleted", "workout_id": workout_id}
+
+@app.post("/workouts/{workout_id}/image")
+async def upload_workout_image(workout_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, and WEBP images are allowed")
+    
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image size must be 5MB or less")
+
+    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    filename = f"workout_{workout_id}_{uuid.uuid4().hex[:6]}.{ext}"
+    target_path = os.path.join(UPLOAD_DIR, "workouts", filename)
+    
+    with open(target_path, "wb") as f:
+        f.write(content)
+        
+    img_url = f"/uploads/workouts/{filename}"
+    workout = db.query(models.Workout).filter(models.Workout.id == workout_id).first()
+    if workout:
+        workout.image_url = img_url
+        db.commit()
+        
+    return {"status": "success", "image_url": img_url}
+
+@app.get("/workouts/{user_id}")
+def get_user_workouts(user_id: str, limit: int = 50, db: Session = Depends(get_db)):
+    workouts = db.query(models.Workout)\
+        .filter(models.Workout.user_id == user_id, models.Workout.is_completed == 1)\
+        .order_by(models.Workout.date.desc())\
+        .limit(limit)\
+        .all()
+    
+    result = []
+    for w in workouts:
+        wes = db.query(models.WorkoutExercise).filter(models.WorkoutExercise.workout_id == w.id).order_by(models.WorkoutExercise.order_index).all()
+        ex_list = []
+        for we in wes:
+            ex_model = db.query(models.Exercise).filter(models.Exercise.id == we.exercise_id).first()
+            sets = db.query(models.SetLog).filter(models.SetLog.workout_exercise_id == we.id).order_by(models.SetLog.set_number).all()
+            ex_list.append({
+                "exercise_id": we.exercise_id,
+                "name": ex_model.name if ex_model else "Exercise",
+                "primary_muscle": ex_model.primary_muscle if ex_model else "Full Body",
+                "sets": sets
+            })
+        
+        result.append({
+            "id": w.id,
+            "name": w.name,
+            "date": w.date.isoformat() if w.date else None,
+            "duration_seconds": w.duration_seconds,
+            "total_volume_kg": w.total_volume_kg,
+            "notes": w.notes,
+            "image_url": w.image_url,
+            "exercises": ex_list
+        })
+    return result
+
+@app.get("/workouts/{user_id}/templates")
+def get_user_templates(user_id: str, db: Session = Depends(get_db)):
+    return db.query(models.WorkoutTemplate).filter(
+        (models.WorkoutTemplate.user_id == user_id) | (models.WorkoutTemplate.is_public == 1)
+    ).all()
+
+@app.post("/workouts/{user_id}/templates")
+def create_user_template(user_id: str, req: CreateWorkoutTemplateRequest, db: Session = Depends(get_db)):
+    t_id = f"tmpl_{uuid.uuid4().hex[:12]}"
+    t = models.WorkoutTemplate(
+        id=t_id,
+        user_id=user_id,
+        name=req.name,
+        description=req.description,
+        exercises_json=req.exercises_json or "[]",
+        is_public=0
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return t
+
+@app.get("/workouts/{user_id}/stats")
+def get_workout_strain_stats(user_id: str, db: Session = Depends(get_db)):
+    now = datetime.datetime.utcnow()
+    d7_ago = now - datetime.timedelta(days=7)
+    d28_ago = now - datetime.timedelta(days=28)
+
+    workouts_28d = db.query(models.Workout).filter(
+        models.Workout.user_id == user_id,
+        models.Workout.is_completed == 1,
+        models.Workout.date >= d28_ago
+    ).all()
+
+    acute_volume = 0.0
+    chronic_28d_total = 0.0
+    muscle_counts: Dict[str, float] = {}
+
+    daily_map: Dict[str, float] = {}
+    for i in range(7):
+        d_str = (now - datetime.timedelta(days=6-i)).strftime("%Y-%m-%d")
+        daily_map[d_str] = 0.0
+
+    for w in workouts_28d:
+        w_vol = w.total_volume_kg or 0.0
+        chronic_28d_total += w_vol
+        
+        if w.date and w.date >= d7_ago:
+            acute_volume += w_vol
+            d_key = w.date.strftime("%Y-%m-%d")
+            if d_key in daily_map:
+                daily_map[d_key] += w_vol
+
+        # Muscle breakdown
+        wes = db.query(models.WorkoutExercise).filter(models.WorkoutExercise.workout_id == w.id).all()
+        for we in wes:
+            ex = db.query(models.Exercise).filter(models.Exercise.id == we.exercise_id).first()
+            if ex and ex.primary_muscle:
+                m_name = ex.primary_muscle.capitalize()
+                muscle_counts[m_name] = muscle_counts.get(m_name, 0.0) + w_vol
+
+    # Chronic weekly average
+    chronic_weekly_avg = chronic_28d_total / 4.0 if chronic_28d_total > 0 else 0.0
+    is_cold_start = len(workouts_28d) < 4
+    
+    if chronic_weekly_avg > 0:
+        acwr = round(acute_volume / chronic_weekly_avg, 2)
+    else:
+        acwr = 1.0 if acute_volume > 0 else 0.0
+
+    # Normalize muscle strain percentages for radar (0-100)
+    max_m = max(muscle_counts.values()) if muscle_counts else 1.0
+    muscle_strain = {}
+    default_muscles = ["Chest", "Back", "Shoulders", "Arms", "Quads", "Hamstrings", "Core"]
+    for dm in default_muscles:
+        val = muscle_counts.get(dm, 0.0)
+        muscle_strain[dm] = min(100, max(30, int((val / max_m) * 100))) if max_m > 0 and val > 0 else 45
+
+    readiness = 85
+    if acwr > 1.5:
+        readiness = 60
+    elif acwr < 0.8 and acute_volume > 0:
+        readiness = 90
+    elif 0.8 <= acwr <= 1.3:
+        readiness = 92
+
+    daily_breakdown = [
+        {"date": k, "day_name": datetime.datetime.strptime(k, "%Y-%m-%d").strftime("%a"), "volume_kg": round(v, 1)}
+        for k, v in daily_map.items()
+    ]
+
+    return {
+        "acute_load": round(acute_volume, 1),
+        "chronic_load": round(chronic_weekly_avg, 1),
+        "acwr": acwr,
+        "is_cold_start": is_cold_start,
+        "readiness_score": readiness,
+        "muscle_strain": muscle_strain,
+        "daily_breakdown": daily_breakdown,
+        "total_workouts": len(workouts_28d)
+    }
+
+
+# ── NATIVE FOOD & NUTRITION ENDPOINTS ─────────────────────────────────────────
+
+@app.get("/foods/search")
+def search_foods_database(q: Optional[str] = None, category: Optional[str] = None, db: Session = Depends(get_db)):
+    query = db.query(models.Food)
+    if category and category.lower() != "all":
+        query = query.filter(models.Food.category.ilike(f"%{category}%"))
+    if q and q.strip():
+        query = query.filter(models.Food.name.ilike(f"%{q.strip()}%"))
+    
+    foods = query.order_by(models.Food.name.asc()).limit(40).all()
+    results = []
+    for f in foods:
+        results.append({
+            "id": f.id,
+            "name": f.name,
+            "category": f.category,
+            "serving_size_g": f.serving_size_g,
+            "calories_per_100g": f.calories_per_100g,
+            "protein_g_100g": f.protein_g_100g,
+            "carbs_g_100g": f.carbs_g_100g,
+            "fat_g_100g": f.fat_g_100g,
+            "fiber_g_100g": f.fiber_g_100g,
+            "micros": json.loads(f.micros_json) if f.micros_json else {}
+        })
+    return results
+
+@app.get("/foods/{food_id}")
+def get_food_by_id(food_id: str, db: Session = Depends(get_db)):
+    f = db.query(models.Food).filter(models.Food.id == food_id).first()
+    if not f:
+        raise HTTPException(status_code=404, detail="Food item not found")
+    return {
+        "id": f.id,
+        "name": f.name,
+        "category": f.category,
+        "serving_size_g": f.serving_size_g,
+        "calories_per_100g": f.calories_per_100g,
+        "protein_g_100g": f.protein_g_100g,
+        "carbs_g_100g": f.carbs_g_100g,
+        "fat_g_100g": f.fat_g_100g,
+        "fiber_g_100g": f.fiber_g_100g,
+        "micros": json.loads(f.micros_json) if f.micros_json else {}
+    }
+
+@app.post("/nutrition/log/{user_id}")
+def log_native_nutrition(user_id: str, req: NutritionLogRequest, db: Session = Depends(get_db)):
+    log_id = f"nut_{uuid.uuid4().hex[:12]}"
+    now = datetime.datetime.utcnow()
+    
+    total_cal = sum(float(it.calories or 0.0) for it in req.items)
+    total_p = sum(float(it.protein_g or 0.0) for it in req.items)
+    total_c = sum(float(it.carbs_g or 0.0) for it in req.items)
+    total_f = sum(float(it.fat_g or 0.0) for it in req.items)
+
+    # Rollup micros
+    rolled_micros: Dict[str, float] = {}
+    for it in req.items:
+        if it.micros and isinstance(it.micros, dict):
+            for k, v in it.micros.items():
+                if isinstance(v, (int, float)):
+                    rolled_micros[k] = rolled_micros.get(k, 0.0) + float(v)
+
+    log_entry = models.NutritionLog(
+        id=log_id,
+        user_id=user_id,
+        meal_type=req.meal_type,
+        items_json=json.dumps([it.dict() for it in req.items]),
+        calories=round(total_cal, 1),
+        protein_g=round(total_p, 1),
+        carbs_g=round(total_c, 1),
+        fat_g=round(total_f, 1),
+        micros_json=json.dumps(rolled_micros),
+        notes=req.notes,
+        logged_at=now
+    )
+    db.add(log_entry)
+    db.commit()
+    db.refresh(log_entry)
+    
+    return {
+        "id": log_id,
+        "status": "success",
+        "meal_type": req.meal_type,
+        "calories": log_entry.calories,
+        "protein_g": log_entry.protein_g,
+        "carbs_g": log_entry.carbs_g,
+        "fat_g": log_entry.fat_g
+    }
+
+@app.post("/nutrition/log/{log_id}/image")
+async def upload_meal_image(log_id: str, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if file.content_type not in ["image/jpeg", "image/png", "image/webp"]:
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, and WEBP images are allowed")
+    
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image size must be 5MB or less")
+
+    ext = file.filename.split(".")[-1] if "." in file.filename else "jpg"
+    filename = f"meal_{log_id}_{uuid.uuid4().hex[:6]}.{ext}"
+    target_path = os.path.join(UPLOAD_DIR, "meals", filename)
+    
+    with open(target_path, "wb") as f:
+        f.write(content)
+        
+    img_url = f"/uploads/meals/{filename}"
+    log_entry = db.query(models.NutritionLog).filter(models.NutritionLog.id == log_id).first()
+    if log_entry:
+        log_entry.image_url = img_url
+        db.commit()
+        
+    return {"status": "success", "image_url": img_url}
+
+@app.delete("/nutrition/{log_id}")
+def delete_nutrition_log(log_id: str, db: Session = Depends(get_db)):
+    log_entry = db.query(models.NutritionLog).filter(models.NutritionLog.id == log_id).first()
+    if not log_entry:
+        raise HTTPException(status_code=404, detail="Log entry not found")
+    db.delete(log_entry)
+    db.commit()
+    return {"status": "deleted", "id": log_id}
+
+@app.get("/nutrition/daily/{user_id}")
+def get_daily_nutrition(user_id: str, date: Optional[str] = None, db: Session = Depends(get_db)):
+    target_date = date or datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    
+    logs = db.query(models.NutritionLog).filter(
+        models.NutritionLog.user_id == user_id,
+        func.date(models.NutritionLog.logged_at) == target_date
+    ).order_by(models.NutritionLog.logged_at.asc()).all()
+
+    water = db.query(models.WaterLog).filter(
+        models.WaterLog.user_id == user_id,
+        models.WaterLog.date == target_date
+    ).first()
+
+    total_cal = sum(l.calories or 0.0 for l in logs)
+    total_p = sum(l.protein_g or 0.0 for l in logs)
+    total_c = sum(l.carbs_g or 0.0 for l in logs)
+    total_f = sum(l.fat_g or 0.0 for l in logs)
+
+    # Rollup RDA percentages
+    micros_total: Dict[str, float] = {}
+    for l in logs:
+        if l.micros_json:
+            m = json.loads(l.micros_json)
+            for k, v in m.items():
+                micros_total[k] = micros_total.get(k, 0.0) + float(v)
+
+    # RDA targets for display
+    rda_map = {
+        "iron_pct": min(100, int((micros_total.get("iron_mg", 14.0) / 18.0) * 100)),
+        "calcium_pct": min(100, int((micros_total.get("calcium_mg", 900.0) / 1000.0) * 100)),
+        "magnesium_pct": min(100, int((micros_total.get("magnesium_mg", 360.0) / 400.0) * 100)),
+        "potassium_pct": min(100, int((micros_total.get("potassium_mg", 2800.0) / 3400.0) * 100)),
+        "vitamin_d_pct": min(100, int((micros_total.get("vitamin_d_iu", 600.0) / 800.0) * 100)),
+        "vitamin_b12_pct": min(100, int((micros_total.get("vitamin_b12_ug", 2.2) / 2.4) * 100)),
+        "zinc_pct": min(100, int((micros_total.get("zinc_mg", 10.0) / 11.0) * 100)),
+    }
+
+    meals_list = []
+    for l in logs:
+        meals_list.append({
+            "id": l.id,
+            "meal_type": l.meal_type,
+            "items": json.loads(l.items_json) if l.items_json else [],
+            "calories": l.calories,
+            "protein_g": l.protein_g,
+            "carbs_g": l.carbs_g,
+            "fat_g": l.fat_g,
+            "image_url": l.image_url,
+            "time": l.logged_at.strftime("%H:%M") if l.logged_at else "12:00"
+        })
+
+    return {
+        "date": target_date,
+        "totals": {
+            "calories": round(total_cal, 1),
+            "protein_g": round(total_p, 1),
+            "carbs_g": round(total_c, 1),
+            "fat_g": round(total_f, 1),
+            "micros": rda_map
+        },
+        "water_ml": water.amount_ml if water else 0,
+        "meals": meals_list
+    }
+
+@app.get("/nutrition/week/{user_id}")
+def get_weekly_nutrition_rollup(user_id: str, db: Session = Depends(get_db)):
+    now = datetime.datetime.utcnow()
+    d7_ago = now - datetime.timedelta(days=7)
+
+    logs = db.query(models.NutritionLog).filter(
+        models.NutritionLog.user_id == user_id,
+        models.NutritionLog.logged_at >= d7_ago
+    ).all()
+
+    days_data: Dict[str, Dict[str, Any]] = {}
+    for i in range(7):
+        d = (now - datetime.timedelta(days=6-i)).strftime("%Y-%m-%d")
+        day_name = (now - datetime.timedelta(days=6-i)).strftime("%a")
+        days_data[d] = {
+            "date": d,
+            "day": day_name,
+            "day_name": day_name,
+            "calories": 0.0,
+            "protein": 0.0,
+            "carbs": 0.0,
+            "fat": 0.0,
+            "meals": []
+        }
+
+    for l in logs:
+        if l.logged_at:
+            d_key = l.logged_at.strftime("%Y-%m-%d")
+            if d_key in days_data:
+                days_data[d_key]["calories"] += l.calories or 0.0
+                days_data[d_key]["protein"] += l.protein_g or 0.0
+                days_data[d_key]["carbs"] += l.carbs_g or 0.0
+                days_data[d_key]["fat"] += l.fat_g or 0.0
+                days_data[d_key]["meals"].append({
+                    "name": l.meal_type,
+                    "calories": l.calories,
+                    "protein": l.protein_g
+                })
+
+    history = list(days_data.values())
+    valid = [d for d in history if d["calories"] > 0]
+    avg_cal = round(sum(d["calories"] for d in valid) / len(valid), 1) if valid else 0.0
+    avg_prot = round(sum(d["protein"] for d in valid) / len(valid), 1) if valid else 0.0
+
+    return {
+        "nutrition": history,
+        "weekly_summary": {
+            "avg_calories": avg_cal,
+            "avg_protein": avg_prot,
+            "protein_target_hit": avg_prot >= 140.0
+        }
+    }
+
+@app.post("/nutrition/water/{user_id}")
+def log_water_intake(user_id: str, req: WaterLogRequest, db: Session = Depends(get_db)):
+    target_date = req.date or datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    w = db.query(models.WaterLog).filter(
+        models.WaterLog.user_id == user_id,
+        models.WaterLog.date == target_date
+    ).first()
+
+    if not w:
+        w = models.WaterLog(
+            id=f"wat_{uuid.uuid4().hex[:12]}",
+            user_id=user_id,
+            date=target_date,
+            amount_ml=req.amount_ml
+        )
+        db.add(w)
+    else:
+        w.amount_ml = (w.amount_ml or 0) + req.amount_ml
+        w.updated_at = datetime.datetime.utcnow()
+
+    db.commit()
+    db.refresh(w)
+    return {"status": "success", "date": target_date, "total_water_ml": w.amount_ml}
+
+@app.get("/nutrition/water/{user_id}")
+def get_water_intake(user_id: str, date: Optional[str] = None, db: Session = Depends(get_db)):
+    target_date = date or datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    w = db.query(models.WaterLog).filter(
+        models.WaterLog.user_id == user_id,
+        models.WaterLog.date == target_date
+    ).first()
+    return {"date": target_date, "amount_ml": w.amount_ml if w else 0}
+
+@app.post("/nutrition/weight/{user_id}")
+def log_body_weight(user_id: str, req: WeightLogRequest, db: Session = Depends(get_db)):
+    target_date = req.date or datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    b = db.query(models.BodyWeightLog).filter(
+        models.BodyWeightLog.user_id == user_id,
+        models.BodyWeightLog.date == target_date
+    ).first()
+
+    if not b:
+        b = models.BodyWeightLog(
+            id=f"bw_{uuid.uuid4().hex[:12]}",
+            user_id=user_id,
+            date=target_date,
+            weight_kg=req.weight_kg
+        )
+        db.add(b)
+    else:
+        b.weight_kg = req.weight_kg
+        b.created_at = datetime.datetime.utcnow()
+
+    db.commit()
+    return {"status": "success", "date": target_date, "weight_kg": req.weight_kg}
+
+@app.get("/nutrition/weight/{user_id}")
+def get_body_weight_history(user_id: str, limit: int = 30, db: Session = Depends(get_db)):
+    bws = db.query(models.BodyWeightLog).filter(
+        models.BodyWeightLog.user_id == user_id
+    ).order_by(models.BodyWeightLog.date.asc()).limit(limit).all()
+
+    return [{"date": b.date, "weight_kg": b.weight_kg} for b in bws]
 
 
 class SyncExternalAppsRequest(BaseModel):
@@ -1275,83 +1753,46 @@ def generate_rehab_program(user_id: str, db: Session = Depends(get_db)):
 
 @app.get("/analytics/external-apps/{user_id}")
 def get_external_apps(user_id: str, db: Session = Depends(get_db), min_hours_ago: Optional[int] = None, max_hours_ago: Optional[int] = None):
-    import json
-    entries = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).order_by(models.ExternalAppSession.timestamp.desc()).all()
+    """
+    Returns native in-house workout sessions and nutrition data formatted for the timeline.
+    Runs 100% locally with zero external API calls.
+    """
+    workouts = db.query(models.Workout).filter(models.Workout.user_id == user_id).order_by(models.Workout.date.desc()).limit(15).all()
     
-    user = db.query(models.User).filter(models.User.user_id == user_id).first()
-    now = datetime.datetime.utcnow()
-
-    # 1. Google Health (Fitbit) auto-sync if connected and cache > 20 mins
-    has_google_health = bool(user and user.google_health_refresh_token_encrypted)
-    gha_entry = next((e for e in entries if e.app_name in ["Google Health (Fitbit)", "Google Health"]), None)
-    
-    need_gha_refresh = has_google_health and (
-        not gha_entry or (now - gha_entry.timestamp).total_seconds() > 1200
-    )
-    if need_gha_refresh:
-        refresh_token = decrypt_secret(user.google_health_refresh_token_encrypted, "GHA_TOKEN_ENCRYPTION_SECRET")
-        if refresh_token:
-            try:
-                token_resp = refresh_access_token(refresh_token)
-                acc_token = token_resp.get("access_token")
-                if acc_token:
-                    raw_acts = fetch_google_health_activities(acc_token, days=28)
-                    acwr_data = calculate_google_health_acwr(raw_acts)
-                    if gha_entry:
-                        gha_entry.session_data = json.dumps(acwr_data)
-                        gha_entry.timestamp = now
-                    else:
-                        gha_entry = models.ExternalAppSession(
-                            user_id=user_id,
-                            app_name="Google Health (Fitbit)",
-                            session_data=json.dumps(acwr_data),
-                            timestamp=now
-                        )
-                        db.add(gha_entry)
-                    db.commit()
-                    entries = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).order_by(models.ExternalAppSession.timestamp.desc()).all()
-            except Exception as e:
-                print(f"Auto-sync Google Health error: {e}")
-
-    # 2. Hevy auto-sync if connected and cache > 20 mins
-    has_hevy = bool(user and user.hevy_api_key_encrypted)
-    hevy_entry = next((e for e in entries if e.app_name == "Hevy"), None)
-    
-    need_hevy_refresh = has_hevy and (
-        not hevy_entry or (now - hevy_entry.timestamp).total_seconds() > 1200 # 20 mins cache
-    )
-    
-    if need_hevy_refresh:
-        raw_key = decrypt_secret(user.hevy_api_key_encrypted, "HEVY_KEY_ENCRYPTION_SECRET")
-        if raw_key:
-            try:
-                client = HevyClient(raw_key)
-                success, raw_workouts, err = client.fetch_all_workouts(max_pages=5)
-                if success:
-                    parsed = parse_hevy_workouts(raw_workouts)
-                    if hevy_entry:
-                        hevy_entry.session_data = json.dumps(parsed)
-                        hevy_entry.timestamp = now
-                    else:
-                        hevy_entry = models.ExternalAppSession(
-                            user_id=user_id,
-                            app_name="Hevy",
-                            session_data=json.dumps(parsed),
-                            timestamp=now
-                        )
-                        db.add(hevy_entry)
-                    db.commit()
-                    entries = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).order_by(models.ExternalAppSession.timestamp.desc()).all()
-            except Exception as e:
-                print(f"Auto-sync Hevy error: {e}")
-                
-    if not entries:
-        return []
+    entries = []
+    if workouts:
+        activities = []
+        for w in workouts:
+            primary_muscle = "full_body"
+            if w.exercises:
+                primary_muscle = w.exercises[0].muscle_group or "full_body"
+            
+            activities.append({
+                "id": w.id,
+                "name": w.name,
+                "duration_minutes": round((w.duration_seconds or 0) / 60, 1) or 45.0,
+                "volume_kg": w.total_volume_kg or 0.0,
+                "load_score": round((w.total_volume_kg or 0.0) / 100.0, 1) or 35.0,
+                "date": w.date.isoformat(),
+                "muscle_target": [primary_muscle, "core"]
+            })
+            
+        stats = get_workout_stats_and_acwr(user_id, db)
+        entries.append({
+            "app_name": "Native Workout Tracker",
+            "session_data": {
+                "activities": activities,
+                "acwr": stats.get("acwr", 1.0),
+                "acute_load": stats.get("acute_load_kg", 0.0),
+                "chronic_load": stats.get("chronic_load_kg", 0.0),
+                "is_cold_start": stats.get("is_cold_start", False),
+                "status_label": stats.get("status_label", "Baseline Building"),
+                "muscle_strain": stats.get("muscle_volume_kg", {})
+            },
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        })
         
-    return [
-        {"app_name": e.app_name, "session_data": json.loads(e.session_data), "timestamp": e.timestamp.isoformat()}
-        for e in entries
-    ]
+    return entries
 
 
 
@@ -2397,142 +2838,101 @@ def seed_nutrition_week(user_id: str, db: Session = Depends(get_db)):
     db.commit()
     return {"status": "success", "message": "7 days of athletic nutrition seeded", "days": len(formatted_nutrition)}
 
-@app.post("/strava/sync/{user_id}")
 @app.post("/workouts/seed-week/{user_id}")
-def sync_or_seed_strava_workouts(user_id: str, db: Session = Depends(get_db)):
+def seed_native_workout_week(user_id: str, db: Session = Depends(get_db)):
     """
-    Sync live Strava activities or seed 7 days of realistic high-strain workouts with ACWR & muscle strain maps.
+    Seeds realistic native strength workouts across the past 7 days into Workout, WorkoutExercise, and SetLog tables.
     """
-    import json
     now = datetime.datetime.utcnow()
     
-    # Remove existing workout logs and app sessions for clean sync
-    db.query(models.WorkoutLog).filter(models.WorkoutLog.user_id == user_id).delete()
-    db.query(models.ExternalAppSession).filter(
-        models.ExternalAppSession.user_id == user_id,
-        models.ExternalAppSession.app_name.in_(["Strava / Smart Tracker", "Strava", "Hevy", "Google Health Connect", "Google Health", "Google Fit"])
-    ).delete()
-    
+    # Remove existing demo workouts for clean state if needed
     workout_templates = [
         {
-            "offset": 6, "name": "Heavy Bench Press & Upper Push", "type": "WeightTraining",
-            "duration": 58, "hr_avg": 142, "hr_max": 168, "cal": 460, "suffer": 64,
-            "zones": ["chest", "shoulders", "triceps"],
+            "offset": 6, "name": "Heavy Bench Press & Upper Body Push",
+            "duration": 58 * 60, "notes": "Solid upper body session, hit PR on Bench Press.",
             "exercises": [
-                {"name": "Barbell Bench Press", "sets": 4, "reps": 8, "weight_kg": 85},
-                {"name": "Incline Dumbbell Press", "sets": 3, "reps": 10, "weight_kg": 28},
-                {"name": "Overhead Barbell Press", "sets": 3, "reps": 8, "weight_kg": 50},
-                {"name": "Cable Tricep Pushdown", "sets": 4, "reps": 12, "weight_kg": 35}
+                {"name": "Barbell Bench Press", "muscle": "chest", "sets": [(8, 80), (8, 85), (6, 90), (5, 95)]},
+                {"name": "Incline Dumbbell Press", "muscle": "chest", "sets": [(10, 28), (10, 30), (8, 32)]},
+                {"name": "Overhead Barbell Press", "muscle": "shoulders", "sets": [(8, 50), (8, 52.5), (6, 55)]},
+                {"name": "Cable Tricep Pushdown (Straight Bar)", "muscle": "arms", "sets": [(12, 35), (12, 35), (10, 40)]}
             ]
         },
         {
-            "offset": 5, "name": "Squat Strength & Quad Hypertrophy", "type": "WeightTraining",
-            "duration": 65, "hr_avg": 156, "hr_max": 178, "cal": 590, "suffer": 78,
-            "zones": ["quads", "glutes", "lumbar", "hamstrings"],
+            "offset": 4, "name": "Squat Strength & Leg Day",
+            "duration": 65 * 60, "notes": "Deep parallel squats with high volume.",
             "exercises": [
-                {"name": "Barbell Back Squat", "sets": 4, "reps": 6, "weight_kg": 120},
-                {"name": "Leg Press", "sets": 3, "reps": 12, "weight_kg": 200},
-                {"name": "Walking Lunges", "sets": 3, "reps": 12, "weight_kg": 22},
-                {"name": "Standing Calf Raises", "sets": 4, "reps": 15, "weight_kg": 75}
+                {"name": "Barbell Back Squat (High Bar)", "muscle": "legs", "sets": [(6, 110), (6, 120), (6, 125), (4, 130)]},
+                {"name": "Leg Press", "muscle": "legs", "sets": [(12, 180), (12, 200), (10, 220)]},
+                {"name": "Barbell Romanian Deadlift (RDL)", "muscle": "legs", "sets": [(10, 80), (10, 90), (8, 100)]},
+                {"name": "Standing Calf Raise", "muscle": "legs", "sets": [(15, 60), (15, 70), (15, 75)]}
             ]
         },
         {
-            "offset": 4, "name": "Mobility, Core & Zone 2 Spin", "type": "Ride",
-            "duration": 40, "hr_avg": 122, "hr_max": 138, "cal": 280, "suffer": 32,
-            "zones": ["core", "hips"],
+            "offset": 2, "name": "Deadlift & Back Hypertrophy",
+            "duration": 62 * 60, "notes": "Strong lat engagement and hip drive.",
             "exercises": [
-                {"name": "Stationary Bike Zone 2", "sets": 1, "reps": 1, "weight_kg": 0},
-                {"name": "Hanging Leg Raises", "sets": 3, "reps": 15, "weight_kg": 0},
-                {"name": "Plank Holds", "sets": 3, "reps": 60, "weight_kg": 0}
+                {"name": "Conventional Barbell Deadlift", "muscle": "back", "sets": [(5, 140), (5, 150), (4, 160)]},
+                {"name": "Barbell Bent-Over Row", "muscle": "back", "sets": [(8, 70), (8, 75), (8, 80)]},
+                {"name": "Lat Pulldown (Wide Grip)", "muscle": "back", "sets": [(10, 65), (10, 70), (10, 75)]},
+                {"name": "Barbell Bicep Curl", "muscle": "arms", "sets": [(12, 30), (10, 35), (8, 40)]}
             ]
         },
         {
-            "offset": 3, "name": "Barbell Deadlift & Heavy Back Pull", "type": "WeightTraining",
-            "duration": 62, "hr_avg": 148, "hr_max": 174, "cal": 540, "suffer": 72,
-            "zones": ["back", "biceps", "hamstrings", "lumbar"],
+            "offset": 1, "name": "Shoulders & Core Stability",
+            "duration": 45 * 60, "notes": "Strict overhead mechanics and anti-rotational core work.",
             "exercises": [
-                {"name": "Conventional Deadlift", "sets": 4, "reps": 5, "weight_kg": 150},
-                {"name": "Barbell Bent Over Row", "sets": 4, "reps": 8, "weight_kg": 75},
-                {"name": "Lat Pulldown", "sets": 3, "reps": 10, "weight_kg": 70},
-                {"name": "Incline DB Bicep Curls", "sets": 3, "reps": 12, "weight_kg": 16}
-            ]
-        },
-        {
-            "offset": 2, "name": "Shoulder Hypertrophy & Arms", "type": "WeightTraining",
-            "duration": 50, "hr_avg": 135, "hr_max": 158, "cal": 390, "suffer": 52,
-            "zones": ["shoulders", "biceps", "triceps"],
-            "exercises": [
-                {"name": "DB Lateral Raises", "sets": 4, "reps": 15, "weight_kg": 12},
-                {"name": "Face Pulls", "sets": 3, "reps": 15, "weight_kg": 25},
-                {"name": "EZ Bar Skullcrushers", "sets": 3, "reps": 10, "weight_kg": 35},
-                {"name": "Hammer Curls", "sets": 3, "reps": 12, "weight_kg": 18}
-            ]
-        },
-        {
-            "offset": 1, "name": "Strava 5K Interval Outdoor Run", "type": "Run",
-            "duration": 28, "hr_avg": 164, "hr_max": 182, "cal": 380, "suffer": 70,
-            "zones": ["calves", "quads", "cardio", "ankles"],
-            "exercises": [
-                {"name": "5K Tempo Intervals", "sets": 1, "reps": 5000, "weight_kg": 0}
+                {"name": "Dumbbell Lateral Raise", "muscle": "shoulders", "sets": [(15, 12), (15, 12), (12, 14), (12, 14)]},
+                {"name": "Face Pull", "muscle": "shoulders", "sets": [(15, 25), (15, 25), (15, 30)]},
+                {"name": "Hanging Leg Raise", "muscle": "core", "sets": [(15, 0), (12, 0), (12, 0)]},
+                {"name": "Ab Wheel Rollout", "muscle": "core", "sets": [(12, 0), (10, 0), (10, 0)]}
             ]
         }
     ]
     
-    synced_workouts = []
-    for w in workout_templates:
-        dt = now - datetime.timedelta(days=w["offset"])
-        vol = sum(e["sets"] * e["reps"] * e["weight_kg"] for e in w["exercises"])
-        log_w = models.WorkoutLog(
+    for wt in workout_templates:
+        dt = now - datetime.timedelta(days=wt["offset"])
+        workout = models.Workout(
             user_id=user_id,
-            name=w["name"],
-            duration_min=w["duration"],
-            notes=f"Synced via Strava API. Type: {w['type']}, HR Avg: {w['hr_avg']} bpm, Calories: {w['cal']} kcal, Suffer Score: {w['suffer']}",
-            exercises_json=json.dumps(w["exercises"]),
-            affected_zones_json=json.dumps(w["zones"]),
-            volume_kg=round(vol, 2),
-            load_level="High" if w["suffer"] > 65 else "Medium" if w["suffer"] > 40 else "Low",
-            timestamp=dt
+            name=wt["name"],
+            date=dt,
+            duration_seconds=wt["duration"],
+            notes=wt["notes"],
+            total_volume_kg=0.0
         )
-        db.add(log_w)
-        synced_workouts.append({
-            "id": f"strava_{w['offset']}",
-            "name": w["name"],
-            "type": w["type"],
-            "timestamp": dt.isoformat(),
-            "duration_min": w["duration"],
-            "avg_heart_rate": w["hr_avg"],
-            "max_heart_rate": w["hr_max"],
-            "calories": w["cal"],
-            "suffer_score": w["suffer"],
-            "volume_kg": round(vol, 2),
-            "affected_zones": w["zones"],
-            "exercises": w["exercises"]
-        })
+        db.add(workout)
+        db.commit()
+        db.refresh(workout)
         
-    app_entry = models.ExternalAppSession(
-        user_id=user_id,
-        app_name="Strava / Smart Tracker",
-        session_data=json.dumps({
-            "workouts": synced_workouts,
-            "readiness_score": 86,
-            "acute_load": 480,
-            "chronic_load": 420,
-            "acwr": 1.14,
-            "muscle_strain": {
-                "Chest": 84,
-                "Shoulders": 78,
-                "Triceps": 72,
-                "Back": 68,
-                "Quads": 82,
-                "Hamstrings": 64,
-                "Core": 58
-            }
-        }),
-        timestamp=now
-    )
-    db.add(app_entry)
-    db.commit()
-    return {"status": "success", "message": "Synced 6 Strava workout sessions with live strain metrics", "workouts": len(synced_workouts)}
+        total_vol = 0.0
+        for order_idx, ex in enumerate(wt["exercises"]):
+            we = models.WorkoutExercise(
+                workout_id=workout.id,
+                exercise_name=ex["name"],
+                muscle_group=ex["muscle"],
+                order=order_idx
+            )
+            db.add(we)
+            db.commit()
+            db.refresh(we)
+            
+            for set_idx, (reps, weight) in enumerate(ex["sets"]):
+                est_1rm = round(weight * (1.0 + (reps / 30.0)), 1) if reps > 0 and weight > 0 else 0.0
+                s = models.SetLog(
+                    workout_exercise_id=we.id,
+                    set_number=set_idx + 1,
+                    reps=reps,
+                    weight=weight,
+                    completed=True,
+                    is_pr=(set_idx == len(ex["sets"]) - 1 and weight > 80),
+                    estimated_1rm=est_1rm
+                )
+                db.add(s)
+                total_vol += (reps * weight)
+        
+        workout.total_volume_kg = round(total_vol, 1)
+        db.commit()
+        
+    return {"status": "success", "message": "Native workout sessions seeded successfully."}
 
 
 
