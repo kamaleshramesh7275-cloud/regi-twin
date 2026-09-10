@@ -238,6 +238,7 @@ function AnatomyMarker({
   );
 }
 
+<<<<<<< HEAD
 // ── Realistic Male Human 3D Model ─────────────────────────────────────────────
 function RealHumanoid3D({
   riskData, confidenceData, selectedZone, onZoneClick,
@@ -245,9 +246,15 @@ function RealHumanoid3D({
 }: HoloModel3DProps & { heatMapEnabled?: boolean; preset?: SkinPreset }) {
   const { scene } = useGLTF("/model.glb");
   const { userHeight } = useAvatar();
+=======
+// ── Realistic 3D Humanoid Model with Automatic Anatomical Bounding Alignment ──
+function RealHumanoid3D({ riskData, confidenceData, selectedZone, onZoneClick, debugScale, debugY }: HoloModel3DProps & { debugScale: number, debugY: number }) {
+  const { scene } = useGLTF("/model.glb");
+>>>>>>> e296950b6aeab7cfe0a0fa3423e327262b89ace8
 
   const cfg = SKIN_PRESETS[preset];
 
+<<<<<<< HEAD
   // Shader uniforms for the heat-map additive overlay
   const uniformsRef = useRef({
     uHeatCenters:      { value: Array.from({ length: 12 }, () => new THREE.Vector3()) },
@@ -356,6 +363,13 @@ function RealHumanoid3D({
         "#include <worldpos_vertex>",
         `#include <worldpos_vertex>\nvWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
       );
+=======
+    c.scale.set(debugScale, debugScale, debugScale);
+    c.position.set(0, debugY, 0);
+
+    return c;
+  }, [scene, debugScale, debugY]);
+>>>>>>> e296950b6aeab7cfe0a0fa3423e327262b89ace8
 
       // Fragment: inject additive heat-map on top of PBR output
       shader.fragmentShader = `
@@ -497,13 +511,37 @@ export default function HoloModel3D(props: HoloModel3DProps) {
   const cyclePreset = () =>
     setPreset(p => p === "ecorche" ? "clay" : p === "clay" ? "realistic" : p === "realistic" ? "anatomy" : p === "anatomy" ? "thermal" : "ecorche");
 
+  const [debugScale, setDebugScale] = useState<number>(1.0);
+  const [debugY, setDebugY] = useState<number>(0);
+
   return (
+<<<<<<< HEAD
     <div className="absolute inset-0 z-0 overflow-hidden" style={{ background: "#3e424a" }}>
       {/* Soft neutral studio vignette matching reference image */}
       <div
         className="absolute inset-0 pointer-events-none z-10"
         style={{ background: "radial-gradient(ellipse at center, transparent 55%, rgba(20,23,28,0.60) 100%)" }}
       />
+=======
+    <div className="absolute inset-0 z-0 bg-[#020a14] overflow-hidden">
+      {/* Debug Controls */}
+      {activeMode === "3d" && (
+        <div className="absolute top-20 left-4 z-50 bg-black/80 border border-white/20 p-4 rounded-xl text-white text-xs w-64">
+          <div className="mb-2 font-bold text-cyan-400">Alignment Debugger</div>
+          <div className="mb-4">
+            <label className="block mb-1">Scale: {debugScale.toFixed(2)}</label>
+            <input type="range" min="0.1" max="4" step="0.01" value={debugScale} onChange={e => setDebugScale(parseFloat(e.target.value))} className="w-full" />
+          </div>
+          <div>
+            <label className="block mb-1">Y-Offset: {debugY.toFixed(2)}</label>
+            <input type="range" min="-3" max="3" step="0.01" value={debugY} onChange={e => setDebugY(parseFloat(e.target.value))} className="w-full" />
+          </div>
+          <div className="mt-3 text-[10px] text-gray-400">
+            Slide until the blue mesh fits the green spots, then tell me the numbers!
+          </div>
+        </div>
+      )}
+>>>>>>> e296950b6aeab7cfe0a0fa3423e327262b89ace8
 
       {activeMode === "scan" ? (
         <HoloOverlay {...props} />
@@ -517,9 +555,15 @@ export default function HoloModel3D(props: HoloModel3DProps) {
             {/* Neutral grey studio backdrop matching écorché reference */}
             <color attach="background" args={["#484d56"]} />
 
+<<<<<<< HEAD
             {/* ── Studio 3-point lighting for muscular écorché anatomy ── */}
             {/* Ambient: soft neutral fill */}
             <ambientLight intensity={0.65} color="#edf1f7" />
+=======
+          <Suspense fallback={null}>
+            <RealHumanoid3D {...props} debugScale={debugScale} debugY={debugY} />
+          </Suspense>
+>>>>>>> e296950b6aeab7cfe0a0fa3423e327262b89ace8
 
             {/* Key light: crisp soft white, front-right to define muscle boundaries */}
             <directionalLight
