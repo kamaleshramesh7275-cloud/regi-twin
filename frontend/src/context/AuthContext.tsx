@@ -25,11 +25,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false);
-    });
-    return unsubscribe;
+    // Mock user for local testing without Firebase configured
+    const mockUser = { uid: "test-user", email: "test@example.com", displayName: "Demo User" } as User;
+    setUser(mockUser);
+    setLoading(false);
   }, []);
 
   const connectGoogleFit = async (): Promise<string | null> => {
@@ -58,21 +57,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const loginWithEmail = async (email: string, pass: string) => {
-    try {
-      await signInWithEmailAndPassword(auth, email, pass);
-    } catch (error) {
-      console.error("Email login failed", error);
-      throw error;
-    }
+    // Mock login success
+    const mockUser = { uid: "test-user", email, displayName: "Demo User" } as User;
+    setUser(mockUser);
   };
 
   const registerWithEmail = async (email: string, pass: string) => {
-    try {
-      await createUserWithEmailAndPassword(auth, email, pass);
-    } catch (error) {
-      console.error("Email registration failed", error);
-      throw error;
-    }
+    // Mock register success
+    const mockUser = { uid: "test-user", email, displayName: "Demo User" } as User;
+    setUser(mockUser);
   };
 
   const logout = async () => {

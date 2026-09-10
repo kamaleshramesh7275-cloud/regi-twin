@@ -10,6 +10,7 @@ import HoloModel3D from "./HoloModel3D";
 import { Sidebar } from "./components/Sidebar";
 import type { ZoneId, ZoneRisk } from "./HoloModel3D";
 import { useAuth } from "./context/AuthContext";
+import { useAvatar } from "./AvatarContext";
 import { fetchGoogleHealthData } from "./lib/googleHealthApi";
 import { api } from "./api";
 
@@ -100,6 +101,7 @@ export default function TwinPage() {
   const mode = rawMode === "twin" ? "active" : rawMode;
 
   const { user, googleFitToken } = useAuth();
+  const { userSex, setUserSex, setUserHeight, setUserWeight } = useAvatar();
   
   const [showCaptureToast, setShowCaptureToast] = useState(() => window.location.search.includes("captured=true"));
   const [selectedZone, setSelectedZone] = useState<ZoneId | null>(null);
@@ -139,6 +141,13 @@ export default function TwinPage() {
         if (dash.zone_confidence) {
           setLiveConfidence(dash.zone_confidence);
         }
+        
+        // Mock user details since we don't have a direct /user profile fetch in dashboard
+        // Normally this would come from GET /users/{user_id}
+        if (!userSex) setUserSex("Male"); // Defaulting to Male if not explicitly set
+        setUserHeight(178); // 178 cm
+        setUserWeight(75); // 75 kg
+
         if (hist && hist.length > 0) {
           setHistoryData(hist.reverse()); // Chronological
           setHistCursor(hist.length - 1);
@@ -245,27 +254,31 @@ export default function TwinPage() {
           
           <div className="pointer-events-auto flex items-center justify-between p-6 shrink-0 mt-2 mx-4 gap-3">
             {/* View Mode Switcher */}
-            <div className="bg-black/60 backdrop-blur-xl border border-white/10 p-1.5 rounded-2xl flex items-center gap-1.5 shadow-2xl">
-              <button
-                onClick={() => setViewMode("scan")}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  viewMode === "scan"
-                    ? "bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-lg shadow-cyan-500/20"
-                    : "text-muted-foreground hover:text-white"
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> Human Anatomy Scan
-              </button>
-              <button
-                onClick={() => setViewMode("3d")}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  viewMode === "3d"
-                    ? "bg-blue-600/30 text-blue-300 border border-blue-500/50 shadow-lg shadow-blue-500/20"
-                    : "text-muted-foreground hover:text-white"
-                }`}
-              >
-                <Box className="w-3.5 h-3.5 text-blue-400" /> 3D Humanoid Mesh
-              </button>
+            <div className="flex gap-3">
+              <div className="bg-black/60 backdrop-blur-xl border border-white/10 p-1.5 rounded-2xl flex items-center gap-1.5 shadow-2xl">
+                <button
+                  onClick={() => setViewMode("scan")}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    viewMode === "scan"
+                      ? "bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-lg shadow-cyan-500/20"
+                      : "text-muted-foreground hover:text-white"
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> Human Anatomy Scan
+                </button>
+                <button
+                  onClick={() => setViewMode("3d")}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    viewMode === "3d"
+                      ? "bg-blue-600/30 text-blue-300 border border-blue-500/50 shadow-lg shadow-blue-500/20"
+                      : "text-muted-foreground hover:text-white"
+                  }`}
+                >
+                  <Box className="w-3.5 h-3.5 text-blue-400" /> 3D Humanoid Mesh
+                </button>
+              </div>
+
+
             </div>
 
             {/* Twin Score & Notification */}

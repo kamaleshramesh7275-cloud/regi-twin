@@ -743,22 +743,16 @@ Generates physiologically plausible sensor data with exertion-response modelling
 
 ---
 
-### 4.7 3D Model Generator
+### 4.7 3D Base Models
 
-`generate_model.py` — run once to generate `frontend/public/model.glb`.
+The application uses realistic rigged, skinned humanoid `.glb` models instead of the deprecated procedural box-mesh generator. The base models are hosted statically:
 
-Uses `trimesh` to create a segmented box-mesh human body with the following named segments:
+- `frontend/public/models/avatar_male.glb`
+- `frontend/public/models/avatar_female.glb`
 
-`head`, `neck`, `chest`, `lumbar`, `left_shoulder`, `right_shoulder`, `left_arm`, `right_arm`, `left_forearm`, `right_forearm`, `left_hip`, `right_hip`, `left_thigh`, `right_thigh`, `left_knee`, `right_knee`, `left_shin`, `right_shin`, `left_ankle`, `right_ankle`
+The models must contain a standard humanoid rig (e.g., Mixamo or Ready Player Me skeletons). The application uses a `ZONE_TO_BONE` lookup table in `HoloModel3D.tsx` to map the 20 anatomical zones (e.g., `left_knee`) to the corresponding bone world position to dynamically render the additive strain heatmap on top of the realistic skin.
 
-Each segment name maps directly to `zone_risks` keys, allowing the 3D viewer to colour-code segments by injury risk.
-
-```bash
-# Run from backend/ directory
-pip install trimesh
-python generate_model.py
-# Outputs: ../frontend/public/model.glb
-```
+> **Note:** The old procedural box-mesh script `backend/generate_model.py` is kept for reference but its output is deprecated. Ensure you use models with licenses permitting your intended use (e.g., CC-BY or Mixamo's base characters).
 
 ---
 
