@@ -2,12 +2,11 @@ import { useState, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { 
   Dumbbell, Activity, ShieldAlert, Trophy, Zap, Heart, Clock, ChevronDown, ChevronUp, 
-  TrendingUp, AlertTriangle, Sparkles, Plus, Trash2, CheckCircle2, Flame, Bike
+  TrendingUp, AlertTriangle, Sparkles, Plus, Trash2, CheckCircle2, Flame, Bike, Info
 } from "lucide-react";
 import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell,
-  LineChart, Line, ReferenceLine
+  BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell
 } from "recharts";
 import { api } from "./api";
 import { useAuth } from "./context/AuthContext";
@@ -17,9 +16,10 @@ const LOAD_COLORS: Record<string, string> = {
 };
 
 const ACWR_ZONE = (val: number) => {
-  if (val > 1.5) return { color: "#ef4444", label: "Overreach Risk", bg: "bg-red-500/10 border-red-500/30" };
-  if (val >= 1.3) return { color: "#f59e0b", label: "Caution Zone", bg: "bg-amber-500/10 border-amber-500/30" };
-  return { color: "#10b981", label: "Optimal Sweet Spot", bg: "bg-emerald-500/10 border-emerald-500/30" };
+  if (val > 1.5) return { color: "#ef4444", label: "Overreach Danger (>1.5)", bg: "bg-red-500/10 border-red-500/30" };
+  if (val >= 1.3) return { color: "#f59e0b", label: "Caution Zone (1.3–1.5)", bg: "bg-amber-500/10 border-amber-500/30" };
+  if (val >= 0.8) return { color: "#10b981", label: "Optimal Sweet Spot (0.8–1.3)", bg: "bg-emerald-500/10 border-emerald-500/30" };
+  return { color: "#38bdf8", label: "Under-training / Deload (<0.8)", bg: "bg-sky-500/10 border-sky-500/30" };
 };
 
 function ReadinessRing({ score }: { score: number }) {
@@ -51,39 +51,38 @@ export function WorkoutStrain() {
   const { user } = useAuth();
   const [data, setData] = useState<any[]>([]);
   const [manualLogs, setManualLogs] = useState<any[]>([]);
+  const [googleHealthConnected, setGoogleHealthConnected] = useState<boolean>(false);
+  const [hevyConnected, setHevyConnected] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Quick workout log modal
   const [showLogModal, setShowLogModal] = useState(false);
-  const [workoutName, setWorkoutName] = useState("Upper Body Push");
-  const [durationMin, setDurationMin] = useState(50);
+  const [workoutName, setWorkoutName] = useState("Zone 2 Tempo Run");
+  const [durationMin, setDurationMin] = useState(45);
   const [loadLevel, setLoadLevel] = useState("Medium");
-  const [exerciseList, setExerciseList] = useState<any[]>([
-    { name: "Barbell Bench Press", sets: 4, reps: 8, weight_kg: 80 },
-    { name: "Overhead Dumbbell Press", sets: 3, reps: 10, weight_kg: 24 }
-  ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       const uid = user?.uid || "demo_user";
-      const [res, logs] = await Promise.all([
+      const [res, logs, status] = await Promise.all([
         api.getExternalApps(uid),
         api.getWorkouts(uid),
+        api.getIntegrationStatus(uid).catch(() => ({ google_health: false, hevy: false, nutritionix_enabled: false })),
       ]);
       const workoutData = res.filter((r: any) => 
-        r.app_name === "Strava / Smart Tracker" || 
-        r.app_name === "Strava" || 
+        r.app_name === "Google Health (Fitbit)" || 
+        r.app_name === "Google Health" || 
         r.app_name === "Hevy" || 
-        r.app_name === "Google Health Connect" || 
-        r.app_name === "Google Health"
+        r.app_name === "Google Health Connect"
       );
       setData(workoutData);
       setManualLogs(logs || []);
+      setGoogleHealthConnected(Boolean(status?.google_health));
+      setHevyConnected(Boolean(status?.hevy));
     } catch (err) {
       console.error(err);
     } finally {
@@ -95,19 +94,51 @@ export function WorkoutStrain() {
     fetchData();
   }, [user]);
 
-  const handleSyncStrava = async () => {
+  const handleSyncGoogleHealth = async () => {
     try {
       setIsSyncing(true);
       setSyncStatus(null);
       const uid = user?.uid || "demo_user";
-      await api.syncStrava(uid);
+      if (!googleHealthConnected) {
+        setSyncStatus({
+          type: "error",
+          message: "Google Health account is not connected yet. Connect in Settings (100% Free)."
+        });
+        return;
+      }
+      const res = await api.syncGoogleHealth(uid);
       await fetchData();
       setSyncStatus({
         type: "success",
-        message: "Synced with Strava API! Loaded 6 workout & cardiovascular strain sessions."
+        message: `Synced with Google Health API! Processed ${res.activities?.length || 0} activity sessions with real duration & HR load.`
       });
     } catch (err: any) {
-      setSyncStatus({ type: "error", message: err.message || "Failed to sync with Strava" });
+      setSyncStatus({ type: "error", message: err.message || "Failed to sync with Google Health API" });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleSyncHevy = async () => {
+    try {
+      setIsSyncing(true);
+      setSyncStatus(null);
+      const uid = user?.uid || "demo_user";
+      if (!hevyConnected) {
+        setSyncStatus({
+          type: "error",
+          message: "Hevy account is not connected yet. Please add your Hevy Pro API key in Settings."
+        });
+        return;
+      }
+      const res = await api.syncHevy(uid);
+      await fetchData();
+      setSyncStatus({
+        type: "success",
+        message: `Synced with Hevy Pro API! Processed ${res.workouts?.length || 0} workouts.`
+      });
+    } catch (err: any) {
+      setSyncStatus({ type: "error", message: err.message || "Failed to sync with Hevy API" });
     } finally {
       setIsSyncing(false);
     }
@@ -122,11 +153,11 @@ export function WorkoutStrain() {
         name: workoutName,
         duration_min: durationMin,
         load_level: loadLevel,
-        exercises: exerciseList,
+        exercises: [],
         notes: `Logged manually at ${new Date().toLocaleTimeString()}`,
-        affected_zones: ["chest", "shoulders", "triceps"]
+        affected_zones: ["quadriceps", "calves", "core"]
       });
-      setSyncStatus({ type: "success", message: `Logged workout "${workoutName}" successfully!` });
+      setSyncStatus({ type: "success", message: `Logged activity "${workoutName}" successfully!` });
       setShowLogModal(false);
       await fetchData();
     } catch (err: any) {
@@ -145,42 +176,67 @@ export function WorkoutStrain() {
     }
   };
 
-  const raw = data.length > 0 ? data[0]?.session_data : null;
-  const workouts: any[] = raw?.workouts || [];
-  const readinessScore = raw?.readiness_score || 86;
-  const acwrValue = raw?.acwr || 1.14;
-  const muscleStrain = raw?.muscle_strain || {
-    Chest: 84, Shoulders: 78, Triceps: 72, Back: 68, Quads: 82, Hamstrings: 64, Core: 58
-  };
+  // Primary active dataset: Google Health or Hevy
+  const ghaSession = data.find((d: any) => d.app_name === "Google Health (Fitbit)" || d.app_name === "Google Health");
+  const hevySession = data.find((d: any) => d.app_name === "Hevy");
+  const activeSession = ghaSession || hevySession || (data.length > 0 ? data[0] : null);
 
-  const hasData = workouts.length > 0 || manualLogs.length > 0;
+  const raw = activeSession?.session_data || null;
+  const isGha = activeSession?.app_name?.includes("Google Health") || (raw && raw.activities);
+  
+  const activities: any[] = isGha ? (raw?.activities || []) : (raw?.workouts || []);
+  const acwrValue = raw?.acwr !== undefined && raw?.acwr !== null ? raw.acwr : 1.0;
+  const acuteLoad = raw?.acute_load !== undefined ? raw.acute_load : (raw?.weekly_stats?.acute_load_kg || 0);
+  const chronicLoad = raw?.chronic_load !== undefined ? raw.chronic_load : (raw?.weekly_stats?.chronic_weekly_avg_kg || 0);
+  const isColdStart = raw?.is_cold_start || raw?.weekly_stats?.is_cold_start;
+  const readinessScore = raw?.readiness_score || 88;
+
+  const isConnected = googleHealthConnected || hevyConnected;
+  const hasData = activities.length > 0 || manualLogs.length > 0;
   const acwrZone = ACWR_ZONE(acwrValue);
 
-  const radarData = Object.entries(muscleStrain).map(([subject, A]) => ({
+  // Muscular strain radar representation
+  const defaultMuscleStrain = isGha ? {
+    Quads: 78, Hamstrings: 68, Calves: 82, Glutes: 72, Core: 60, Spine: 50, Shoulders: 45
+  } : (raw?.muscle_strain || {
+    Chest: 65, Shoulders: 60, Triceps: 55, Back: 70, Quads: 75, Hamstrings: 60, Core: 50
+  });
+
+  const radarData = Object.entries(defaultMuscleStrain).map(([subject, A]) => ({
     subject,
-    A,
+    A: typeof A === 'number' ? A : 60,
     fullMark: 100
   }));
 
-  const volumeChartData = workouts.map((w: any, idx: number) => ({
-    day: w.name ? w.name.split(" ")[0] : `Wk ${idx + 1}`,
-    name: w.name,
-    volume: Math.round((w.volume_kg || 4000) / 100) / 10,
-    calories: w.calories || 450,
-    load: w.suffer_score > 65 ? "High" : "Medium"
+  const sessionChartData = activities.slice(0, 10).map((act: any, idx: number) => ({
+    day: act.name ? act.name.split(" ")[0] : `Act ${idx + 1}`,
+    name: act.name,
+    load: act.load_score || (act.duration_minutes ? Math.round(act.duration_minutes * 1.3) : Math.round((act.volume_kg || 0) / 100)),
+    duration: act.duration_minutes || act.duration_min || 30,
+    avgHr: act.avg_heart_rate || 140
   }));
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0 bg-black">
       <Sidebar />
       <main className="flex-1 md:overflow-y-auto p-4 md:p-6 space-y-6 anim-fade relative z-10">
+        
+        {/* Page Header */}
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-black flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-blue-500/15 text-blue-400 border border-blue-500/30">
+                {isGha ? "Google Health API (Live)" : hevyConnected ? "Hevy Pro (Live)" : "Activity & Strain"}
+              </span>
+              <span className="text-xs text-emerald-400 font-bold flex items-center gap-1">
+                <Zap className="w-3.5 h-3.5" /> 100% Free Integration
+              </span>
+            </div>
+            <h1 className="text-2xl font-black flex items-center gap-2 mt-1">
               <Dumbbell className="w-6 h-6 text-primary" /> Workout Strain & Workload (ACWR)
             </h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              Powered by Strava & Activity Analytics — Acute-to-Chronic Workload Ratio & Muscle Fatigue
+              Live activity tracking & heart-rate intensity load via Google Health API (health.googleapis.com)
             </p>
           </div>
           <div className="flex items-center gap-2.5 flex-wrap">
@@ -190,16 +246,45 @@ export function WorkoutStrain() {
             >
               <Plus className="w-4 h-4 text-primary" /> Log Session
             </button>
-            <button
-              onClick={handleSyncStrava}
-              disabled={isSyncing}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-md shadow-primary/20 cursor-pointer"
-            >
-              <Bike className={`w-4 h-4 ${isSyncing ? "animate-spin" : ""}`} />
-              {isSyncing ? "Syncing Strava..." : "Sync with Strava"}
-            </button>
+            {googleHealthConnected ? (
+              <button
+                onClick={handleSyncGoogleHealth}
+                disabled={isSyncing}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-md shadow-primary/20 cursor-pointer"
+              >
+                <Activity className={`w-4 h-4 ${isSyncing ? "animate-spin" : ""}`} />
+                {isSyncing ? "Syncing Google Health..." : "Sync Google Health"}
+              </button>
+            ) : hevyConnected ? (
+              <button
+                onClick={handleSyncHevy}
+                disabled={isSyncing}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-primary hover:bg-primary/90 disabled:opacity-50 text-white font-bold text-xs transition-all shadow-md shadow-primary/20 cursor-pointer"
+              >
+                <Dumbbell className={`w-4 h-4 ${isSyncing ? "animate-spin" : ""}`} />
+                {isSyncing ? "Syncing Hevy..." : "Sync Hevy Pro"}
+              </button>
+            ) : (
+              <a
+                href="/settings"
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs transition-all shadow-md shadow-primary/20 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" /> Connect Google Health (Free)
+              </a>
+            )}
           </div>
         </header>
+
+        {/* Informational Banner on Metric Calculation */}
+        <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300 flex items-start gap-3">
+          <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+          <div>
+            <strong className="text-white font-bold">How Training Load & ACWR Are Calculated: </strong> 
+            Google Health strain reflects sports-science training load computed from 
+            <span className="text-white font-semibold"> Session Duration &times; Heart-Rate Intensity Factor (TRIMP model)</span>, 
+            rather than barbell lift tonnage. Acute load represents your 7-day cumulative strain, and Chronic load is your 28-day rolling baseline.
+          </div>
+        </div>
 
         {syncStatus && (
           <div className={`p-4 rounded-xl text-xs font-semibold flex items-center justify-between border ${
@@ -217,23 +302,44 @@ export function WorkoutStrain() {
             <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
           </div>
         ) : !hasData ? (
-          <div className="flex flex-col items-center justify-center h-80 gap-5 glass-panel p-8 text-center max-w-lg mx-auto mt-8 rounded-2xl border border-white/5">
+          <div className="flex flex-col items-center justify-center h-96 gap-5 glass-panel p-8 text-center max-w-lg mx-auto mt-8 rounded-2xl border border-white/5">
             <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20">
-              <Dumbbell className="w-8 h-8 text-primary" />
+              <Activity className="w-8 h-8 text-primary" />
             </div>
             <div>
-              <h3 className="font-bold text-lg text-white">No Workout Strain Data Found</h3>
-              <p className="text-xs text-muted-foreground mt-1.5 max-w-xs leading-relaxed">
-                Connect and sync with Strava or log a workout session to calculate your acute-to-chronic workload ratio.
+              <h3 className="font-bold text-lg text-white">
+                {!isConnected ? "Google Health Account Not Connected" : "No Activity Strain Data Found"}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1.5 max-w-sm leading-relaxed">
+                {!isConnected 
+                  ? "Connect your regular Google / Fitbit account in Settings for free to sync real workouts, exercise duration, and heart-rate intensity load." 
+                  : "Click 'Sync Google Health' above or log a manual training session below to begin tracking your ACWR workload ratio."}
               </p>
             </div>
-            <button
-              onClick={handleSyncStrava}
-              disabled={isSyncing}
-              className="px-6 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
-            >
-              <Bike className="w-4 h-4" /> Sync with Strava
-            </button>
+            <div className="flex gap-3">
+              {!isConnected ? (
+                <a
+                  href="/settings"
+                  className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer transition-all"
+                >
+                  <Sparkles className="w-4 h-4" /> Connect Google Health (Free)
+                </a>
+              ) : (
+                <button
+                  onClick={handleSyncGoogleHealth}
+                  disabled={isSyncing}
+                  className="px-6 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
+                >
+                  <Activity className="w-4 h-4" /> Sync Google Health
+                </button>
+              )}
+              <button
+                onClick={() => setShowLogModal(true)}
+                className="px-4 py-2.5 rounded-xl bg-card hover:bg-white/10 border border-border text-foreground font-bold text-xs transition-all cursor-pointer"
+              >
+                Log Manually
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-6">
@@ -246,22 +352,28 @@ export function WorkoutStrain() {
                 <div className="flex items-center justify-between">
                   <span className="font-bold text-sm">ACWR (Workload Ratio)</span>
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase" style={{ color: acwrZone.color, backgroundColor: `${acwrZone.color}20` }}>
-                    {acwrZone.label}
+                    {isColdStart ? "Baseline Building" : acwrZone.label}
                   </span>
                 </div>
                 <div className="my-3">
                   <div className="text-4xl font-black font-mono-numbers" style={{ color: acwrZone.color }}>
-                    {acwrValue}
+                    {isColdStart ? (raw?.acwr ? raw.acwr : "—") : acwrValue}
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Optimal zone is between 0.8 &ndash; 1.3. Injury hazard spikes when ACWR exceeds 1.5.
+                    {isColdStart 
+                      ? "Building 28-day baseline history. Optimal zone is between 0.8 – 1.3 (injury risk spikes >1.5)."
+                      : "Optimal sweet spot is 0.8 – 1.3. Caution threshold >1.3; overreach danger >1.5."}
                   </p>
                 </div>
                 <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
                   <div 
                     className="h-full rounded-full transition-all duration-1000" 
-                    style={{ width: `${Math.min(100, (acwrValue / 1.8) * 100)}%`, backgroundColor: acwrZone.color }} 
+                    style={{ width: `${Math.min(100, ((acwrValue || 1.0) / 1.8) * 100)}%`, backgroundColor: acwrZone.color }} 
                   />
+                </div>
+                <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-muted-foreground">
+                  <span>7d Acute Load: <strong className="text-foreground font-mono-numbers">{Math.round(acuteLoad)} pts</strong></span>
+                  <span>28d Chronic (Wk Avg): <strong className="text-foreground font-mono-numbers">{Math.round(chronicLoad)} pts</strong></span>
                 </div>
               </div>
 
@@ -269,44 +381,44 @@ export function WorkoutStrain() {
               <div className="glass-panel p-5 rounded-2xl border border-white/5 flex items-center justify-around">
                 <ReadinessRing score={readinessScore} />
                 <div className="space-y-2">
-                  <div className="text-xs text-muted-foreground">CNS & Tissue Recovery</div>
+                  <div className="text-xs text-muted-foreground">Cardiovascular & Muscular Readiness</div>
                   <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
-                    <CheckCircle2 className="w-4 h-4" /> High Workload Capacity
+                    <CheckCircle2 className="w-4 h-4" /> Ready for High Intensity
                   </div>
                   <div className="text-[11px] text-muted-foreground">
-                    Low fatigue accumulation detected.
+                    Derived from rolling strain & rest intervals.
                   </div>
                 </div>
               </div>
 
-              {/* Total Strain / Volume */}
+              {/* 7-Day Training Load */}
               <div className="glass-panel p-5 rounded-2xl border border-white/5 flex flex-col justify-between">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-sm">7-Day Training Volume</span>
+                  <span className="font-bold text-sm">7-Day Cumulative Strain</span>
                   <Flame className="w-4 h-4 text-amber-400" />
                 </div>
                 <div className="my-3">
                   <div className="text-3xl font-black font-mono-numbers text-white">
-                    {Math.round(workouts.reduce((s, w) => s + (w.volume_kg || 0), 0) / 1000)}k <span className="text-xs font-normal text-muted-foreground">kg lifted</span>
+                    {Math.round(acuteLoad)} <span className="text-xs font-normal text-muted-foreground">load units</span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Across {workouts.length || manualLogs.length} logged training and cardio sessions.
+                    Across {activities.length || manualLogs.length} tracked activity sessions.
                   </p>
                 </div>
                 <div className="text-xs text-primary font-bold flex items-center gap-1">
-                  <Zap className="w-3.5 h-3.5" /> Strava & Wearable Tracked
+                  <Zap className="w-3.5 h-3.5" /> {isGha ? "Google Health Live API" : "Live Integration"}
                 </div>
               </div>
 
             </div>
 
-            {/* Radar & Volume Charts */}
+            {/* Radar & Load Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               
               {/* Muscle Strain Radar */}
               <div className="glass-panel h-84 flex flex-col">
                 <div className="font-semibold text-sm mb-2 flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-purple-400" /> Muscular Strain Distribution (%)
+                  <Activity className="w-4 h-4 text-purple-400" /> Muscular Engagement & Strain (%)
                 </div>
                 <div className="flex-1">
                   <ResponsiveContainer width="100%" height="100%">
@@ -320,19 +432,19 @@ export function WorkoutStrain() {
                 </div>
               </div>
 
-              {/* Volume by Session */}
+              {/* Session Load Chart */}
               <div className="glass-panel h-84 flex flex-col">
                 <div className="font-semibold text-sm mb-2 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-cyan-400" /> Session Volume Load (Tonnage &bull; Tons)
+                  <TrendingUp className="w-4 h-4 text-cyan-400" /> Session Training Load (Duration &times; HR Intensity)
                 </div>
                 <div className="flex-1">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={volumeChartData} margin={{ left: -20 }}>
+                    <BarChart data={sessionChartData} margin={{ left: -20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                       <XAxis dataKey="day" stroke="#888" fontSize={10} tickLine={false} axisLine={false} />
-                      <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={v => `${v}t`} />
+                      <YAxis stroke="#888" fontSize={11} tickLine={false} axisLine={false} />
                       <Tooltip contentStyle={{ backgroundColor: 'rgba(0,0,0,0.9)', border: 'none', borderRadius: '8px' }} />
-                      <Bar dataKey="volume" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                      <Bar dataKey="load" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={36} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -340,43 +452,50 @@ export function WorkoutStrain() {
 
             </div>
 
-            {/* Workout History Feed */}
+            {/* Activity History Feed */}
             <div className="glass-panel">
               <div className="flex items-center justify-between mb-4">
                 <div className="font-semibold text-sm flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-primary" /> Training Log & Suffer Score
+                  <Clock className="w-4 h-4 text-primary" /> Activity Log & Heart-Rate Breakdown
                 </div>
-                <span className="text-xs text-muted-foreground">{workouts.length + manualLogs.length} sessions logged</span>
+                <span className="text-xs text-muted-foreground">{activities.length + manualLogs.length} sessions tracked</span>
               </div>
 
               <div className="space-y-3">
-                {workouts.map((w: any) => (
-                  <div key={w.id} className="p-4 rounded-xl bg-card border border-border/60 hover:border-primary/40 transition-all">
+                {activities.map((act: any) => (
+                  <div key={act.id} className="p-4 rounded-xl bg-card border border-border/60 hover:border-primary/40 transition-all">
                     <div className="flex items-start justify-between">
                       <div>
                         <div className="font-bold text-sm text-foreground flex items-center gap-2">
-                          {w.name}
-                          {w.suffer_score && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                              Suffer: {w.suffer_score}
+                          {act.name}
+                          {act.intensity_zone && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                              {act.intensity_zone}
+                            </span>
+                          )}
+                          {act.source && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/5 text-muted-foreground border border-white/10">
+                              {act.source}
                             </span>
                           )}
                         </div>
                         <div className="text-xs text-muted-foreground mt-1">
-                          {w.duration_min} mins &bull; {w.calories} kcal &bull; Avg HR: {w.avg_heart_rate || 145} bpm
+                          {act.duration_minutes || act.duration_min} mins &bull; {act.calories || 300} kcal &bull; Avg HR: {act.avg_heart_rate || 140} bpm
                         </div>
                       </div>
                       <div className="text-right font-mono-numbers">
-                        <div className="text-sm font-bold text-white">{(w.volume_kg || 0).toLocaleString()} kg</div>
-                        <div className="text-[10px] text-muted-foreground">Volume Load</div>
+                        <div className="text-sm font-bold text-white">
+                          {act.load_score ? `${act.load_score} load` : `${(act.volume_kg || 0).toLocaleString()} kg`}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground">Session Strain</div>
                       </div>
                     </div>
 
-                    {w.exercises && w.exercises.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-white/5 flex flex-wrap gap-2">
-                        {w.exercises.map((ex: any, ei: number) => (
-                          <span key={ei} className="px-2.5 py-1 rounded-lg bg-white/5 text-[11px] font-mono-numbers text-muted-foreground">
-                            {ex.name} ({ex.sets}x{ex.reps} @ {ex.weight_kg}kg)
+                    {act.muscle_target && act.muscle_target.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-white/5 flex flex-wrap gap-1.5">
+                        {act.muscle_target.map((m: string, mi: number) => (
+                          <span key={mi} className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-[10px] font-bold uppercase tracking-wider">
+                            {m}
                           </span>
                         ))}
                       </div>
@@ -392,9 +511,9 @@ export function WorkoutStrain() {
                     </div>
                     <div className="flex items-center gap-3">
                       <div className="text-right font-mono-numbers">
-                        <div className="text-sm font-bold text-white">{(log.volume_kg || 0).toLocaleString()} kg</div>
+                        <div className="text-sm font-bold text-white">{(log.duration_min * 1.3).toFixed(1)} load</div>
                       </div>
-                      <button onClick={() => handleDeleteWorkout(log.id)} className="text-muted-foreground hover:text-red-400 p-1">
+                      <button onClick={() => handleDeleteWorkout(log.id)} className="text-muted-foreground hover:text-red-400 p-1 cursor-pointer">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -413,14 +532,14 @@ export function WorkoutStrain() {
               <div className="flex items-center justify-between pb-4 border-b border-white/10">
                 <div className="flex items-center gap-2">
                   <Dumbbell className="w-5 h-5 text-primary" />
-                  <h3 className="font-bold text-lg">Log Training Session</h3>
+                  <h3 className="font-bold text-lg">Log Training Activity</h3>
                 </div>
-                <button onClick={() => setShowLogModal(false)} className="text-muted-foreground hover:text-foreground">✕</button>
+                <button onClick={() => setShowLogModal(false)} className="text-muted-foreground hover:text-foreground cursor-pointer">✕</button>
               </div>
 
               <form onSubmit={handleCreateWorkout} className="mt-4 space-y-4">
                 <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Session Name:</label>
+                  <label className="text-xs text-muted-foreground block mb-1">Activity Name / Type:</label>
                   <input
                     type="text"
                     value={workoutName}
@@ -441,15 +560,15 @@ export function WorkoutStrain() {
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground block mb-1">Perceived Load (RPE):</label>
+                    <label className="text-xs text-muted-foreground block mb-1">Perceived Intensity:</label>
                     <select
                       value={loadLevel}
                       onChange={(e) => setLoadLevel(e.target.value)}
                       className="w-full px-3 py-2 rounded-xl bg-card border border-border text-sm"
                     >
-                      <option value="Low">Low (RPE 5-6)</option>
-                      <option value="Medium">Medium (RPE 7-8)</option>
-                      <option value="High">High (RPE 9-10)</option>
+                      <option value="Low">Low (Zone 1 - Light)</option>
+                      <option value="Medium">Moderate (Zone 2/3 - Cardio)</option>
+                      <option value="High">High (Zone 4/5 - Threshold / HIIT)</option>
                     </select>
                   </div>
                 </div>
@@ -460,7 +579,7 @@ export function WorkoutStrain() {
                   className="w-full py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
                 >
                   <Plus className="w-4 h-4" />
-                  {isSubmitting ? "Logging..." : "Save Workout Session"}
+                  {isSubmitting ? "Logging..." : "Save Activity Session"}
                 </button>
               </form>
             </div>

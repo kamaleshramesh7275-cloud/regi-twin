@@ -21,6 +21,10 @@ class User(Base):
     goals = Column(String, nullable=True) # Stored as comma separated string or JSON array string
     consent = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    # Integrations
+    hevy_api_key_encrypted = Column(String, nullable=True)
+    google_health_refresh_token_encrypted = Column(String, nullable=True)
 
 
 class WearableSession(Base):
@@ -218,7 +222,7 @@ class WorkoutLog(Base):
 
 
 class NutritionLog(Base):
-    """Manually logged daily nutrition entry."""
+    """Manually or API-logged daily nutrition entry."""
     __tablename__ = "nutrition_logs"
 
     id = Column(String, primary_key=True, default=generate_uuid)
@@ -230,6 +234,9 @@ class NutritionLog(Base):
     protein_g = Column(Float, nullable=True)
     carbs_g = Column(Float, nullable=True)
     fat_g = Column(Float, nullable=True)
+    micros_json = Column(Text, nullable=True)    # JSON string of micronutrient values (iron, calcium, etc.)
+    raw_data = Column(Text, nullable=True)       # Full JSON from nutrition API
+
 
 
 class ReadinessSurvey(Base):

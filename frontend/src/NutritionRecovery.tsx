@@ -54,13 +54,19 @@ function MicronutrientBar({ name, pct }: { name: string, pct: number }) {
 export function NutritionRecovery() {
   const { user } = useAuth();
   const [data, setData] = useState<any[]>([]);
+  const [weeklyRollup, setWeeklyRollup] = useState<any>(null);
   const [manualLogs, setManualLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
-  // OpenFoodFacts search & logging state
+  // Natural language meal logging state (Nutritionix)
+  const [naturalText, setNaturalText] = useState("");
+  const [naturalMealType, setNaturalMealType] = useState("Breakfast");
+  const [isLoggingNatural, setIsLoggingNatural] = useState(false);
+
+  // Food Search & Preset state
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -74,18 +80,22 @@ export function NutritionRecovery() {
     try {
       setLoading(true);
       const uid = user?.uid || "demo_user";
-      const [res, logs] = await Promise.all([
-        api.getExternalApps(uid),
-        api.getNutrition(uid, 7),
+      const [weeklyRes, logs, extRes] = await Promise.all([
+        api.getWeeklyNutrition(uid).catch(() => null),
+        api.getNutrition(uid, 14),
+        api.getExternalApps(uid).catch(() => []),
       ]);
-      const nutritionData = res.filter((r: any) => 
+
+      setWeeklyRollup(weeklyRes);
+      setManualLogs(logs || []);
+      
+      const nutritionExt = extRes.filter((r: any) => 
+        r.app_name === "Nutritionix / PhysioTwin Nutrition" ||
         r.app_name === "OpenFoodFacts / Smart Nutrition" || 
         r.app_name === "Google Health Connect" || 
-        r.app_name === "Google Health" || 
-        r.app_name === "HealthifyMe"
+        r.app_name === "Google Health"
       );
-      setData(nutritionData);
-      setManualLogs(logs || []);
+      setData(nutritionExt);
     } catch (err) {
       console.error("Error loading nutrition:", err);
     } finally {
@@ -96,6 +106,31 @@ export function NutritionRecovery() {
   useEffect(() => {
     fetchData();
   }, [user]);
+
+  const handleLogNaturalMeal = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!naturalText.trim()) return;
+    try {
+      setIsLoggingNatural(true);
+      setSyncStatus(null);
+      const uid = user?.uid || "demo_user";
+      const res = await api.logNutrition(uid, {
+        text: naturalText.trim(),
+        meal_name: naturalMealType,
+      });
+
+      setSyncStatus({
+        type: "success",
+        message: `Parsed & Logged "${res.items || naturalText}" (${res.calories} kcal, ${res.protein_g}g protein) to ${naturalMealType}!`
+      });
+      setNaturalText("");
+      await fetchData();
+    } catch (err: any) {
+      setSyncStatus({ type: "error", message: err.message || "Failed to log meal." });
+    } finally {
+      setIsLoggingNatural(false);
+    }
+  };
 
   const handleSearchFoods = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -150,20 +185,16 @@ export function NutritionRecovery() {
     }
   };
 
-  const handleQuickPreset = async (name: string, items: string, cal: number, prot: number, carbs: number, fat: number) => {
+  const handleQuickPreset = async (name: string, text: string) => {
     try {
       const uid = user?.uid || "demo_user";
-      await api.logNutrition(uid, {
+      const res = await api.logNutrition(uid, {
+        text: text,
         meal_name: name,
-        items: items,
-        calories: cal,
-        protein_g: prot,
-        carbs_g: carbs,
-        fat_g: fat
       });
       setSyncStatus({
         type: "success",
-        message: `Quick-added "${name}" (${cal} kcal, ${prot}g protein)!`
+        message: `Added preset "${name}" (${res.calories} kcal, ${res.protein_g}g protein)!`
       });
       await fetchData();
     } catch (err: any) {
@@ -180,10 +211,10 @@ export function NutritionRecovery() {
       await fetchData();
       setSyncStatus({
         type: "success",
-        message: "Loaded 7 full days of athletic nutrition data from OpenFoodFacts database!"
+        message: "Loaded 7 full days of athletic nutrition data into PhysioTwin recovery engine!"
       });
     } catch (err: any) {
-      setSyncStatus({ type: "error", message: err.message || "Failed to load nutrition week" });
+      setSyncStatus({ type: "error", message: err.message || "Failed to load nutrition plan" });
     } finally {
       setIsSyncing(false);
     }
@@ -198,9 +229,13 @@ export function NutritionRecovery() {
     }
   };
 
-  const raw = (data.length > 0 && data[0]?.session_data) ? data[0].session_data : null;
-  const nutritionHistory: any[] = raw?.nutrition || [];
-  const weeklySummary = raw?.weekly_summary || null;
+  // Determine active nutrition history list
+  const extRaw = (data.length > 0 && data[0]?.session_data) ? data[0].session_data : null;
+  const rollupDays = weeklyRollup?.nutrition || [];
+  const hasRollupData = rollupDays.some((d: any) => d.calories > 0 || d.protein > 0);
+
+  const nutritionHistory: any[] = hasRollupData ? rollupDays : (extRaw?.nutrition || []);
+  const weeklySummary = weeklyRollup?.weekly_summary || extRaw?.weekly_summary || null;
 
   // Real data check
   const hasRealData = (nutritionHistory.length > 0 && nutritionHistory.some((n: any) => n.calories > 0 || n.protein > 0)) || manualLogs.length > 0;
@@ -224,15 +259,15 @@ export function NutritionRecovery() {
               <Apple className="w-6 h-6 text-emerald-500" /> Nutrition & Metabolic Recovery
             </h1>
             <p className="text-muted-foreground text-sm mt-0.5">
-              Powered by OpenFoodFacts — Live food nutrition database & macro recovery engine
+              Powered by Nutritionix Natural Language API — Live food macronutrient & micronutrient recovery engine
             </p>
           </div>
           <div className="flex items-center gap-2.5 flex-wrap">
             <button
               onClick={() => setShowSearchModal(true)}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs transition-all shadow-md shadow-primary/20 cursor-pointer"
+              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-card hover:bg-white/10 border border-border text-foreground font-bold text-xs transition-all cursor-pointer"
             >
-              <Search className="w-4 h-4" /> Search Foods
+              <Search className="w-4 h-4" /> Food Search
             </button>
             <button
               onClick={handleSeedWeek}
@@ -256,31 +291,69 @@ export function NutritionRecovery() {
           </div>
         )}
 
+        {/* Natural Language Meal Logging Input */}
+        <div className="glass-panel p-4 border border-emerald-500/20 bg-gradient-to-r from-emerald-500/5 via-card to-card rounded-2xl space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" /> Nutritionix Natural Language Food Logger
+            </span>
+            <span className="text-[11px] text-muted-foreground">Type in plain English</span>
+          </div>
+          <form onSubmit={handleLogNaturalMeal} className="flex flex-col sm:flex-row gap-2.5">
+            <select
+              value={naturalMealType}
+              onChange={(e) => setNaturalMealType(e.target.value)}
+              className="px-3 py-2 rounded-xl bg-card border border-border text-xs font-bold shrink-0 focus:outline-none focus:border-emerald-500"
+            >
+              <option value="Breakfast">Breakfast</option>
+              <option value="Lunch">Lunch</option>
+              <option value="Dinner">Dinner</option>
+              <option value="Snack">Snack</option>
+              <option value="Post-Workout">Post-Workout</option>
+            </select>
+            <input
+              type="text"
+              placeholder="e.g. 2 large eggs, 2 slices toast with butter, 1 cup black coffee"
+              value={naturalText}
+              onChange={(e) => setNaturalText(e.target.value)}
+              className="flex-1 px-4 py-2 rounded-xl bg-card border border-border text-xs focus:outline-none focus:border-emerald-500 text-foreground placeholder:text-muted-foreground"
+            />
+            <button
+              type="submit"
+              disabled={isLoggingNatural || !naturalText.trim()}
+              className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white font-bold text-xs shrink-0 cursor-pointer shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-1.5"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {isLoggingNatural ? "Analyzing..." : "Log Meal"}
+            </button>
+          </form>
+        </div>
+
         {/* Quick Presets Bar */}
         <div className="glass-panel p-3.5 border border-white/5 flex items-center gap-2.5 overflow-x-auto scrollbar-hide">
           <span className="text-[11px] font-bold text-muted-foreground uppercase shrink-0 flex items-center gap-1.5 pl-1">
             <Utensils className="w-3.5 h-3.5 text-emerald-400" /> Quick Add:
           </span>
           <button
-            onClick={() => handleQuickPreset("Breakfast: Oatmeal & Whey", "80g Oats, 35g Whey Isolate, Berries", 580, 42, 65, 14)}
+            onClick={() => handleQuickPreset("Breakfast", "80g rolled oats, 35g whey protein isolate, 50g blueberries")}
             className="px-3 py-1.5 rounded-lg bg-card hover:bg-white/10 border border-white/5 text-xs text-foreground font-medium shrink-0 flex items-center gap-1.5 transition-all cursor-pointer"
           >
             🥣 Protein Oats <span className="text-[10px] text-emerald-400 font-mono-numbers">42g P</span>
           </button>
           <button
-            onClick={() => handleQuickPreset("Lunch: Chicken & Jasmine Rice", "180g Chicken Breast, 200g Jasmine Rice, Broccoli", 720, 58, 75, 12)}
+            onClick={() => handleQuickPreset("Lunch", "180g grilled chicken breast, 200g brown jasmine rice, 100g steamed broccoli")}
             className="px-3 py-1.5 rounded-lg bg-card hover:bg-white/10 border border-white/5 text-xs text-foreground font-medium shrink-0 flex items-center gap-1.5 transition-all cursor-pointer"
           >
             🍗 Chicken & Rice <span className="text-[10px] text-emerald-400 font-mono-numbers">58g P</span>
           </button>
           <button
-            onClick={() => handleQuickPreset("Snack: Greek Yogurt & Walnuts", "200g 0% Greek Yogurt, Raw Honey, 20g Walnuts", 320, 24, 26, 10)}
+            onClick={() => handleQuickPreset("Snack", "200g 0% greek yogurt, 1 tbsp raw honey, 20g walnuts")}
             className="px-3 py-1.5 rounded-lg bg-card hover:bg-white/10 border border-white/5 text-xs text-foreground font-medium shrink-0 flex items-center gap-1.5 transition-all cursor-pointer"
           >
             🥛 Greek Yogurt <span className="text-[10px] text-emerald-400 font-mono-numbers">24g P</span>
           </button>
           <button
-            onClick={() => handleQuickPreset("Dinner: Salmon & Sweet Potato", "160g Atlantic Salmon, 200g Sweet Potato, Asparagus", 830, 38, 70, 26)}
+            onClick={() => handleQuickPreset("Dinner", "160g atlantic salmon, 200g sweet potato, 100g asparagus")}
             className="px-3 py-1.5 rounded-lg bg-card hover:bg-white/10 border border-white/5 text-xs text-foreground font-medium shrink-0 flex items-center gap-1.5 transition-all cursor-pointer"
           >
             🐟 Salmon Bowl <span className="text-[10px] text-emerald-400 font-mono-numbers">38g P</span>
@@ -292,22 +365,22 @@ export function NutritionRecovery() {
             <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
           </div>
         ) : !hasRealData ? (
-          <div className="flex flex-col items-center justify-center h-80 gap-5 glass-panel p-8 text-center max-w-lg mx-auto mt-8 rounded-2xl border border-white/5">
+          <div className="flex flex-col items-center justify-center h-88 gap-5 glass-panel p-8 text-center max-w-lg mx-auto mt-6 rounded-2xl border border-white/5">
             <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20">
               <Apple className="w-8 h-8 text-emerald-400" />
             </div>
             <div>
               <h3 className="font-bold text-lg text-white">No Nutrition Logs Found</h3>
               <p className="text-xs text-muted-foreground mt-1.5 max-w-xs leading-relaxed">
-                Search OpenFoodFacts database for foods or load the 7-day athletic plan to light up your recovery metrics.
+                Log your first meal using the natural language box above (e.g. &quot;2 eggs and a slice of toast&quot;) or load the 7-day athletic plan.
               </p>
             </div>
             <div className="flex gap-3">
               <button
                 onClick={() => setShowSearchModal(true)}
-                className="px-4 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
+                className="px-4 py-2.5 rounded-xl bg-card hover:bg-white/10 border border-border text-foreground font-bold text-xs flex items-center gap-2 cursor-pointer transition-all"
               >
-                <Search className="w-4 h-4" /> Search Foods
+                <Search className="w-4 h-4" /> Food Search
               </button>
               <button
                 onClick={handleSeedWeek}

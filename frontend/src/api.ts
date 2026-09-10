@@ -387,7 +387,77 @@ export const api = {
     return res.json();
   },
 
-  // ── MANUAL NUTRITION LOGGING ─────────────────────────────────────────────────
+  // ── INTEGRATIONS (GOOGLE HEALTH, HEVY PRO & NUTRITIONIX) ────────────────────
+
+  async getIntegrationStatus(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/users/${userId}/integrations/status`);
+    if (!res.ok) throw new Error("Failed to fetch integration status");
+    return res.json() as Promise<{
+      google_health: boolean;
+      hevy: boolean;
+      nutritionix_enabled: boolean;
+    }>;
+  },
+
+  async getGoogleHealthAuthorizeUrl(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/users/${userId}/integrations/google-health/authorize`);
+    if (!res.ok) throw new Error("Failed to get Google Health authorize URL");
+    return res.json() as Promise<{ url: string; user_id: string }>;
+  },
+
+  async disconnectGoogleHealth(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/users/${userId}/integrations/google-health`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to disconnect Google Health");
+    return res.json();
+  },
+
+  async syncGoogleHealth(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/integrations/google-health/sync/${userId}`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to sync Google Health activities");
+    }
+    return res.json();
+  },
+
+  async connectHevy(userId: string, apiKey: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/users/${userId}/integrations/hevy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: apiKey }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to connect Hevy API key");
+    }
+    return res.json();
+  },
+
+  async disconnectHevy(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/users/${userId}/integrations/hevy`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to disconnect Hevy");
+    return res.json();
+  },
+
+  async syncHevy(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/integrations/hevy/sync/${userId}`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to sync Hevy workouts");
+    }
+    return res.json();
+  },
+
+
+  // ── MANUAL & NUTRITIONIX LOGGING ──────────────────────────────────────────
 
   async searchFoods(query: string) {
     const res = await fetchWithTimeout(`${API_BASE}/nutrition/search?q=${encodeURIComponent(query)}`);
@@ -419,20 +489,38 @@ export const api = {
     return res.json();
   },
 
+  async getDailyNutrition(userId: string, date?: string) {
+    const url = date ? `${API_BASE}/nutrition/daily/${userId}?date=${date}` : `${API_BASE}/nutrition/daily/${userId}`;
+    const res = await fetchWithTimeout(url);
+    if (!res.ok) throw new Error("Failed to fetch daily nutrition");
+    return res.json();
+  },
+
+  async getWeeklyNutrition(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/nutrition/week/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch weekly nutrition rollup");
+    return res.json();
+  },
+
   async logNutrition(userId: string, data: {
+    text?: string;
     meal_name?: string;
     items?: string;
     calories?: number;
     protein_g?: number;
     carbs_g?: number;
     fat_g?: number;
+    micros?: any;
   }) {
     const res = await fetchWithTimeout(`${API_BASE}/nutrition/log/${userId}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to log nutrition");
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || "Failed to log nutrition");
+    }
     return res.json();
   },
 

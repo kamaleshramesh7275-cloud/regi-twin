@@ -12,6 +12,14 @@ import datetime
 from database import engine, get_db, Base
 import models
 from analytics import compute_capability_profile, generate_weekly_letter, generate_deep_insights, chat_with_twin, simulate_activity, compute_injury_risk
+from crypto_utils import encrypt_secret, decrypt_secret
+from integrations.hevy_client import HevyClient, parse_hevy_workouts
+from integrations.nutritionix_client import NutritionixClient, RDA_TARGETS
+from integrations.google_health import (
+    get_authorization_url, exchange_code_for_tokens, refresh_access_token,
+    fetch_google_health_activities, calculate_google_health_acwr
+)
+import json
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -27,6 +35,9 @@ app.add_middleware(
 )
 
 # Pydantic models for request/response
+class HevyConnectRequest(BaseModel):
+    api_key: str
+
 class UserCreate(BaseModel):
     user_id: str
     email: str
@@ -264,12 +275,45 @@ def calculate_dynamic_risk(req: SyncFitRequest):
     workouts = fit_data.get("workouts", [])
     nutrition = fit_data.get("nutrition", {})
     
-    has_heavy_legs = any(
-        "Leg Day" in w.get("name", "") and w.get("load") == "High" 
-        for w in workouts
-    )
-    has_low_protein = "Low" in nutrition.get("protein", "")
-    
+    # 1. Detect heavy leg volume or high-load leg workouts / Google Health activities
+    has_heavy_legs = False
+    for w in workouts:
+        if not isinstance(w, dict):
+            continue
+        name = w.get("name", "").lower()
+        load = w.get("load", "") or w.get("load_level", "")
+        vol = w.get("volume_kg", 0)
+        load_score = w.get("load_score", 0)
+        exercises = w.get("exercises", [])
+        muscle_targets = [str(m).lower() for m in w.get("muscle_target", [])]
+        
+        is_leg = any(kw in name for kw in ["leg", "squat", "quad", "deadlift", "lower", "hamstring", "run", "sprint"]) or any(
+            any(kw in ex.get("name", "").lower() for kw in ["squat", "leg press", "lunge", "deadlift", "rdl"])
+            for ex in exercises if isinstance(ex, dict)
+        ) or any(kw in muscle_targets for kw in ["quadriceps", "hamstrings", "glutes", "calves"])
+        
+        if (is_leg and (load == "High" or vol > 4000 or load_score > 55)) or (load == "High" and "Leg Day" in w.get("name", "")):
+            has_heavy_legs = True
+            break
+
+    # 2. Detect low protein intake (<120g average or explicit "Low")
+    has_low_protein = False
+    if isinstance(nutrition, dict):
+        if "Low" in str(nutrition.get("protein", "")):
+            has_low_protein = True
+        elif isinstance(nutrition.get("avg_protein_g"), (int, float)) and nutrition["avg_protein_g"] < 120:
+            has_low_protein = True
+        elif isinstance(nutrition.get("avg_protein"), (int, float)) and nutrition["avg_protein"] < 120:
+            has_low_protein = True
+        elif isinstance(nutrition.get("history"), list):
+            valid_p = [n.get("protein", 0) for n in nutrition["history"] if isinstance(n, dict) and n.get("protein")]
+            if valid_p and (sum(valid_p) / len(valid_p)) < 120:
+                has_low_protein = True
+    elif isinstance(nutrition, list):
+        valid_p = [n.get("protein", 0) for n in nutrition if isinstance(n, dict) and n.get("protein")]
+        if valid_p and (sum(valid_p) / len(valid_p)) < 120:
+            has_low_protein = True
+
     if has_heavy_legs and has_low_protein:
         updated_risk["lumbar"] = min(100, updated_risk.get("lumbar", 0) + 35)
         updated_risk["left_knee"] = min(100, updated_risk.get("left_knee", 0) + 25)
@@ -277,6 +321,253 @@ def calculate_dynamic_risk(req: SyncFitRequest):
         updated_risk["left_thigh"] = min(100, updated_risk.get("left_thigh", 0) + 15)
         
     return updated_risk
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GOOGLE HEALTH & HEVY INTEGRATIONS (OAuth & Secure Sync)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/users/{user_id}/integrations/google-health/authorize")
+def google_health_authorize(user_id: str, redirect_uri: Optional[str] = None):
+    """
+    Returns the Google OAuth 2.0 consent URL for Google Health API.
+    """
+    auth_url = get_authorization_url(user_id, redirect_uri)
+    return {"url": auth_url, "user_id": user_id}
+
+
+@app.get("/oauth/google-health/callback")
+def google_health_oauth_callback(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Handles Google OAuth 2.0 callback, exchanges code for tokens,
+    encrypts the refresh token at rest, and caches initial activities.
+    """
+    if error:
+        return HTMLResponse(content=f"<h3>Google Health Authorization Failed</h3><p>{error}</p><a href='http://localhost:3000/settings'>Return to Settings</a>", status_code=400)
+        
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code")
+        
+    user_id = state or "default_user"
+    
+    try:
+        token_data = exchange_code_for_tokens(code)
+        refresh_token = token_data.get("refresh_token")
+        access_token = token_data.get("access_token", "")
+        
+        # Symmetrically encrypt refresh token at rest using GHA_TOKEN_ENCRYPTION_SECRET
+        encrypted_refresh_token = encrypt_secret(refresh_token, "GHA_TOKEN_ENCRYPTION_SECRET") if refresh_token else None
+        
+        user = db.query(models.User).filter(models.User.user_id == user_id).first()
+        if not user:
+            user = models.User(
+                user_id=user_id,
+                email=f"{user_id}@physiotwin.local",
+                google_health_refresh_token_encrypted=encrypted_refresh_token
+            )
+            db.add(user)
+        else:
+            if encrypted_refresh_token:
+                user.google_health_refresh_token_encrypted = encrypted_refresh_token
+        db.commit()
+        
+        # Populate initial activity cache
+        if access_token:
+            raw_activities = fetch_google_health_activities(access_token, days=28)
+            acwr_data = calculate_google_health_acwr(raw_activities)
+            
+            db.query(models.ExternalAppSession).filter(
+                models.ExternalAppSession.user_id == user_id,
+                models.ExternalAppSession.app_name == "Google Health (Fitbit)"
+            ).delete()
+            
+            db.add(models.ExternalAppSession(
+                user_id=user_id,
+                app_name="Google Health (Fitbit)",
+                session_data=json.dumps(acwr_data),
+                timestamp=datetime.datetime.utcnow()
+            ))
+            db.commit()
+            
+        # Redirect back to frontend settings
+        frontend_url = "http://localhost:3000/settings?google_health_connected=true"
+        return HTMLResponse(
+            content=f"""
+            <html>
+                <head>
+                    <meta http-equiv="refresh" content="0; url={frontend_url}" />
+                </head>
+                <body style="background:#0B0E12; color:#fff; font-family:sans-serif; text-align:center; padding-top:50px;">
+                    <h2>Google Health Connected!</h2>
+                    <p>Redirecting back to PhysioTwin Settings...</p>
+                    <p><a href="{frontend_url}" style="color:#00F0FF;">Click here if not redirected automatically</a></p>
+                </body>
+            </html>
+            """
+        )
+    except Exception as e:
+        print(f"Google Health OAuth callback error: {e}")
+        return HTMLResponse(
+            content=f"<h3>Google Health Connection Error</h3><p>{str(e)}</p><a href='http://localhost:3000/settings'>Return to Settings</a>",
+            status_code=500
+        )
+
+
+@app.delete("/users/{user_id}/integrations/google-health")
+def disconnect_google_health_integration(user_id: str, db: Session = Depends(get_db)):
+    """
+    Revokes and clears the user's stored Google Health tokens.
+    """
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if user:
+        user.google_health_refresh_token_encrypted = None
+    db.query(models.ExternalAppSession).filter(
+        models.ExternalAppSession.user_id == user_id,
+        models.ExternalAppSession.app_name == "Google Health (Fitbit)"
+    ).delete()
+    db.commit()
+    return {"status": "disconnected", "google_health": False}
+
+
+@app.post("/integrations/google-health/sync/{user_id}")
+def sync_google_health_activities(user_id: str, db: Session = Depends(get_db)):
+    """
+    Performs on-demand live fetch of Google Health activities, computes strain/load & ACWR.
+    """
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user or not user.google_health_refresh_token_encrypted:
+        raise HTTPException(status_code=400, detail="Google Health is not connected. Connect via Settings.")
+        
+    refresh_token = decrypt_secret(user.google_health_refresh_token_encrypted, "GHA_TOKEN_ENCRYPTION_SECRET")
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="Could not decrypt stored Google Health token. Please reconnect in Settings.")
+        
+    token_resp = refresh_access_token(refresh_token)
+    access_token = token_resp.get("access_token")
+    if not access_token:
+        raise HTTPException(status_code=400, detail="Failed to obtain fresh Google Health access token.")
+        
+    raw_activities = fetch_google_health_activities(access_token, days=28)
+    acwr_data = calculate_google_health_acwr(raw_activities)
+    
+    # Cache in external_app_sessions
+    db.query(models.ExternalAppSession).filter(
+        models.ExternalAppSession.user_id == user_id,
+        models.ExternalAppSession.app_name == "Google Health (Fitbit)"
+    ).delete()
+    
+    db.add(models.ExternalAppSession(
+        user_id=user_id,
+        app_name="Google Health (Fitbit)",
+        session_data=json.dumps(acwr_data),
+        timestamp=datetime.datetime.utcnow()
+    ))
+    db.commit()
+    
+    return acwr_data
+
+
+@app.post("/users/{user_id}/integrations/hevy")
+def connect_hevy_integration(user_id: str, req: HevyConnectRequest, db: Session = Depends(get_db)):
+    if not req.api_key or not req.api_key.strip():
+        raise HTTPException(status_code=400, detail="API key is required")
+    
+    # Symmetrically encrypt key at rest
+    encrypted_key = encrypt_secret(req.api_key.strip(), "HEVY_KEY_ENCRYPTION_SECRET")
+    
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user:
+        user = models.User(user_id=user_id, email=f"{user_id}@physiotwin.local", hevy_api_key_encrypted=encrypted_key)
+        db.add(user)
+    else:
+        user.hevy_api_key_encrypted = encrypted_key
+    db.commit()
+    
+    # Trigger initial workouts fetch to populate cache
+    client = HevyClient(req.api_key.strip())
+    success, raw_workouts, err = client.fetch_all_workouts(max_pages=3)
+    if success and raw_workouts:
+        parsed = parse_hevy_workouts(raw_workouts)
+        db.query(models.ExternalAppSession).filter(
+            models.ExternalAppSession.user_id == user_id,
+            models.ExternalAppSession.app_name == "Hevy"
+        ).delete()
+        db.add(models.ExternalAppSession(
+            user_id=user_id,
+            app_name="Hevy",
+            session_data=json.dumps(parsed),
+            timestamp=datetime.datetime.utcnow()
+        ))
+        db.commit()
+    
+    return {"status": "connected", "hevy": True, "warning": err if not success else None}
+
+
+@app.delete("/users/{user_id}/integrations/hevy")
+def disconnect_hevy_integration(user_id: str, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if user:
+        user.hevy_api_key_encrypted = None
+    db.query(models.ExternalAppSession).filter(
+        models.ExternalAppSession.user_id == user_id,
+        models.ExternalAppSession.app_name == "Hevy"
+    ).delete()
+    db.commit()
+    return {"status": "disconnected", "hevy": False}
+
+
+@app.get("/users/{user_id}/integrations/status")
+def get_integrations_status(user_id: str, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    google_health_connected = bool(user and user.google_health_refresh_token_encrypted)
+    hevy_connected = bool(user and user.hevy_api_key_encrypted)
+    nutri_client = NutritionixClient()
+    return {
+        "google_health": google_health_connected,
+        "hevy": hevy_connected,
+        "nutritionix_enabled": nutri_client.is_configured
+    }
+
+
+@app.post("/integrations/hevy/sync/{user_id}")
+def sync_hevy_workouts(user_id: str, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user or not user.hevy_api_key_encrypted:
+        raise HTTPException(status_code=400, detail="Hevy is not connected. Please enter your Hevy Pro API key in Settings.")
+    
+    raw_key = decrypt_secret(user.hevy_api_key_encrypted, "HEVY_KEY_ENCRYPTION_SECRET")
+    if not raw_key:
+        raise HTTPException(status_code=400, detail="Could not decrypt stored Hevy key. Please reconnect in Settings.")
+        
+    client = HevyClient(raw_key)
+    success, raw_workouts, err = client.fetch_all_workouts(max_pages=5)
+    if not success:
+        raise HTTPException(status_code=400, detail=err or "Failed to communicate with Hevy API.")
+        
+    parsed = parse_hevy_workouts(raw_workouts)
+    
+    # Cache in external_app_sessions
+    db.query(models.ExternalAppSession).filter(
+        models.ExternalAppSession.user_id == user_id,
+        models.ExternalAppSession.app_name == "Hevy"
+    ).delete()
+    
+    db.add(models.ExternalAppSession(
+        user_id=user_id,
+        app_name="Hevy",
+        session_data=json.dumps(parsed),
+        timestamp=datetime.datetime.utcnow()
+    ))
+    db.commit()
+    
+    return parsed
+
+
 
 class SyncExternalAppsRequest(BaseModel):
     workouts: Optional[list] = []
@@ -986,13 +1277,82 @@ def generate_rehab_program(user_id: str, db: Session = Depends(get_db)):
 def get_external_apps(user_id: str, db: Session = Depends(get_db), min_hours_ago: Optional[int] = None, max_hours_ago: Optional[int] = None):
     import json
     entries = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).order_by(models.ExternalAppSession.timestamp.desc()).all()
+    
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    now = datetime.datetime.utcnow()
+
+    # 1. Google Health (Fitbit) auto-sync if connected and cache > 20 mins
+    has_google_health = bool(user and user.google_health_refresh_token_encrypted)
+    gha_entry = next((e for e in entries if e.app_name in ["Google Health (Fitbit)", "Google Health"]), None)
+    
+    need_gha_refresh = has_google_health and (
+        not gha_entry or (now - gha_entry.timestamp).total_seconds() > 1200
+    )
+    if need_gha_refresh:
+        refresh_token = decrypt_secret(user.google_health_refresh_token_encrypted, "GHA_TOKEN_ENCRYPTION_SECRET")
+        if refresh_token:
+            try:
+                token_resp = refresh_access_token(refresh_token)
+                acc_token = token_resp.get("access_token")
+                if acc_token:
+                    raw_acts = fetch_google_health_activities(acc_token, days=28)
+                    acwr_data = calculate_google_health_acwr(raw_acts)
+                    if gha_entry:
+                        gha_entry.session_data = json.dumps(acwr_data)
+                        gha_entry.timestamp = now
+                    else:
+                        gha_entry = models.ExternalAppSession(
+                            user_id=user_id,
+                            app_name="Google Health (Fitbit)",
+                            session_data=json.dumps(acwr_data),
+                            timestamp=now
+                        )
+                        db.add(gha_entry)
+                    db.commit()
+                    entries = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).order_by(models.ExternalAppSession.timestamp.desc()).all()
+            except Exception as e:
+                print(f"Auto-sync Google Health error: {e}")
+
+    # 2. Hevy auto-sync if connected and cache > 20 mins
+    has_hevy = bool(user and user.hevy_api_key_encrypted)
+    hevy_entry = next((e for e in entries if e.app_name == "Hevy"), None)
+    
+    need_hevy_refresh = has_hevy and (
+        not hevy_entry or (now - hevy_entry.timestamp).total_seconds() > 1200 # 20 mins cache
+    )
+    
+    if need_hevy_refresh:
+        raw_key = decrypt_secret(user.hevy_api_key_encrypted, "HEVY_KEY_ENCRYPTION_SECRET")
+        if raw_key:
+            try:
+                client = HevyClient(raw_key)
+                success, raw_workouts, err = client.fetch_all_workouts(max_pages=5)
+                if success:
+                    parsed = parse_hevy_workouts(raw_workouts)
+                    if hevy_entry:
+                        hevy_entry.session_data = json.dumps(parsed)
+                        hevy_entry.timestamp = now
+                    else:
+                        hevy_entry = models.ExternalAppSession(
+                            user_id=user_id,
+                            app_name="Hevy",
+                            session_data=json.dumps(parsed),
+                            timestamp=now
+                        )
+                        db.add(hevy_entry)
+                    db.commit()
+                    entries = db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).order_by(models.ExternalAppSession.timestamp.desc()).all()
+            except Exception as e:
+                print(f"Auto-sync Hevy error: {e}")
+                
     if not entries:
-        # No real data yet - return empty list so the UI shows a zero-state
         return []
+        
     return [
         {"app_name": e.app_name, "session_data": json.loads(e.session_data), "timestamp": e.timestamp.isoformat()}
         for e in entries
     ]
+
 
 
 @app.post("/pain/log/{user_id}")
@@ -1687,16 +2047,18 @@ def delete_workout(log_id: str, db: Session = Depends(get_db)):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# MANUAL NUTRITION LOGGING
+# NUTRITIONIX LIVE NATURAL LANGUAGE & NUTRITION LOGGING
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class NutritionLogCreate(BaseModel):
+    text: Optional[str] = None
     meal_name: Optional[str] = None
     items: Optional[str] = None
     calories: Optional[int] = None
     protein_g: Optional[float] = None
     carbs_g: Optional[float] = None
     fat_g: Optional[float] = None
+    micros: Optional[dict] = None
 
 @app.get("/nutrition/search")
 def search_nutrition_foods(q: str):
@@ -1777,15 +2139,155 @@ def get_nutrition(user_id: str, db: Session = Depends(get_db), days: int = 7):
 
 @app.post("/nutrition/log/{user_id}")
 def log_nutrition(user_id: str, payload: NutritionLogCreate, db: Session = Depends(get_db)):
+    nutri_client = NutritionixClient()
+    
+    if payload.text and payload.text.strip():
+        success, parsed, note = nutri_client.parse_natural_nutrition(payload.text)
+        meal_name = payload.meal_name or "Logged Meal"
+        items_desc = parsed.get("items_description") or payload.text
+        cal = parsed.get("calories", 0)
+        prot = parsed.get("protein_g", 0.0)
+        carbs = parsed.get("carbs_g", 0.0)
+        fat = parsed.get("fat_g", 0.0)
+        micros_json = json.dumps(parsed.get("micronutrients", {}))
+        raw_json = json.dumps(parsed.get("raw_foods", []))
+    else:
+        meal_name = payload.meal_name or "Logged Meal"
+        items_desc = payload.items or f"{payload.protein_g or 0}g protein meal"
+        cal = payload.calories or 0
+        prot = payload.protein_g or 0.0
+        carbs = payload.carbs_g or 0.0
+        fat = payload.fat_g or 0.0
+        micros_json = json.dumps(payload.micros or {})
+        raw_json = None
+        note = None
+
     log = models.NutritionLog(
-        user_id=user_id, meal_name=payload.meal_name, items=payload.items,
-        calories=payload.calories, protein_g=payload.protein_g,
-        carbs_g=payload.carbs_g, fat_g=payload.fat_g
+        user_id=user_id,
+        meal_name=meal_name,
+        items=items_desc,
+        calories=cal,
+        protein_g=prot,
+        carbs_g=carbs,
+        fat_g=fat,
+        micros_json=micros_json,
+        raw_data=raw_json,
+        timestamp=datetime.datetime.utcnow()
     )
     db.add(log)
     db.commit()
     db.refresh(log)
-    return {"id": log.id, "meal_name": log.meal_name, "timestamp": log.timestamp.isoformat()}
+    
+    return {
+        "id": log.id,
+        "meal_name": log.meal_name,
+        "items": log.items,
+        "calories": log.calories,
+        "protein_g": log.protein_g,
+        "carbs_g": log.carbs_g,
+        "fat_g": log.fat_g,
+        "timestamp": log.timestamp.isoformat(),
+        "note": note
+    }
+
+@app.get("/nutrition/daily/{user_id}")
+def get_daily_nutrition(user_id: str, date: Optional[str] = None, db: Session = Depends(get_db)):
+    if date:
+        try:
+            target_date = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+        except Exception:
+            target_date = datetime.datetime.utcnow().date()
+    else:
+        target_date = datetime.datetime.utcnow().date()
+        
+    start_dt = datetime.datetime.combine(target_date, datetime.time.min)
+    end_dt = datetime.datetime.combine(target_date, datetime.time.max)
+    
+    logs = db.query(models.NutritionLog).filter(
+        models.NutritionLog.user_id == user_id,
+        models.NutritionLog.timestamp >= start_dt,
+        models.NutritionLog.timestamp <= end_dt
+    ).order_by(models.NutritionLog.timestamp.asc()).all()
+    
+    total_cal = sum(l.calories or 0 for l in logs)
+    total_p = sum(l.protein_g or 0.0 for l in logs)
+    total_c = sum(l.carbs_g or 0.0 for l in logs)
+    total_f = sum(l.fat_g or 0.0 for l in logs)
+    
+    # Aggregate micronutrients
+    micros = {k: 0.0 for k in RDA_TARGETS.keys()}
+    for l in logs:
+        if l.micros_json:
+            try:
+                m_data = json.loads(l.micros_json)
+                for k in micros:
+                    micros[k] += float(m_data.get(k, 0.0))
+            except Exception:
+                pass
+                
+    micro_percentages = {
+        "iron_pct": min(100, round((micros["iron_mg"] / RDA_TARGETS["iron_mg"]) * 100)),
+        "calcium_pct": min(100, round((micros["calcium_mg"] / RDA_TARGETS["calcium_mg"]) * 100)),
+        "magnesium_pct": min(100, round((micros["magnesium_mg"] / RDA_TARGETS["magnesium_mg"]) * 100)),
+        "potassium_pct": min(100, round((micros["potassium_mg"] / RDA_TARGETS["potassium_mg"]) * 100)),
+        "vitamin_d_pct": min(100, round((micros["vitamin_d_iu"] / RDA_TARGETS["vitamin_d_iu"]) * 100)),
+        "vitamin_b12_pct": min(100, round((micros["vitamin_b12_mcg"] / RDA_TARGETS["vitamin_b12_mcg"]) * 100)),
+        "zinc_pct": min(100, round((micros["zinc_mg"] / RDA_TARGETS["zinc_mg"]) * 100))
+    }
+    
+    meals = [
+        {
+            "id": l.id,
+            "name": l.meal_name or "Meal",
+            "items": l.items,
+            "calories": l.calories or 0,
+            "protein": round(l.protein_g or 0.0, 1),
+            "carbs": round(l.carbs_g or 0.0, 1),
+            "fat": round(l.fat_g or 0.0, 1),
+            "time": l.timestamp.strftime("%I:%M %p")
+        }
+        for l in logs
+    ]
+    
+    return {
+        "date": target_date.strftime("%Y-%m-%d"),
+        "day": target_date.strftime("%a"),
+        "calories": total_cal,
+        "protein": round(total_p, 1),
+        "carbs": round(total_c, 1),
+        "fat": round(total_f, 1),
+        "water_ml": 2800 if total_cal > 0 else 0,
+        "meals": meals,
+        "micronutrients": micro_percentages,
+        "raw_micronutrients": micros
+    }
+
+@app.get("/nutrition/week/{user_id}")
+def get_weekly_nutrition_rollup(user_id: str, db: Session = Depends(get_db)):
+    now = datetime.datetime.utcnow().date()
+    days_list = []
+    
+    for offset in range(6, -1, -1):
+        d = now - datetime.timedelta(days=offset)
+        d_str = d.strftime("%Y-%m-%d")
+        day_data = get_daily_nutrition(user_id, date=d_str, db=db)
+        days_list.append(day_data)
+        
+    logged_days = [d for d in days_list if d["calories"] > 0 or d["protein"] > 0]
+    avg_cal = round(sum(d["calories"] for d in logged_days) / len(logged_days)) if logged_days else 0
+    avg_prot = round(sum(d["protein"] for d in logged_days) / len(logged_days), 1) if logged_days else 0.0
+    days_hit = sum(1 for d in logged_days if d["protein"] >= 140)
+    
+    return {
+        "nutrition": days_list,
+        "weekly_summary": {
+            "avg_calories": avg_cal,
+            "avg_protein": avg_prot,
+            "tracked_days": len(logged_days),
+            "caloric_balance": f"{'+' if avg_cal >= 2400 else ''}{avg_cal - 2400} kcal/day target" if avg_cal > 0 else "No logs yet",
+            "protein_target_hit": f"{days_hit} of 7 days (>=140g)" if logged_days else "0 of 7 days logged"
+        }
+    }
 
 @app.delete("/nutrition/{log_id}")
 def delete_nutrition(log_id: str, db: Session = Depends(get_db)):
@@ -1833,6 +2335,15 @@ def seed_nutrition_week(user_id: str, db: Session = Depends(get_db)):
         ]
         
         for m in meals:
+            m_micros = {
+                "iron_mg": round(m["calories"] * 0.006, 1),
+                "calcium_mg": round(m["calories"] * 0.35, 1),
+                "magnesium_mg": round(m["calories"] * 0.14, 1),
+                "potassium_mg": round(m["calories"] * 1.1, 1),
+                "vitamin_d_iu": round(m["calories"] * 0.25, 1),
+                "vitamin_b12_mcg": round(m["protein"] * 0.02, 1),
+                "zinc_mg": round(m["protein"] * 0.06, 1)
+            }
             log_item = models.NutritionLog(
                 user_id=user_id,
                 meal_name=f"{d['day']} {m['name']}",
@@ -1841,6 +2352,7 @@ def seed_nutrition_week(user_id: str, db: Session = Depends(get_db)):
                 protein_g=m['protein'],
                 carbs_g=m['carbs'],
                 fat_g=m['fat'],
+                micros_json=json.dumps(m_micros),
                 timestamp=dt
             )
             db.add(log_item)
@@ -1869,7 +2381,7 @@ def seed_nutrition_week(user_id: str, db: Session = Depends(get_db)):
     
     app_entry = models.ExternalAppSession(
         user_id=user_id,
-        app_name="OpenFoodFacts / Smart Nutrition",
+        app_name="Nutritionix / PhysioTwin Nutrition",
         session_data=json.dumps({
             "nutrition": formatted_nutrition,
             "weekly_summary": {

@@ -596,7 +596,7 @@ Supported activity types: `running`, `weightlifting`, `yoga`, and a generic fall
 ---
 
 #### `POST /analytics/dynamic-risk`
-Calculates updated zone risk scores based on external fitness data (Hevy workouts + HealthifyMe nutrition).
+Calculates updated zone risk scores based on external fitness data (Hevy workouts + Nutritionix nutrition).
 
 **Request Body:**
 ```json
@@ -604,7 +604,7 @@ Calculates updated zone risk scores based on external fitness data (Hevy workout
   "base_risk": { "lumbar": 48, "left_knee": 72 },
   "fit_data": {
     "workouts": [{ "name": "Leg Day (Heavy)", "load": "High" }],
-    "nutrition": { "protein": "Low" }
+    "nutrition": { "protein": "High" }
   }
 }
 ```
@@ -613,21 +613,97 @@ Calculates updated zone risk scores based on external fitness data (Hevy workout
 
 ---
 
-#### `POST /analytics/external-apps/{user_id}`
-Syncs workout and nutrition data from external apps, replacing existing entries.
+#### `POST /users/{user_id}/integrations/hevy`
+Securely saves the user's personal Hevy API key (Hevy Pro), validating it against `https://api.hevyapp.com/v1/workouts` and storing it encrypted with AES-128-CBC / Fernet (`cryptography.fernet.Fernet`).
+
+**Request Body:**
+```json
+{ "api_key": "hevy_api_..." }
+```
+
+**Response:**
+```json
+{ "status": "success", "message": "Hevy API key validated and securely connected" }
+```
+
+---
+
+#### `DELETE /users/{user_id}/integrations/hevy`
+Disconnects the Hevy integration and wipes the encrypted API key.
+
+---
+
+#### `GET /users/{user_id}/integrations/google-health/authorize`
+Generates the Google OAuth 2.0 authorization URL for `health.googleapis.com` (Fitbit) activity and heart-rate data access.
+
+**Response:**
+```json
+{ "url": "https://accounts.google.com/o/oauth2/v2/auth?...", "user_id": "usr_123" }
+```
+
+---
+
+#### `GET /oauth/google-health/callback`
+OAuth 2.0 redirect handler that exchanges the authorization code for an access token and refresh token, symmetrically encrypts the refresh token at rest using AES-128-CBC / Fernet (`GHA_TOKEN_ENCRYPTION_SECRET`), fetches the initial 28 days of activity sessions, and redirects the user back to `/settings`.
+
+---
+
+#### `DELETE /users/{user_id}/integrations/google-health`
+Revokes and clears the stored Google Health encrypted tokens for the user.
+
+---
+
+#### `POST /integrations/google-health/sync/{user_id}`
+Triggers an on-demand live sync of the user's exercise and cardiovascular activity sessions from Google Health API, calculates duration $\times$ heart-rate intensity load scores, computes true ACWR, and caches the result.
+
+---
+
+#### `GET /users/{user_id}/integrations/status`
+Returns connection status of external integrations. **Never echoes raw API keys or tokens.**
+
+**Response:**
+```json
+{
+  "google_health": true,
+  "hevy": true,
+  "nutritionix_enabled": true
+}
+```
+
+
+---
+
+#### `POST /integrations/hevy/sync/{user_id}`
+Triggers an on-demand live fetch of the user's workouts from Hevy API (`api.hevyapp.com/v1/workouts`), computes ACWR, and caches the result.
+
+---
+
+#### `POST /nutrition/log/{user_id}`
+Parses a natural-language food description (e.g. `"2 scrambled eggs, 1 toast, 1 black coffee"`) via Nutritionix Natural Nutrients API (`trackapi.nutritionix.com/v2/natural/nutrients`) or offline NLP fallback. Persists calories, macros, and micronutrients (iron, calcium, magnesium, potassium, vitamin D, zinc, B12).
 
 **Request Body:**
 ```json
 {
-  "workouts": [...],
-  "nutrition": {...}
+  "text": "1 bowl oatmeal with blueberries and 1 scoop whey protein",
+  "meal_type": "breakfast",
+  "logged_at": "2026-09-10T08:30:00"
 }
 ```
 
 ---
 
+#### `GET /nutrition/daily/{user_id}?date=YYYY-MM-DD`
+Retrieves daily total calories, macros, micronutrients, and individual food log items for a specific date.
+
+---
+
+#### `GET /nutrition/week/{user_id}`
+Returns a 7-day rollup of daily nutrition data, food quality score, and weekly macro averages.
+
+---
+
 #### `GET /analytics/external-apps/{user_id}`
-Retrieves stored external app data. If empty, seeds realistic sample data for Hevy (7 workout sessions across Mon–Sun) and HealthifyMe (7 days of nutrition logs).
+Retrieves synced Hevy workouts and Nutritionix nutrition logs. If Hevy is connected, fetches live data with 20-minute caching; if not connected, returns an honest empty state (`is_connected: false`) without silent mock fallbacks.
 
 ---
 
@@ -945,19 +1021,22 @@ Primary logged-in landing page. Aggregates:
 
 ---
 
-#### `NutritionRecovery.tsx` — External App Integration
+#### `NutritionRecovery.tsx` — Nutrition & Recovery Tracker
 
-Displays data fetched from `api.getExternalApps()`:
-- **Hevy workouts** — weekly workout summary, per-exercise breakdown, muscle group distribution, PR tracking
-- **HealthifyMe nutrition** — daily macro/micronutrient breakdown, per-meal detail, hydration, food quality score
-
-Also calls `api.calculateDynamicRisk()` to update the body heatmap based on workout load and nutrition quality.
+Displays real-time and 7-day nutrition rollups with natural language food logging:
+- **Natural Language Food Logger** — Powered by Nutritionix (`api.logNutrition()`), parses meals like "2 eggs, toast, coffee" into exact calories, macronutrients, and micronutrients.
+- **Nutrition Breakdown** — Daily and 7-day macro (protein, carbs, fat) and micronutrient (iron, calcium, magnesium, potassium, vitamin D, zinc, B12) progress.
+- **Dynamic Risk Adjustment** — Feeds daily protein intake into `/analytics/dynamic-risk` to compute recovery score boosts and reduce joint injury risks.
 
 ---
 
-#### `WorkoutStrain.tsx` — Muscular Strain View
+#### `WorkoutStrain.tsx` — Muscular Strain & ACWR View
 
-Visualises cumulative muscular overuse and ACWR (Acute:Chronic Workload Ratio) from Hevy data. Colour-codes muscle groups by strain risk.
+Visualises live Google Health activity sync, muscle group strain distribution, and sports-science Acute:Chronic Workload Ratio (ACWR):
+- **Live Google Health (Fitbit) Integration** — Official free Google Cloud OAuth 2.0 integration (replaces deprecated Fitbit Web API). Syncs workouts, duration, and heart-rate intensity zones.
+- **Heart-Rate Intensity & Duration Load (TRIMP-Style)** — Measures cardiovascular and muscular training strain via `Duration (min) * Intensity Factor` rather than barbell lift tonnage.
+- **True ACWR Gauge** — Calculates acute workload (7-day sum of session loads) vs chronic workload (28-day weekly average load). Identifies "Sweet Spot" (0.8–1.3), "Caution" (1.3–1.5), and "Danger" (>1.5) with cold-start detection.
+- **Honest Connection State** — Clear empty state directing users to Settings to connect Google Health for free if not yet connected.
 
 ---
 
@@ -1075,8 +1154,8 @@ Six scores, each 0–100:
 | **Stability** | Mean raw stability value x 100 across the last 5 sessions |
 | **Movement Quality** | Mean raw symmetry value x 100 across the last 5 sessions |
 | **Cardiovascular Efficiency** | Fixed at 78.0 (sensor fusion placeholder; not yet dynamic) |
-| **Recovery** | 88.0, adjusted: -5 per heavy Hevy workout, +3 per high-protein nutrition day |
-| **Capability Reserve** | 55.0, adjusted: -3 per heavy workout, +2 per high-protein day |
+| **Recovery** | 88.0, adjusted: -5 per high-load activity session, +3 per high-protein nutrition day |
+| **Capability Reserve** | 55.0, adjusted: -3 per high-load session, +2 per high-protein day |
 
 ### Zone Risk Calculation
 
@@ -1113,7 +1192,17 @@ Classification is `"persistent"`. Magnitude = `stability - 70.0`.
 
 ### ACWR (Acute:Chronic Workload Ratio)
 
-Displayed in `WorkoutStrain.tsx` — sourced from Hevy's `weekly_stats.acwr`. A value > 1.3 is the "caution zone" and > 1.5 is "danger zone" for overuse injury risk.
+Displayed in `WorkoutStrain.tsx` — computed using sports-science training load ($Duration \times Heart\ Rate\ Intensity$):
+- **Session Load:** `duration_minutes * intensity_factor` (scaling with HR Zone 1 to 5: 1.0 to 2.5).
+- **Acute Workload:** Total training load over the last 7 days (`sum(session_load over 7d)`).
+- **Chronic Workload:** Weekly average training load over the last 28 days (`sum(session_load over 28d) / 4.0`).
+- **Formula:** `ACWR = Acute Workload / Chronic Workload`
+- **Zones:**
+  - `< 0.8`: Under-training / Deload
+  - `0.8 – 1.3`: **Sweet Spot** (optimal adaptation, minimal injury risk)
+  - `1.3 – 1.5`: **Caution Zone** (elevated fatigue / overuse risk)
+  - `> 1.5`: **Danger Zone** (high risk of soft tissue / overreach injury)
+- **Cold-Start Handling:** If the user has fewer than 14 days of tracked history or chronic load is 0, the UI flags a "Baseline Building (Cold Start)" badge rather than fabricating false spikes.
 
 ---
 
@@ -1124,7 +1213,6 @@ Displayed in `WorkoutStrain.tsx` — sourced from Hevy's `weekly_stats.acwr`. A 
 - **SDK:** Firebase JS SDK v12.17
 - **Methods used:** `signInWithPopup`, `signInWithEmailAndPassword`, `createUserWithEmailAndPassword`, `signOut`, `onAuthStateChanged`
 - **Config:** Stored in `frontend/.env` (gitignored) and loaded in `frontend/src/lib/firebase.ts`
-- The `googleFitToken` from Google OAuth is persisted in `localStorage` for potential Google Fit API integration (not yet implemented).
 
 ### Groq (LLM)
 
@@ -1133,13 +1221,25 @@ Displayed in `WorkoutStrain.tsx` — sourced from Hevy's `weekly_stats.acwr`. A 
 - **Used for:** Weekly letters (300 tokens), deep insight reports (900 tokens), and twin chat (300 tokens)
 - **Fallback:** Static deterministic reports are returned if the Groq API is unreachable
 
-### Hevy (Workout App)
+### Google Health API (Fitbit — Live Integration)
 
-Currently implemented as **seeded mock data** within the API. Real integration would use Hevy's webhook or export API. Seeded data includes 7 workouts (Mon–Sun) with full exercise-level detail, volume, PRs, and weekly stats.
+- **API:** Official Google Health API (`health.googleapis.com` / Google Fitness REST API). Direct replacement for legacy Fitbit Web API (shutting down September 2026).
+- **Cost & Access:** 100% free for developers and end users. Configured via Google Cloud Console in "Testing" mode (supports up to 100 test users without requiring full OAuth verification).
+- **Authentication:** OAuth 2.0 with per-user encrypted refresh token storage using AES-128-CBC via Fernet (`GHA_TOKEN_ENCRYPTION_SECRET`). Short-lived access tokens minted on-demand.
+- **Strain Model:** Computes TRIMP-style cardiovascular and muscular load based on activity type, duration, and heart-rate intensity zones (Zone 1: 1.0, Zone 2: 1.3, Zone 3: 1.6, Zone 4: 2.0, Zone 5: 2.5).
 
-### HealthifyMe (Nutrition App)
+### Hevy (Workout App — Live Integration)
 
-Implemented as **seeded mock data**. Provides 7-day nutrition logs with macros (calories, protein, carbs, fat), micronutrients (iron, calcium, Vit D, B12, magnesium, potassium), and per-meal breakdowns.
+- **API:** Official Hevy Public API (`https://api.hevyapp.com/v1/workouts`)
+- **Authentication:** Per-user personal API key (requires Hevy Pro, generated at `hevy.com/settings?developer`).
+- **Security:** Symmetrically encrypted at rest using AES-128-CBC via Fernet (`cryptography.fernet.Fernet`) with `HEVY_KEY_ENCRYPTION_SECRET`.
+
+### Nutritionix (Nutrition App — Live Integration)
+
+- **API:** Nutritionix Natural Nutrients API (`POST https://trackapi.nutritionix.com/v2/natural/nutrients`)
+- **Authentication:** Application-level `NUTRITIONIX_APP_ID` and `NUTRITIONIX_API_KEY`.
+- **Capabilities:** Parses natural language descriptions (e.g., *"1 cup Greek yogurt, 20g almonds, 1 scoop protein powder"*) into precise calories, protein, carbs, fat, fiber, and micronutrients (iron, calcium, magnesium, potassium, vitamin D, zinc, B12).
+- **Fallback:** Built-in heuristic NLP nutritional database in `nutritionix_client.py` handles parsing seamlessly if external credentials are not supplied.
 
 ---
 
@@ -1185,13 +1285,27 @@ VITE_FIREBASE_APP_ID=your_app_id
 
 These are loaded in `frontend/src/lib/firebase.ts` via `import.meta.env`.
 
-### Backend
+### Backend (`backend/.env`)
 
 ```env
-GROQ_API_KEY=gsk_...   # Set in shell environment or a .env file
+# Groq LLM API
+GROQ_API_KEY=gsk_...
+
+# Google Health API (Fitbit) OAuth 2.0 (Free tier, Testing mode up to 100 users)
+GOOGLE_HEALTH_CLIENT_ID=your_google_health_oauth_client_id.apps.googleusercontent.com
+GOOGLE_HEALTH_CLIENT_SECRET=your_google_health_oauth_client_secret
+GOOGLE_HEALTH_REDIRECT_URI=http://localhost:8000/oauth/google-health/callback
+GHA_TOKEN_ENCRYPTION_SECRET=your_fernet_32_byte_secret_key
+
+# Hevy API Key Encryption (Fernet 32-byte url-safe base64 key)
+HEVY_KEY_ENCRYPTION_SECRET=your_fernet_32_byte_secret_key
+
+# Nutritionix Natural Nutrients API (Get from developer.nutritionix.com)
+NUTRITIONIX_APP_ID=your_nutritionix_app_id
+NUTRITIONIX_API_KEY=your_nutritionix_api_key
 ```
 
-> **Security Warning:** The Groq API key is currently hardcoded as a fallback in `analytics.py`. For production deployment, always use environment variables and remove the hardcoded key.
+> **Security Warning:** The Groq API key has a fallback in `analytics.py`. For production deployment, always supply environment variables.
 
 ---
 
@@ -1203,20 +1317,19 @@ GROQ_API_KEY=gsk_...   # Set in shell environment or a .env file
 |---|---|
 | **Medical Report Analysis** | Returns a hardcoded mocked finding. No real OCR or AI medical parsing is implemented. |
 | **Sensor Data** | The `/sensors/synthetic` endpoint returns simulated data. No real ESP32 hardware integration is connected. |
-| **External App Data** | Hevy and HealthifyMe data is seeded from static JSON, not from live API connections. |
 | **Cardiovascular Score** | Fixed at 78.0; not dynamically computed from sensor data. |
 | **Gait Analysis** | Mode exists in the UI but full analysis pipeline is not implemented. |
-| **Zone Risk Model** | Based on simple linear formulas from joint angles; no ML-based injury prediction model is integrated. |
-| **Groq API Key** | Hardcoded fallback in source code — should be moved to environment variables before any public deployment. |
-| **Database** | Uses SQLite (single-file, not production-grade). Should be migrated to PostgreSQL for multi-user production use. |
+| **Zone Risk Model** | Based on linear formulas from joint angles combined with Google Health activity load & Nutritionix protein intake. |
+| **Database** | Uses SQLite (single-file, auto-migrated schema). Should be migrated to PostgreSQL for multi-user production use. |
 | **CORS** | Set to `allow_origins=["*"]` — should be restricted to the frontend origin in production. |
 
 ### Roadmap / Future Work
 
 - [ ] **Real sensor integration** — ESP32 BLE data streaming to the backend
 - [ ] **Real medical AI** — OCR + LLM-based medical report parsing (e.g., Google Document AI)
-- [ ] **Hevy / HealthifyMe live sync** — Live OAuth-based data sync via webhooks or official APIs
-- [ ] **Google Fit integration** — Use the stored `googleFitToken` to pull step count, HRV, sleep data
+- [x] **Google Health live sync** — Official free Google Cloud OAuth integration with TRIMP load & ACWR (superseding deprecated Fitbit Web API)
+- [x] **Hevy live sync** — Personal API key integration with Fernet encryption and true ACWR
+- [x] **Nutritionix live logging** — Natural-language meal logging and micronutrient breakdown
 - [ ] **ML-based injury prediction** — Train a model on kinematic data to predict injury probability
 - [ ] **Multi-user PostgreSQL backend** — Replace SQLite with PostgreSQL + Alembic migrations
 - [ ] **Progressive Web App offline mode** — Service worker caching for offline dashboard access

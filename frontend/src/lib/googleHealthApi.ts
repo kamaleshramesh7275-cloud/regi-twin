@@ -259,36 +259,69 @@ import { api } from "../api";
 
 export async function fetchGoogleHealthData(userId: string) {
   try {
-    const res = await api.getExternalApps(userId);
-    const healthConnectSessions = res.filter((r: any) =>
-      r.app_name === "Google Health Connect" || r.app_name === "Google Health" || r.app_name === "HealthifyMe"
-    );
+    const [res, weeklyNutrition, manualWorkouts] = await Promise.all([
+      api.getExternalApps(userId).catch(() => []),
+      api.getWeeklyNutrition(userId).catch(() => null),
+      api.getWorkouts(userId, 20).catch(() => [])
+    ]);
 
     let workouts: any[] = [];
     let nutritionHistory: any[] = [];
     let weeklySummary: any = null;
 
-    for (const session of healthConnectSessions) {
+    // 1. Process Google Health / Hevy sessions
+    for (const session of res) {
       const data = session.session_data;
+      if (data?.activities) {
+        workouts = workouts.concat(data.activities.map((act: any) => ({
+          name: act.name,
+          load: act.intensity_zone?.includes("High") || (act.load_score && act.load_score > 50) ? "High" : "Medium",
+          load_score: act.load_score,
+          duration_min: act.duration_minutes || act.duration_min || 30,
+          avg_heart_rate: act.avg_heart_rate,
+          muscle_target: act.muscle_target || []
+        })));
+      }
       if (data?.workouts) {
         workouts = workouts.concat(data.workouts);
       }
       if (data?.nutrition) {
-        nutritionHistory = data.nutrition;
+        nutritionHistory = nutritionHistory.concat(data.nutrition);
       }
       if (data?.weekly_summary) {
         weeklySummary = data.weekly_summary;
       }
     }
 
+    // 2. Include manual workouts if present
+    if (manualWorkouts && manualWorkouts.length > 0) {
+      workouts = workouts.concat(manualWorkouts.map((mw: any) => ({
+        name: mw.name,
+        load: mw.load_level || "Medium",
+        volume_kg: mw.volume_kg || 3000,
+        exercises: mw.exercises || [],
+        duration_min: mw.duration_min || 45
+      })));
+    }
+
+    // 3. Include Nutritionix weekly rollup if available
+    if (weeklyNutrition?.nutrition && weeklyNutrition.nutrition.length > 0) {
+      const activeDays = weeklyNutrition.nutrition.filter((d: any) => d.calories > 0 || d.protein > 0);
+      if (activeDays.length > 0) {
+        nutritionHistory = activeDays;
+        weeklySummary = weeklyNutrition.weekly_summary;
+      }
+    }
+
     return {
-      source: "Google Health Connect",
+      source: "Live Activity & Nutrition Engine (Google Health API + Nutritionix)",
       workouts,
       nutrition: nutritionHistory,
       weeklySummary
     };
+
   } catch (error) {
-    console.error("Failed to fetch Google Health data:", error);
+    console.error("Failed to fetch fit/nutrition data for dynamic twin:", error);
     throw error;
   }
 }
