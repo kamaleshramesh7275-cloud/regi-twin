@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { 
   Apple, Droplets, TrendingUp, Sparkles, Plus, Trash2, 
   Camera, Clock, Flame, Beef, Wheat, Droplet, HeartPulse, 
-  CheckCircle2, Search, Utensils, Scale, ChevronRight
+  CheckCircle2, Search, Utensils, Scale, ChevronRight,
+  Filter, ChevronDown, Check, X, AlertTriangle, RefreshCw
 } from "lucide-react";
 import { 
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, 
@@ -12,15 +13,24 @@ import {
 import { api } from "./api";
 import { useAuth } from "./context/AuthContext";
 import IndianFoodSlider from "./components/IndianFoodSlider";
-import type { IndianFood } from "./data/indianFoods";
+import { indianFoods, type IndianFood } from "./data/indianFoods";
+import { 
+  useTodayNutrition, 
+  useWeeklyNutrition, 
+  useWeightHistory, 
+  DEFAULT_NUTRITION_TARGETS 
+} from "./hooks/useNutrition";
 
-const TARGETS = {
-  calories: 2400,
-  protein: 150,
-  carbs: 250,
-  fat: 65,
-  water: 3000
-};
+const FOOD_CATEGORY_FILTERS = [
+  { id: "all", label: "✨ All Foods" },
+  { id: "indian", label: "🍛 Indian Staples" },
+  { id: "breakfast", label: "🥞 Breakfast" },
+  { id: "lunch", label: "🍛 Lunch Curries" },
+  { id: "dinner", label: "🍲 Dinner & Biryanis" },
+  { id: "snack", label: "🥗 Snacks & Chaat" },
+  { id: "beverage", label: "☕ Beverages" },
+  { id: "protein", label: "🍗 Whole Foods" },
+];
 
 function MacroRing({ label, current, target, unit, color }: { label: string; current: number; target: number; unit: string; color: string }) {
   const safeCurr = current || 0;
@@ -71,27 +81,43 @@ function MicronutrientBar({ name, pct }: { name: string; pct: number }) {
 
 export function NutritionRecovery() {
   const { user } = useAuth();
-  const userId = user?.uid || "default_user";
+  const userId = user?.uid || null;
 
-  const [dailyData, setDailyData] = useState<any>(null);
-  const [weeklyData, setWeeklyData] = useState<any>(null);
-  const [weightHistory, setWeightHistory] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isSeeding, setIsSeeding] = useState(false);
+  // React Query Dynamic Hooks
+  const {
+    totals,
+    meals,
+    waterMl,
+    isLoading: loadingDaily,
+    isError: errorDaily,
+    isEmpty: emptyDaily,
+    refetch: refetchDaily,
+    logMeal,
+    isLoggingMeal,
+    deleteMeal,
+    logWater,
+    seedWeek,
+    isSeeding
+  } = useTodayNutrition(userId);
+
+  const { data: weeklyData, isLoading: loadingWeekly } = useWeeklyNutrition(userId);
+  const { weightHistory, logWeight } = useWeightHistory(userId);
+
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Food Search & Logger Modal
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [modalTab, setModalTab] = useState<'database' | 'custom'>('database');
   const [searchQuery, setSearchQuery] = useState("");
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState("all");
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isSearchingBackend, setIsSearchingBackend] = useState(false);
+  const [backendSearchResults, setBackendSearchResults] = useState<any[]>([]);
   const [selectedFood, setSelectedFood] = useState<any | null>(null);
   const [servingGrams, setServingGrams] = useState(150);
   const [mealType, setMealType] = useState("Lunch");
   const [mealPhoto, setMealPhoto] = useState<File | null>(null);
   const [mealPhotoPreview, setMealPhotoPreview] = useState<string | null>(null);
-  const [isLoggingMeal, setIsLoggingMeal] = useState(false);
 
   // Custom manual entry states
   const [customFoodName, setCustomFoodName] = useState("");
@@ -100,56 +126,169 @@ export function NutritionRecovery() {
   const [customCarbs, setCustomCarbs] = useState(45);
   const [customFat, setCustomFat] = useState(12);
 
-  // Water Quick Log
-  const [waterMl, setWaterMl] = useState(0);
-
   // Weight Log Modal
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [inputWeight, setInputWeight] = useState(72.5);
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [daily, weekly, weights] = await Promise.all([
-        api.getDailyNutrition(userId).catch(() => null),
-        api.getWeeklyNutrition(userId).catch(() => null),
-        api.getWeightHistory(userId).catch(() => [])
-      ]);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
-      setDailyData(daily);
-      setWeeklyData(weekly);
-      setWeightHistory(weights || []);
-      setWaterMl(daily?.water_ml || 0);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Close dropdown when clicking outside
   useEffect(() => {
-    fetchData();
-  }, [user]);
-
-  const handleSearch = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!searchQuery.trim()) return;
-    try {
-      setIsSearching(true);
-      const results = await api.searchFoods(searchQuery.trim());
-      setSearchResults(results);
-      if (results.length > 0) setSelectedFood(results[0]);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsSearching(false);
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        searchContainerRef.current && 
+        !searchContainerRef.current.contains(event.target as Node)
+      ) {
+        setIsDropdownOpen(false);
+      }
     }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Fetch initial food catalog / search backend with debounce
+  useEffect(() => {
+    let isCancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setIsSearchingBackend(true);
+        const results = await api.searchFoods(searchQuery.trim());
+        if (!isCancelled) {
+          setBackendSearchResults(results || []);
+        }
+      } catch (err) {
+        console.error("Food search error:", err);
+      } finally {
+        if (!isCancelled) setIsSearchingBackend(false);
+      }
+    }, 200);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchQuery]);
+
+  // Merge client Indian Foods + backend search results seamlessly
+  const combinedFoodList = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    
+    // Convert client Indian foods to common item structure
+    const mappedIndianFoods = indianFoods.map(f => {
+      const grams = f.servingGrams || 100;
+      const cal100g = Math.round((f.calories / grams) * 100);
+      const prot100g = Math.round((f.proteinG / grams) * 100 * 10) / 10;
+      const carbs100g = Math.round((f.carbsG / grams) * 100 * 10) / 10;
+      const fat100g = Math.round((f.fatG / grams) * 100 * 10) / 10;
+
+      return {
+        id: `indian-${f.id}`,
+        name: f.name,
+        category: `Indian ${f.category.charAt(0).toUpperCase() + f.category.slice(1)}`,
+        rawCategory: f.category,
+        isIndian: true,
+        serving_unit: f.servingSize,
+        serving_size_g: grams,
+        calories: f.calories,
+        calories_per_100g: cal100g,
+        protein_g_100g: prot100g,
+        carbs_g_100g: carbs100g,
+        fat_g_100g: fat100g,
+        emoji: f.emoji || "🍛",
+        tags: f.tags || ["Indian Food"]
+      };
+    });
+
+    // Map backend foods if not already present
+    const mappedBackend = backendSearchResults.map(f => {
+      const isIndian = f.category?.toLowerCase().includes("indian");
+      return {
+        id: f.id,
+        name: f.name,
+        category: f.category,
+        rawCategory: f.category?.toLowerCase(),
+        isIndian: isIndian,
+        serving_unit: f.serving_unit || `${f.serving_size_g}g`,
+        serving_size_g: f.serving_size_g || 100,
+        calories: f.calories || Math.round(f.calories_per_100g * ((f.serving_size_g || 100) / 100)),
+        calories_per_100g: f.calories_per_100g,
+        protein_g_100g: f.protein_g_100g,
+        carbs_g_100g: f.carbs_g_100g,
+        fat_g_100g: f.fat_g_100g,
+        emoji: isIndian ? "🍛" : "🥗",
+        tags: [f.category]
+      };
+    });
+
+    // Deduplicate by lower-cased food name
+    const seenNames = new Set<string>();
+    const allItems: any[] = [];
+
+    // Prioritize Indian foods first, then backend
+    for (const item of [...mappedIndianFoods, ...mappedBackend]) {
+      const cleanName = item.name.toLowerCase().trim();
+      if (!seenNames.has(cleanName)) {
+        seenNames.add(cleanName);
+        allItems.push(item);
+      }
+    }
+
+    // Apply active category filter & search query
+    return allItems.filter(item => {
+      let matchesCategory = true;
+      if (activeCategoryFilter === "indian") {
+        matchesCategory = item.isIndian || item.category?.toLowerCase().includes("indian");
+      } else if (activeCategoryFilter === "breakfast") {
+        matchesCategory = item.rawCategory?.includes("breakfast") || item.category?.toLowerCase().includes("breakfast");
+      } else if (activeCategoryFilter === "lunch") {
+        matchesCategory = item.rawCategory?.includes("lunch") || item.category?.toLowerCase().includes("lunch") || item.category?.toLowerCase().includes("curries");
+      } else if (activeCategoryFilter === "dinner") {
+        matchesCategory = item.rawCategory?.includes("dinner") || item.category?.toLowerCase().includes("dinner") || item.category?.toLowerCase().includes("biryani");
+      } else if (activeCategoryFilter === "snack") {
+        matchesCategory = item.rawCategory?.includes("snack") || item.category?.toLowerCase().includes("snack") || item.category?.toLowerCase().includes("chaat");
+      } else if (activeCategoryFilter === "beverage") {
+        matchesCategory = item.rawCategory?.includes("beverage") || item.category?.toLowerCase().includes("beverage") || item.category?.toLowerCase().includes("drink");
+      } else if (activeCategoryFilter === "protein") {
+        matchesCategory = item.category?.toLowerCase().includes("poultry") || item.category?.toLowerCase().includes("meat") || item.category?.toLowerCase().includes("seafood") || item.category?.toLowerCase().includes("eggs");
+      }
+
+      let matchesQuery = true;
+      if (q) {
+        matchesQuery = 
+          item.name.toLowerCase().includes(q) ||
+          item.category.toLowerCase().includes(q) ||
+          (item.tags && item.tags.some((t: string) => t.toLowerCase().includes(q)));
+      }
+
+      return matchesCategory && matchesQuery;
+    });
+  }, [searchQuery, activeCategoryFilter, backendSearchResults]);
+
+  // Handle food selection from dropdown or search result
+  const handleSelectFoodItem = (food: any) => {
+    setSelectedFood(food);
+    const defaultGrams = food.serving_size_g || 150;
+    setServingGrams(defaultGrams);
+
+    const cat = (food.category || food.rawCategory || "").toLowerCase();
+    if (cat.includes("breakfast") || cat.includes("tiffin") || cat.includes("dosa") || cat.includes("idli") || cat.includes("paratha") || cat.includes("poha") || cat.includes("upma")) {
+      setMealType("Breakfast");
+    } else if (cat.includes("lunch") || cat.includes("curry") || cat.includes("dal") || cat.includes("rice") || cat.includes("roti")) {
+      setMealType("Lunch");
+    } else if (cat.includes("dinner") || cat.includes("biryani") || cat.includes("paneer butter") || cat.includes("butter chicken") || cat.includes("tikka")) {
+      setMealType("Dinner");
+    } else if (cat.includes("snack") || cat.includes("chaat") || cat.includes("samosa") || cat.includes("dhokla") || cat.includes("beverage") || cat.includes("chai") || cat.includes("lassi") || cat.includes("chaas")) {
+      setMealType("Snack");
+    } else {
+      setMealType("Lunch");
+    }
+
+    setIsDropdownOpen(false);
   };
 
   const handleLogFood = async () => {
     if (!selectedFood) return;
     try {
-      setIsLoggingMeal(true);
       const factor = servingGrams / 100;
       const cal = Math.round(selectedFood.calories_per_100g * factor);
       const prot = Math.round(selectedFood.protein_g_100g * factor * 10) / 10;
@@ -167,14 +306,11 @@ export function NutritionRecovery() {
         micros: selectedFood.micros || {}
       };
 
-      const logRes = await api.logNutrition(userId, {
-        meal_type: mealType,
-        items: [item]
+      await logMeal({
+        mealType,
+        items: [item],
+        photo: mealPhoto
       });
-
-      if (mealPhoto && logRes.id) {
-        await api.uploadMealImage(logRes.id, mealPhoto);
-      }
 
       setStatusMsg({
         type: "success",
@@ -183,15 +319,11 @@ export function NutritionRecovery() {
 
       setShowSearchModal(false);
       setSearchQuery("");
-      setSearchResults([]);
       setSelectedFood(null);
       setMealPhoto(null);
       setMealPhotoPreview(null);
-      await fetchData();
     } catch (err: any) {
       setStatusMsg({ type: "error", message: err.message || "Failed to log food" });
-    } finally {
-      setIsLoggingMeal(false);
     }
   };
 
@@ -201,7 +333,6 @@ export function NutritionRecovery() {
       return;
     }
     try {
-      setIsLoggingMeal(true);
       const item = {
         name: customFoodName.trim(),
         portion_g: servingGrams,
@@ -212,14 +343,11 @@ export function NutritionRecovery() {
         micros: {}
       };
 
-      const logRes = await api.logNutrition(userId, {
-        meal_type: mealType,
-        items: [item]
+      await logMeal({
+        mealType,
+        items: [item],
+        photo: mealPhoto
       });
-
-      if (mealPhoto && logRes.id) {
-        await api.uploadMealImage(logRes.id, mealPhoto);
-      }
 
       setStatusMsg({
         type: "success",
@@ -230,15 +358,12 @@ export function NutritionRecovery() {
       setCustomFoodName("");
       setMealPhoto(null);
       setMealPhotoPreview(null);
-      await fetchData();
     } catch (err: any) {
       setStatusMsg({ type: "error", message: err.message || "Failed to log custom meal" });
-    } finally {
-      setIsLoggingMeal(false);
     }
   };
 
-  const handleSelectIndianFood = (food: IndianFood) => {
+  const handleSelectIndianFoodFromSlider = (food: IndianFood) => {
     setCustomFoodName(food.name);
     setCustomCalories(food.calories);
     setCustomProtein(food.proteinG);
@@ -252,78 +377,68 @@ export function NutritionRecovery() {
 
   const handleAddWater = async (amount: number) => {
     try {
-      const res = await api.logWater(userId, amount);
-      setWaterMl(res.total_water_ml);
+      await logWater(amount);
       setStatusMsg({ type: "success", message: `Added ${amount}ml water!` });
     } catch (err: any) {
-      console.error(err);
+      setStatusMsg({ type: "error", message: err.message || "Failed to log water" });
     }
   };
 
   const handleLogWeightSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.logWeight(userId, Number(inputWeight));
+      await logWeight(Number(inputWeight));
       setShowWeightModal(false);
       setStatusMsg({ type: "success", message: `Logged body weight: ${inputWeight} kg` });
-      await fetchData();
     } catch (err: any) {
-      console.error(err);
+      setStatusMsg({ type: "error", message: err.message || "Failed to log weight" });
     }
   };
 
   const handleSeedWeek = async () => {
     try {
-      setIsSeeding(true);
       setStatusMsg(null);
-      await api.seedNutritionWeek(userId);
-      await fetchData();
+      await seedWeek();
       setStatusMsg({
         type: "success",
         message: "Loaded 7 full days of native athletic meal logs into PhysioTwin recovery engine!"
       });
     } catch (err: any) {
       setStatusMsg({ type: "error", message: err.message || "Failed to seed nutrition" });
-    } finally {
-      setIsSeeding(false);
     }
   };
 
   const handleDeleteMeal = async (logId: string) => {
     if (!confirm("Delete this meal entry?")) return;
     try {
-      await api.deleteNutritionLog(logId);
-      await fetchData();
-    } catch (e) {
-      console.error(e);
+      await deleteMeal(logId);
+      setStatusMsg({ type: "success", message: "Meal removed." });
+    } catch (e: any) {
+      setStatusMsg({ type: "error", message: e.message || "Failed to delete meal" });
     }
   };
 
-  const currentCals = dailyData?.totals?.calories || 0;
-  const currentProt = dailyData?.totals?.protein_g || 0;
-  const currentCarbs = dailyData?.totals?.carbs_g || 0;
-  const currentFat = dailyData?.totals?.fat_g || 0;
-  const mealsList = dailyData?.meals || [];
-  const micros = dailyData?.totals?.micros || {};
-
-  const hasData = (dailyData && dailyData.meals && dailyData.meals.length > 0) || (weeklyData && weeklyData.nutrition && weeklyData.nutrition.length > 0);
-
-  // 7-Day Protein & Calorie distribution chart
-  const weeklyDays = weeklyData?.nutrition || [];
-  const chartDays = weeklyDays.map((d: any) => ({
-    day: d.day_name,
-    date: d.date,
-    calories: d.calories,
-    protein: d.protein,
-    carbs: d.carbs
-  }));
+  // Derived Values from Real Hook Totals
+  const currentCals = totals.calories;
+  const currentProt = totals.protein_g;
+  const currentCarbs = totals.carbs_g;
+  const currentFat = totals.fat_g;
+  const micros = totals.micros || {};
 
   // MPS breakdown per meal
-  const mpsData = mealsList.map((m: any) => ({
+  const mpsData = meals.map((m: any) => ({
     name: m.meal_type,
     protein: m.protein_g,
     calories: m.calories
   }));
+
+  // Selected Food live macro preview
+  const calculatedCals = selectedFood ? Math.round(selectedFood.calories_per_100g * (servingGrams / 100)) : 0;
+  const calculatedProt = selectedFood ? Math.round(selectedFood.protein_g_100g * (servingGrams / 100) * 10) / 10 : 0;
+  const calculatedCarbs = selectedFood ? Math.round(selectedFood.carbs_g_100g * (servingGrams / 100) * 10) / 10 : 0;
+  const calculatedFat = selectedFood ? Math.round(selectedFood.fat_g_100g * (servingGrams / 100) * 10) / 10 : 0;
+
+  const hasData = meals.length > 0 || (weeklyData?.nutrition && weeklyData.nutrition.length > 0);
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-slate-100 md:overflow-hidden pb-[72px] md:pb-0 bg-[#07090E]">
@@ -338,14 +453,14 @@ export function NutritionRecovery() {
                 100% Native Architecture
               </span>
               <span className="text-xs text-cyan-400 font-bold flex items-center gap-1">
-                <Flame className="w-3.5 h-3.5" /> Muscle Protein Synthesis & Micronutrients
+                <Flame className="w-3.5 h-3.5" /> Indian &amp; Whole Foods Database
               </span>
             </div>
             <h1 className="text-2xl md:text-3xl font-black flex items-center gap-2 mt-1 text-white">
-              <Apple className="w-7 h-7 text-emerald-400" /> Nutrition & Metabolic Recovery
+              <Apple className="w-7 h-7 text-emerald-400" /> Nutrition &amp; Metabolic Recovery
             </h1>
             <p className="text-slate-400 text-sm mt-0.5">
-              Built-in food catalog, macro rings, photo logging, hydration & body weight trends.
+              Instant Indian food search &amp; dropdown, real-time macro aggregation, photo logging &amp; hydration tracking.
             </p>
           </div>
 
@@ -357,13 +472,58 @@ export function NutritionRecovery() {
               <Scale className="w-4 h-4 text-cyan-400" /> Log Weight
             </button>
             <button
-              onClick={() => setShowSearchModal(true)}
+              onClick={() => {
+                setShowSearchModal(true);
+                setIsDropdownOpen(true);
+              }}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xs transition-all shadow-lg shadow-emerald-500/25"
             >
-              <Plus className="w-4 h-4 stroke-[3]" /> Log Meal Manually
+              <Plus className="w-4 h-4 stroke-[3]" /> Search &amp; Log Food
             </button>
           </div>
         </header>
+
+        {/* Dashboard Quick Search & Dropdown Banner */}
+        <div className="p-4 rounded-3xl bg-gradient-to-r from-emerald-950/40 via-slate-900/90 to-cyan-950/40 border border-emerald-500/30 shadow-2xl relative">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl p-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">🍛</span>
+              <div>
+                <h3 className="text-sm font-black text-white flex items-center gap-2">
+                  Smart Food Search &amp; Indian Dropdown
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-normal">
+                    {combinedFoodList.length} items ready
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Search South Indian &amp; North Indian breakfast, curries, biryanis, snacks, drinks or whole foods.
+                </p>
+              </div>
+            </div>
+
+            {/* Direct Quick Launch Search Trigger */}
+            <div className="flex items-center gap-2 w-full lg:w-96">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSearchModal(true);
+                  setIsDropdownOpen(true);
+                }}
+                className="w-full flex items-center justify-between px-4 py-3 bg-slate-950/90 hover:bg-slate-900 border border-slate-700/80 hover:border-emerald-500/60 rounded-2xl text-xs text-slate-300 transition-all shadow-inner group"
+              >
+                <span className="flex items-center gap-2.5 truncate">
+                  <Search className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                  <span className="text-slate-400 group-hover:text-slate-200">
+                    Search Masala Dosa, Paneer, Biryani, Chai...
+                  </span>
+                </span>
+                <span className="px-2 py-1 rounded-lg bg-emerald-500/15 text-emerald-400 text-[10px] font-bold uppercase tracking-wider shrink-0">
+                  Open Dropdown
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
 
         {statusMsg && (
           <div className={`p-4 rounded-2xl text-xs font-semibold flex items-center justify-between border ${
@@ -374,12 +534,27 @@ export function NutritionRecovery() {
           </div>
         )}
 
-        {loading ? (
-          <div className="flex justify-center p-12">
+        {/* LOADING STATE */}
+        {loadingDaily ? (
+          <div className="p-12 flex flex-col items-center justify-center gap-3">
             <div className="w-8 h-8 rounded-full border-2 border-emerald-400 border-t-transparent animate-spin" />
+            <span className="text-xs text-slate-400 font-mono">Aggregating live metabolic logs...</span>
+          </div>
+        ) : errorDaily ? (
+          /* ERROR STATE WITH RETRY */
+          <div className="p-8 rounded-3xl bg-red-500/10 border border-red-500/30 text-center space-y-3 max-w-md mx-auto">
+            <AlertTriangle className="w-8 h-8 text-red-400 mx-auto" />
+            <h3 className="font-bold text-white text-base">Unable to Load Nutrition Logs</h3>
+            <p className="text-xs text-slate-400">Failed to connect to the recovery engine. Please verify your connection.</p>
+            <button
+              onClick={() => refetchDaily()}
+              className="px-4 py-2 rounded-xl bg-red-500 hover:bg-red-400 text-white font-bold text-xs flex items-center gap-1.5 mx-auto"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Retry Fetch
+            </button>
           </div>
         ) : !hasData ? (
-          /* HONEST EMPTY STATE */
+          /* EMPTY STATE */
           <div className="flex flex-col items-center justify-center p-10 bg-slate-900/60 rounded-3xl border border-slate-800 text-center max-w-lg mx-auto mt-6 space-y-4">
             <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
               <Apple className="w-8 h-8" />
@@ -387,15 +562,18 @@ export function NutritionRecovery() {
             <div>
               <h3 className="font-bold text-lg text-white">No Nutrition Logs Found</h3>
               <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                Log your first meal using the built-in food search or load 7 full days of athletic nutrition data.
+                Log your first meal using the built-in Indian food search dropdown or load 7 full days of demo nutrition.
               </p>
             </div>
             <div className="flex gap-3 flex-wrap justify-center pt-2">
               <button
-                onClick={() => setShowSearchModal(true)}
+                onClick={() => {
+                  setShowSearchModal(true);
+                  setIsDropdownOpen(true);
+                }}
                 className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 text-slate-950 font-black text-xs flex items-center gap-2 shadow-lg shadow-emerald-500/20"
               >
-                <Plus className="w-4 h-4 stroke-[3]" /> Search & Log Food
+                <Plus className="w-4 h-4 stroke-[3]" /> Search &amp; Log Food
               </button>
               <button
                 onClick={handleSeedWeek}
@@ -412,10 +590,10 @@ export function NutritionRecovery() {
             
             {/* Top Macro Rings Row */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <MacroRing label="Calories" current={currentCals} target={TARGETS.calories} unit="kcal" color="#06b6d4" />
-              <MacroRing label="Protein" current={currentProt} target={TARGETS.protein} unit="g" color="#10b981" />
-              <MacroRing label="Carbohydrates" current={currentCarbs} target={TARGETS.carbs} unit="g" color="#a855f7" />
-              <MacroRing label="Healthy Fats" current={currentFat} target={TARGETS.fat} unit="g" color="#f59e0b" />
+              <MacroRing label="Calories" current={currentCals} target={DEFAULT_NUTRITION_TARGETS.calories} unit="kcal" color="#06b6d4" />
+              <MacroRing label="Protein" current={currentProt} target={DEFAULT_NUTRITION_TARGETS.protein} unit="g" color="#10b981" />
+              <MacroRing label="Carbohydrates" current={currentCarbs} target={DEFAULT_NUTRITION_TARGETS.carbs} unit="g" color="#a855f7" />
+              <MacroRing label="Healthy Fats" current={currentFat} target={DEFAULT_NUTRITION_TARGETS.fat} unit="g" color="#f59e0b" />
             </div>
 
             {/* Quick Hydration & Water Row */}
@@ -428,7 +606,7 @@ export function NutritionRecovery() {
                   <h3 className="text-base font-bold text-white">Daily Hydration Tracker</h3>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-2xl font-black font-mono text-cyan-400">{waterMl} ml</span>
-                    <span className="text-xs text-slate-400">/ {TARGETS.water} ml goal ({Math.min(100, Math.round((waterMl / TARGETS.water) * 100))}%)</span>
+                    <span className="text-xs text-slate-400">/ {DEFAULT_NUTRITION_TARGETS.water} ml goal ({Math.min(100, Math.round((waterMl / DEFAULT_NUTRITION_TARGETS.water) * 100))}%)</span>
                   </div>
                 </div>
               </div>
@@ -468,7 +646,7 @@ export function NutritionRecovery() {
                 </p>
                 <div className="flex-1">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={mpsData.length > 0 ? mpsData : [{ name: 'Lunch', protein: 45 }]} margin={{ left: -20, right: 10 }}>
+                    <BarChart data={mpsData.length > 0 ? mpsData : [{ name: 'No Meals', protein: 0, calories: 0 }]} margin={{ left: -20, right: 10 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
                       <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
                       <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} tickFormatter={v => `${v}g`} />
@@ -506,10 +684,13 @@ export function NutritionRecovery() {
             <div className="p-6 rounded-3xl bg-slate-900/80 border border-slate-800 shadow-xl space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-emerald-400" /> Today's Meal Timeline ({mealsList.length} logged)
+                  <Clock className="w-4 h-4 text-emerald-400" /> Today's Meal Timeline ({meals.length} logged)
                 </h3>
                 <button
-                  onClick={() => setShowSearchModal(true)}
+                  onClick={() => {
+                    setShowSearchModal(true);
+                    setIsDropdownOpen(true);
+                  }}
                   className="text-xs text-emerald-400 font-bold hover:underline flex items-center gap-1"
                 >
                   <Plus className="w-3.5 h-3.5" /> Add Meal
@@ -517,7 +698,7 @@ export function NutritionRecovery() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {mealsList.map((m: any) => (
+                {meals.map((m: any) => (
                   <div key={m.id} className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800/80 hover:border-emerald-500/30 transition-all space-y-3">
                     <div className="flex items-start justify-between">
                       <div>
@@ -561,7 +742,7 @@ export function NutritionRecovery() {
                     <h3 className="text-base font-bold text-white flex items-center gap-2">
                       <Scale className="w-4 h-4 text-cyan-400" /> Body Weight Progression (kg)
                     </h3>
-                    <p className="text-xs text-slate-400">Tracking long-term mass & body composition adaptations</p>
+                    <p className="text-xs text-slate-400">Tracking long-term mass &amp; body composition adaptations</p>
                   </div>
                   <button
                     onClick={() => setShowWeightModal(true)}
@@ -588,17 +769,28 @@ export function NutritionRecovery() {
           </div>
         )}
 
-        {/* ── MODAL: LOG MEAL & FOOD DATABASE ── */}
+        {/* ── MODAL: LOG MEAL & FOOD SEARCH DROPDOWN ── */}
         {showSearchModal && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-            <div className="w-full max-w-xl bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 flex flex-col max-h-[85vh] space-y-4 shadow-2xl">
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+            <div className="w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 flex flex-col max-h-[90vh] space-y-4 shadow-2xl overflow-y-auto">
               
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Apple className="w-5 h-5 text-emerald-400" />
-                  <h3 className="text-xl font-bold text-white">Log Meal Manually</h3>
+                <div className="flex items-center gap-2.5">
+                  <span className="text-2xl">🍛</span>
+                  <div>
+                    <h3 className="text-xl font-bold text-white">Log Food &amp; Nutrition</h3>
+                    <p className="text-xs text-slate-400">Search Indian staples or select from dropdown catalog</p>
+                  </div>
                 </div>
-                <button onClick={() => setShowSearchModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                <button 
+                  onClick={() => {
+                    setShowSearchModal(false);
+                    setIsDropdownOpen(false);
+                  }} 
+                  className="text-slate-400 hover:text-white p-2 rounded-xl bg-slate-800/80 hover:bg-slate-800 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
 
               {/* Mode Tabs */}
@@ -606,102 +798,248 @@ export function NutritionRecovery() {
                 <button
                   type="button"
                   onClick={() => setModalTab('database')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                     modalTab === 'database' ? 'bg-slate-800 text-emerald-400 shadow' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  <Search className="w-3.5 h-3.5 inline mr-1" /> Search Food Database
+                  <Search className="w-3.5 h-3.5" /> Food Search &amp; Dropdown
                 </button>
                 <button
                   type="button"
                   onClick={() => setModalTab('custom')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
                     modalTab === 'custom' ? 'bg-slate-800 text-cyan-400 shadow' : 'text-slate-400 hover:text-white'
                   }`}
                 >
-                  <Plus className="w-3.5 h-3.5 inline mr-1" /> Custom Food Entry
+                  <Plus className="w-3.5 h-3.5" /> Custom Food Entry
                 </button>
               </div>
 
               {modalTab === 'database' ? (
-                <>
-                  {/* Search Form */}
-                  <form onSubmit={handleSearch} className="flex gap-2">
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search foods (e.g. Chicken breast, Oats, Eggs, Salmon)..."
-                      className="flex-1 px-4 py-3 bg-slate-950 border border-slate-800 rounded-2xl text-white text-sm focus:border-emerald-500"
-                      autoFocus
-                    />
-                    <button
-                      type="submit"
-                      disabled={isSearching}
-                      className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs"
-                    >
-                      {isSearching ? "Searching..." : "Search"}
-                    </button>
-                  </form>
-
-                  {/* Results */}
-                  <div className="flex-1 overflow-y-auto space-y-2 pr-1 max-h-52">
-                    {searchResults.length === 0 && !isSearching && (
-                      <p className="text-center text-xs text-slate-500 py-6">
-                        Type a food name above to browse hundreds of calorie-accurate whole foods.
-                      </p>
-                    )}
-                    {searchResults.map(f => (
-                      <div
-                        key={f.id}
-                        onClick={() => setSelectedFood(f)}
-                        className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between ${
-                          selectedFood?.id === f.id
-                            ? "bg-emerald-500/10 border-emerald-500 text-white"
-                            : "bg-slate-950/60 border-slate-800 hover:border-slate-700"
-                        }`}
-                      >
-                        <div>
-                          <strong className="text-sm text-white block">{f.name}</strong>
-                          <span className="text-xs text-slate-400 capitalize">{f.category} • {f.serving_size_g}g serving</span>
-                        </div>
-                        <div className="text-right font-mono text-xs">
-                          <div className="font-bold text-white">{f.calories_per_100g} kcal/100g</div>
-                          <div className="text-emerald-400">{f.protein_g_100g}g P | {f.carbs_g_100g}g C | {f.fat_g_100g}g F</div>
-                        </div>
-                      </div>
-                    ))}
+                <div className="space-y-4" ref={searchContainerRef}>
+                  
+                  {/* Category Filter Pills */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                    {FOOD_CATEGORY_FILTERS.map((cat) => {
+                      const isActive = activeCategoryFilter === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => {
+                            setActiveCategoryFilter(cat.id);
+                            setIsDropdownOpen(true);
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1 ${
+                            isActive
+                              ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-sm"
+                              : "bg-slate-950 text-slate-400 hover:text-slate-200 border border-slate-800"
+                          }`}
+                        >
+                          {cat.label}
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  {/* Portion Customizer & Photo Upload */}
-                  {selectedFood && (
-                    <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-emerald-400">Selected: {selectedFood.name}</span>
-                        <span className="font-mono text-white font-bold">
-                          {Math.round(selectedFood.calories_per_100g * (servingGrams / 100))} kcal • {Math.round(selectedFood.protein_g_100g * (servingGrams / 100))}g Protein
-                        </span>
+                  {/* Search Bar Input */}
+                  <div className="relative">
+                    <div className="relative flex items-center">
+                      <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-emerald-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => {
+                          setSearchQuery(e.target.value);
+                          setIsDropdownOpen(true);
+                        }}
+                        onFocus={() => setIsDropdownOpen(true)}
+                        placeholder="Type Indian food name (e.g. Masala Dosa, Paneer, Biryani, Dal)..."
+                        className="w-full pl-10 pr-24 py-3 bg-slate-950 border border-slate-700/90 focus:border-emerald-500 rounded-2xl text-white text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500/30 transition-all placeholder:text-slate-500"
+                        autoFocus
+                      />
+                      
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                        {searchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setSearchQuery("")}
+                            className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                          className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs flex items-center gap-1"
+                        >
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ── INTERACTIVE DROPDOWN LIST ── */}
+                    {isDropdownOpen && (
+                      <div className="mt-2 w-full bg-slate-950 border border-emerald-500/30 rounded-2xl p-2 shadow-2xl max-h-64 overflow-y-auto space-y-1.5 z-30">
+                        <div className="px-2 py-1 flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-800/80 pb-1.5">
+                          <span className="font-semibold text-emerald-400 flex items-center gap-1">
+                            <Utensils className="w-3 h-3" /> Select a food item to log:
+                          </span>
+                          <span>{combinedFoodList.length} matches</span>
+                        </div>
+
+                        {combinedFoodList.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-slate-400">
+                            No matching items found for &ldquo;{searchQuery}&rdquo;. Try another term or switch categories above.
+                          </div>
+                        ) : (
+                          combinedFoodList.map((item: any) => {
+                            const isSelected = selectedFood?.id === item.id;
+                            return (
+                              <div
+                                key={item.id}
+                                onClick={() => handleSelectFoodItem(item)}
+                                className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between group ${
+                                  isSelected
+                                    ? "bg-emerald-950/60 border-emerald-500 text-white shadow-md shadow-emerald-500/10"
+                                    : "bg-slate-900/70 border-slate-800/80 hover:border-emerald-500/50 hover:bg-slate-900 text-slate-200"
+                                }`}
+                              >
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xl p-1.5 rounded-lg bg-slate-950/60 border border-slate-800/80">
+                                    {item.emoji || "🍛"}
+                                  </span>
+                                  <div>
+                                    <div className="font-bold text-xs md:text-sm text-white group-hover:text-emerald-300 transition-colors flex items-center gap-1.5">
+                                      {item.name}
+                                      {item.isIndian && (
+                                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 font-mono">
+                                          Indian
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                      <span>{item.category}</span>
+                                      <span>•</span>
+                                      <span className="font-mono text-slate-300 font-semibold">{item.serving_unit || `${item.serving_size_g}g`}</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="text-right font-mono shrink-0 pl-2">
+                                  <div className="text-xs md:text-sm font-black text-cyan-400">
+                                    {item.calories} kcal
+                                  </div>
+                                  <div className="text-[10px] text-emerald-400 font-semibold">
+                                    {Math.round(item.protein_g_100g * (item.serving_size_g / 100) * 10) / 10}g P
+                                    <span className="text-slate-500 mx-1">|</span>
+                                    <span className="text-purple-400">{Math.round(item.carbs_g_100g * (item.serving_size_g / 100) * 10) / 10}g C</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── PORTION CUSTOMIZER & LOG FORM ── */}
+                  {selectedFood ? (
+                    <div className="p-5 rounded-2xl bg-slate-950 border border-emerald-500/40 space-y-4 shadow-xl">
+                      {/* Selected Food Top Preview */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{selectedFood.emoji || "🍛"}</span>
+                          <div>
+                            <span className="text-[10px] uppercase font-extrabold text-emerald-400 tracking-wider">
+                              Selected Food Item
+                            </span>
+                            <h4 className="text-base font-bold text-white">
+                              {selectedFood.name}
+                            </h4>
+                            <span className="text-xs text-slate-400">{selectedFood.category}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-baseline gap-2 font-mono bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+                          <span className="text-xl font-black text-cyan-400">{calculatedCals}</span>
+                          <span className="text-xs text-slate-400">kcal for {servingGrams}g</span>
+                        </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      {/* Live Macro Breakdown */}
+                      <div className="grid grid-cols-3 gap-2 p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-center font-mono">
+                        <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                          <span className="text-[10px] text-slate-400 block uppercase">Protein</span>
+                          <span className="text-sm font-bold text-emerald-400">{calculatedProt}g</span>
+                        </div>
+                        <div className="p-2 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                          <span className="text-[10px] text-slate-400 block uppercase">Carbs</span>
+                          <span className="text-sm font-bold text-purple-400">{calculatedCarbs}g</span>
+                        </div>
+                        <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                          <span className="text-[10px] text-slate-400 block uppercase">Fat</span>
+                          <span className="text-sm font-bold text-amber-400">{calculatedFat}g</span>
+                        </div>
+                      </div>
+
+                      {/* Quick Gram Preset Chips */}
+                      <div>
+                        <label className="text-xs text-slate-300 font-semibold block mb-1.5">
+                          Quick Portion Selection:
+                        </label>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[
+                            { label: "1 Serving", grams: selectedFood.serving_size_g || 150 },
+                            { label: "50g", grams: 50 },
+                            { label: "100g", grams: 100 },
+                            { label: "150g", grams: 150 },
+                            { label: "200g", grams: 200 },
+                            { label: "250g", grams: 250 },
+                            { label: "300g", grams: 300 }
+                          ].map(chip => (
+                            <button
+                              key={chip.label}
+                              type="button"
+                              onClick={() => setServingGrams(chip.grams)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition-all ${
+                                servingGrams === chip.grams
+                                  ? "bg-emerald-500 text-slate-950 font-bold"
+                                  : "bg-slate-900 text-slate-400 hover:text-white border border-slate-800"
+                              }`}
+                            >
+                              {chip.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="text-[11px] text-slate-400 block mb-1">Serving Amount (grams):</label>
+                          <label className="text-xs text-slate-300 font-semibold block mb-1">
+                            Exact Serving Portion (grams):
+                          </label>
                           <input
                             type="number"
                             min="10"
                             max="2000"
                             step="10"
                             value={servingGrams}
-                            onChange={(e) => setServingGrams(Number(e.target.value))}
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono text-sm"
+                            onChange={(e) => setServingGrams(Math.max(1, Number(e.target.value)))}
+                            className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white font-mono text-sm focus:border-emerald-500"
                           />
                         </div>
+
                         <div>
-                          <label className="text-[11px] text-slate-400 block mb-1">Meal Category:</label>
+                          <label className="text-xs text-slate-300 font-semibold block mb-1">
+                            Meal Category:
+                          </label>
                           <select
                             value={mealType}
                             onChange={(e) => setMealType(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white text-sm"
+                            className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white text-sm focus:border-emerald-500"
                           >
                             <option value="Breakfast">Breakfast</option>
                             <option value="Lunch">Lunch</option>
@@ -712,19 +1050,20 @@ export function NutritionRecovery() {
                         </div>
                       </div>
 
-                      {/* Meal Photo */}
+                      {/* Photo Upload */}
                       <div>
-                        <label className="text-[11px] text-slate-400 block mb-1 flex items-center gap-1">
-                          <Camera className="w-3.5 h-3.5 text-cyan-400" /> Attach Meal Photo (Local):
+                        <label className="text-xs text-slate-400 block mb-1 flex items-center gap-1.5">
+                          <Camera className="w-3.5 h-3.5 text-cyan-400" /> Attach Meal Photo (Optional):
                         </label>
                         {mealPhotoPreview ? (
-                          <div className="relative w-full h-24 rounded-xl overflow-hidden border border-slate-800">
+                          <div className="relative w-full h-28 rounded-xl overflow-hidden border border-slate-800">
                             <img src={mealPhotoPreview} alt="Preview" className="w-full h-full object-cover" />
                             <button
+                              type="button"
                               onClick={() => { setMealPhoto(null); setMealPhotoPreview(null); }}
-                              className="absolute top-1 right-1 p-1 bg-black/70 rounded-full text-white text-xs"
+                              className="absolute top-2 right-2 p-1.5 bg-black/80 rounded-full text-white text-xs hover:bg-black"
                             >
-                              ✕
+                              <X className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         ) : (
@@ -743,21 +1082,40 @@ export function NutritionRecovery() {
                         )}
                       </div>
 
+                      {/* Action Button */}
                       <button
+                        type="button"
                         onClick={handleLogFood}
                         disabled={isLoggingMeal}
-                        className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20"
+                        className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-sm shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all"
                       >
-                        {isLoggingMeal ? "Logging..." : `Log ${servingGrams}g to ${mealType}`}
+                        {isLoggingMeal ? (
+                          <>
+                            <div className="w-4 h-4 rounded-full border-2 border-slate-950 border-t-transparent animate-spin" />
+                            Logging Food to {mealType}...
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-4 h-4 stroke-[3]" />
+                            Log {servingGrams}g {selectedFood.name} to {mealType}
+                          </>
+                        )}
                       </button>
                     </div>
+                  ) : (
+                    <div className="p-6 text-center rounded-2xl bg-slate-950/60 border border-slate-800/80 space-y-2">
+                      <p className="text-xs text-slate-400">
+                        👆 Click the search bar or pick an Indian dish from the dropdown list to customize portion &amp; log.
+                      </p>
+                    </div>
                   )}
-                </>
+
+                </div>
               ) : (
                 /* ── CUSTOM MANUAL FOOD ENTRY FORM ── */
                 <div className="space-y-4 overflow-y-auto pr-1">
-                  {/* Indian Foods Quick Slider */}
-                  <IndianFoodSlider onSelectFood={handleSelectIndianFood} />
+                  {/* Indian Foods Quick Slider Carousel */}
+                  <IndianFoodSlider onSelectFood={handleSelectIndianFoodFromSlider} />
 
                   <div>
                     <label className="text-xs text-slate-300 font-semibold block mb-1">Meal / Food Description:</label>
@@ -765,7 +1123,7 @@ export function NutritionRecovery() {
                       type="text"
                       value={customFoodName}
                       onChange={(e) => setCustomFoodName(e.target.value)}
-                      placeholder="e.g. Grilled Chicken Wrap with Avocado"
+                      placeholder="e.g. Masala Dosa with Sambar or Grilled Chicken Wrap"
                       className="w-full px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:border-cyan-500"
                     />
                   </div>
@@ -839,12 +1197,13 @@ export function NutritionRecovery() {
                   {/* Meal Photo */}
                   <div>
                     <label className="text-[11px] text-slate-400 block mb-1 flex items-center gap-1">
-                      <Camera className="w-3.5 h-3.5 text-cyan-400" /> Attach Meal Photo (Local):
+                      <Camera className="w-3.5 h-3.5 text-cyan-400" /> Attach Meal Photo (Optional):
                     </label>
                     {mealPhotoPreview ? (
                       <div className="relative w-full h-24 rounded-xl overflow-hidden border border-slate-800">
                         <img src={mealPhotoPreview} alt="Preview" className="w-full h-full object-cover" />
                         <button
+                          type="button"
                           onClick={() => { setMealPhoto(null); setMealPhotoPreview(null); }}
                           className="absolute top-1 right-1 p-1 bg-black/70 rounded-full text-white text-xs"
                         >
@@ -868,9 +1227,10 @@ export function NutritionRecovery() {
                   </div>
 
                   <button
+                    type="button"
                     onClick={handleLogCustomMeal}
                     disabled={isLoggingMeal}
-                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-cyan-500 via-teal-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-cyan-500/20"
+                    className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 via-teal-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-black text-xs shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2"
                   >
                     {isLoggingMeal ? "Saving Custom Meal..." : `Log Custom Meal to ${mealType}`}
                   </button>
