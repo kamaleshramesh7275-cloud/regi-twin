@@ -120,7 +120,6 @@ export default function DemoDashboard() {
         <div className="flex justify-between md:justify-start md:flex-col w-full md:w-auto md:space-y-1 flex-1">
           <NavItem icon={<Activity className="w-5 h-5 md:w-5 md:h-5" />} label="Dashboard" href="/dashboard" active />
           <NavItem icon={<Camera className="w-5 h-5 md:w-5 md:h-5" />} label="Capture" href="/capture" />
-          <NavItem icon={<History className="w-5 h-5 md:w-5 md:h-5" />} label="History" href="/history" />
           <NavItem icon={<Clock className="w-5 h-5 md:w-5 md:h-5" />} label="Timeline" href="/timeline" />
           <NavItem icon={<Brain className="w-5 h-5 md:w-5 md:h-5" />} label="Insights" href="/insights" />
           <NavItem icon={<Settings className="w-5 h-5 md:w-5 md:h-5" />} label="Settings" href="/settings" />

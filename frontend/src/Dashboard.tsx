@@ -168,9 +168,9 @@ export default function Dashboard() {
             </span>
             <button
               onClick={() => setLocation('/capture')}
-              className="btn-primary text-xs py-2 px-3.5 sm:px-4 cursor-pointer"
+              className="btn-primary text-xs py-2 px-3.5 sm:px-4 cursor-pointer flex items-center gap-1.5"
             >
-              + New Session
+              + Upload Media
             </button>
           </div>
         </header>

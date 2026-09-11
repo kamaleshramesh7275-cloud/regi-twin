@@ -23,6 +23,47 @@ def get_easyocr_reader():
     return _easyocr_reader if _easyocr_reader is not False else None
 
 
+def preprocess_image_for_ocr(img_input):
+    """
+    Apply OpenCV adaptive contrast enhancement, grayscale conversion, and denoising
+    to optimize document photos and scans for optical character recognition.
+    Accepts file path, bytes, or numpy array.
+    """
+    try:
+        import cv2
+        import numpy as np
+
+        if isinstance(img_input, str):
+            img = cv2.imread(img_input)
+        elif isinstance(img_input, bytes):
+            nparr = np.frombuffer(img_input, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        else:
+            img = img_input
+
+        if img is None:
+            return None
+
+        # Proportional resize for large phone camera captures to accelerate OCR on CPU
+        h, w = img.shape[:2]
+        max_dim = 1600
+        if max(h, w) > max_dim:
+            scale = max_dim / float(max(h, w))
+            img = cv2.resize(img, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
+
+        # Convert to grayscale
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) for uneven lighting/shadows
+        clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(8, 8))
+        enhanced = clahe.apply(gray)
+
+        return enhanced
+    except Exception as e:
+        logger.warning(f"OpenCV image preprocessing skipped: {e}")
+        return None
+
+
 def extract_ocr_from_file(file_path: str, file_type: str = "pdf") -> Tuple[List[Dict[str, Any]], int]:
     """
     Extract raw text lines with bounding boxes and confidence scores from a PDF or image file.
@@ -47,7 +88,10 @@ def _process_pdf(pdf_path: str) -> Tuple[List[Dict[str, Any]], int]:
     page_count = 1
 
     try:
-        import fitz  # PyMuPDF
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz
         doc = fitz.open(pdf_path)
         page_count = len(doc)
 
@@ -82,9 +126,14 @@ def _process_pdf(pdf_path: str) -> Tuple[List[Dict[str, Any]], int]:
                 reader = get_easyocr_reader()
                 if reader:
                     # Scanned image PDF -> Rasterize page to high-res image and run EasyOCR
-                    pix = page.get_pixmap(dpi=200)
+                    pix = page.get_pixmap(dpi=250)
                     img_bytes = pix.tobytes("png")
-                    ocr_results = reader.readtext(img_bytes)
+                    
+                    # Preprocess rasterized image
+                    preprocessed = preprocess_image_for_ocr(img_bytes)
+                    ocr_target = preprocessed if preprocessed is not None else img_bytes
+
+                    ocr_results = reader.readtext(ocr_target)
                     for bbox, text, conf in ocr_results:
                         clean = text.strip()
                         if clean:
@@ -126,7 +175,18 @@ def _process_image(image_path: str, page_num: int = 1) -> List[Dict[str, Any]]:
 
     if reader:
         try:
-            results = reader.readtext(image_path)
+            # Preprocess image to enhance contrast, remove shadows, and sharpen text
+            enhanced = preprocess_image_for_ocr(image_path)
+            ocr_target = enhanced if enhanced is not None else image_path
+
+            results = reader.readtext(ocr_target)
+
+            # If enhanced results are sparse (< 2), also try raw image as fallback
+            if len(results) < 2 and enhanced is not None:
+                raw_trial = reader.readtext(image_path)
+                if len(raw_trial) > len(results):
+                    results = raw_trial
+
             for bbox, text, conf in results:
                 clean = text.strip()
                 if clean:
@@ -137,7 +197,8 @@ def _process_image(image_path: str, page_num: int = 1) -> List[Dict[str, Any]]:
                         "page": page_num,
                         "engine": "easyocr"
                     })
-            return raw_lines
+            if raw_lines:
+                return raw_lines
         except Exception as e:
             logger.error(f"EasyOCR image processing failed: {e}")
 

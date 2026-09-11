@@ -20,7 +20,9 @@ import {
   ChevronRight,
   Database,
   Trash2,
-  FileUp
+  FileUp,
+  Camera,
+  ScanLine
 } from "lucide-react";
 import { useAuth } from "./context/AuthContext";
 import { api } from "./api";
@@ -33,6 +35,7 @@ export default function ClinicPage() {
   const { user } = useAuth();
   const userId = user?.uid || "test-user";
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   // Active Tab: 'ocr' | 'trends' | 'alerts' | 'providers'
   const [activeTab, setActiveTab] = useState<"ocr" | "trends" | "alerts" | "providers">("ocr");
@@ -48,6 +51,7 @@ export default function ClinicPage() {
     reportDate?: string;
     labName?: string;
     metrics: ExtractedMetric[];
+    rawOcrLines?: string[];
   } | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
   const [reportsList, setReportsList] = useState<any[]>([]);
@@ -86,13 +90,14 @@ export default function ClinicPage() {
       // If there is any pending report, auto-stage it in the review queue if none is open
       if (!activeReviewReport) {
         const pending = (reports || []).find((r: any) => r.status === "pending_review");
-        if (pending && pending.metrics && pending.metrics.length > 0) {
+        if (pending && pending.metrics) {
           setActiveReviewReport({
             id: pending.id,
             filename: pending.filename,
             reportDate: pending.report_date,
             labName: pending.lab_name,
-            metrics: pending.metrics
+            metrics: pending.metrics || [],
+            rawOcrLines: pending.raw_ocr_lines || []
           });
         }
       }
@@ -110,21 +115,13 @@ export default function ClinicPage() {
   }, [userId]);
 
   // Handle OCR Document Upload
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFile(e.target.files[0]);
-      setUploadError("");
-    }
-  };
-
-  const handleUploadReport = async () => {
-    if (!selectedFile) return;
+  const processReportFile = async (fileToProcess: File) => {
     setIsUploading(true);
     setUploadError("");
     try {
       const res = await api.uploadClinicReport(
         userId,
-        selectedFile,
+        fileToProcess,
         labNameInput || "Diagnostic Laboratory",
         "lab_panel"
       );
@@ -132,10 +129,11 @@ export default function ClinicPage() {
       // Open in Review Queue
       setActiveReviewReport({
         id: res.report_id,
-        filename: res.filename || selectedFile.name,
+        filename: res.filename || fileToProcess.name,
         reportDate: res.report_date,
         labName: labNameInput || "Diagnostic Laboratory",
-        metrics: res.parsed_metrics || []
+        metrics: res.parsed_metrics || [],
+        rawOcrLines: res.raw_ocr_lines || []
       });
 
       setSelectedFile(null);
@@ -145,6 +143,21 @@ export default function ClinicPage() {
       setUploadError(err.message || "Failed to process document OCR. Please check file format.");
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setSelectedFile(file);
+      setUploadError("");
+      processReportFile(file);
+    }
+  };
+
+  const handleUploadReport = async () => {
+    if (selectedFile) {
+      await processReportFile(selectedFile);
     }
   };
 
@@ -326,147 +339,189 @@ export default function ClinicPage() {
         {/* TAB 1: OCR Ingestion & Review Queue */}
         {activeTab === "ocr" && (
           <div className="space-y-6">
-            {/* If there is an active report open for review */}
-            {activeReviewReport ? (
-              <ReportReviewQueue
-                reportId={activeReviewReport.id}
-                filename={activeReviewReport.filename}
-                reportDate={activeReviewReport.reportDate}
-                labName={activeReviewReport.labName}
-                initialMetrics={activeReviewReport.metrics}
-                onConfirm={handleConfirmReview}
-                onCancel={() => setActiveReviewReport(null)}
-                isConfirming={isConfirming}
-              />
-            ) : (
-              /* Dropzone Upload Section */
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2 card space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="font-bold text-lg flex items-center gap-2">
-                      <UploadCloud className="w-5 h-5 text-primary" /> Upload Clinical Document (PDF / Scan)
-                    </h3>
-                    <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                      PyMuPDF + EasyOCR Engine
-                    </span>
-                  </div>
+            {/* ─── SCANNER & UPLOAD (always visible) ─── */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 card space-y-4">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <h3 className="font-bold text-lg flex items-center gap-2">
+                    <ScanLine className="w-5 h-5 text-primary" /> Clinical OCR Scanner & Ingestion
+                  </h3>
+                  <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
+                    <Sparkles className="w-3 h-3 text-emerald-400" /> OpenCV + EasyOCR + AI Model
+                  </span>
+                </div>
 
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Upload laboratory blood work, metabolic panels, or pathology PDFs. The OCR pipeline extracts raw lines, bounding boxes, and lab bounds into the <strong>Human-in-the-Loop Review Queue</strong> with zero auto-commit to the digital twin.
-                  </p>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Scan or upload blood tests, pathology panels, or clinical prescriptions. The multi-tier neural OCR pipeline extracts biomarkers into the <strong>Human-in-the-Loop Review Queue</strong> for verification before twin ingestion.
+                </p>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                    <div>
-                      <label className="text-xs font-semibold text-muted-foreground block mb-1">Diagnostic Laboratory (Optional)</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Quest Diagnostics, LabCorp, Mayo Clinic"
-                        value={labNameInput}
-                        onChange={e => setLabNameInput(e.target.value)}
-                        className="w-full bg-secondary text-foreground text-xs rounded-xl px-3 py-2.5 border border-border focus:border-primary focus:outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-xs font-semibold text-muted-foreground block mb-1">Supported File Formats</label>
-                      <div className="text-xs bg-secondary/50 text-muted-foreground rounded-xl px-3 py-2.5 border border-border flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-primary" /> PDF, JPG, PNG, TIFF (Max 15MB)
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="border-2 border-dashed border-border hover:border-primary/50 transition-colors rounded-2xl p-8 text-center bg-card/50 mt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">Diagnostic Laboratory (Optional)</label>
                     <input
-                      type="file"
-                      className="hidden"
-                      ref={fileInputRef}
-                      onChange={handleFileSelect}
-                      accept="image/*,.pdf"
+                      type="text"
+                      placeholder="e.g. Quest Diagnostics, LabCorp, Mayo Clinic"
+                      value={labNameInput}
+                      onChange={e => setLabNameInput(e.target.value)}
+                      className="w-full bg-secondary text-foreground text-xs rounded-xl px-3 py-2.5 border border-border focus:border-primary focus:outline-none"
                     />
-
-                    {!selectedFile ? (
-                      <div className="flex flex-col items-center gap-3">
-                        <div className="w-14 h-14 rounded-2xl bg-secondary flex items-center justify-center text-primary shadow-inner">
-                          <FileUp className="w-7 h-7" />
-                        </div>
-                        <div>
-                          <button
-                            onClick={() => fileInputRef.current?.click()}
-                            className="text-primary font-bold hover:underline text-sm"
-                          >
-                            Click to select clinical report
-                          </button>
-                          <span className="text-muted-foreground text-sm ml-1">or drag & drop</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">Digital vector PDFs and high-res scanned images supported</p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col items-center gap-4">
-                        <div className="flex items-center gap-2 bg-secondary px-4 py-2 rounded-xl text-sm font-semibold">
-                          <FileText className="w-4 h-4 text-primary" /> {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
-                        </div>
-                        <div className="flex gap-2 w-full max-w-sm">
-                          <button
-                            onClick={() => setSelectedFile(null)}
-                            className="btn flex-1 bg-secondary text-secondary-foreground"
-                            disabled={isUploading}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            onClick={handleUploadReport}
-                            disabled={isUploading}
-                            className="btn btn-primary flex-1 flex items-center justify-center gap-2 shadow-lg shadow-primary/20"
-                          >
-                            {isUploading ? (
-                              <>
-                                <Loader2 className="w-4 h-4 animate-spin" /> Running OCR Pipeline...
-                              </>
-                            ) : (
-                              <>
-                                <Sparkles className="w-4 h-4" /> Run OCR & Open Queue
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {uploadError && (
-                      <div className="text-destructive text-xs font-semibold mt-4 bg-destructive/10 p-3 rounded-xl border border-destructive/20">
-                        {uploadError}
-                      </div>
-                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-muted-foreground block mb-1">Supported File Formats</label>
+                    <div className="text-xs bg-secondary/50 text-muted-foreground rounded-xl px-3 py-2.5 border border-border flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-primary" /> PDF, JPG, PNG, TIFF, HEIC (Max 25MB)
+                    </div>
                   </div>
                 </div>
 
-                {/* Right Info Box */}
-                <div className="space-y-4">
-                  <div className="card space-y-3 bg-secondary/15 border-primary/20">
-                    <div className="flex items-center gap-2 text-primary font-bold text-sm">
-                      <Shield className="w-4 h-4" /> Human Review Architecture
-                    </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      Every extracted biomarker value undergoes optical confidence scoring and must be human-verified before being tagged with <code className="text-primary font-mono text-[10px]">source: clinicReportOCR</code> and ingested into your Digital Twin.
-                    </p>
-                  </div>
+                <div className="border-2 border-dashed border-border hover:border-primary/50 transition-colors rounded-2xl p-6 sm:p-8 text-center bg-card/50 mt-2">
+                  {/* Standard File Picker */}
+                  <input
+                    type="file"
+                    className="hidden"
+                    ref={fileInputRef}
+                    onChange={handleFileSelect}
+                    accept="image/*,.pdf"
+                  />
+                  {/* Direct Camera Scan Picker for Mobile */}
+                  <input
+                    type="file"
+                    className="hidden"
+                    ref={cameraInputRef}
+                    onChange={handleFileSelect}
+                    accept="image/*"
+                    capture="environment"
+                  />
 
-                  <div className="card space-y-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-bold text-sm text-foreground">Sample Test Reports</h4>
+                  {!selectedFile ? (
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="w-16 h-16 rounded-2xl bg-secondary flex items-center justify-center text-primary shadow-inner">
+                        <ScanLine className="w-8 h-8" />
+                      </div>
+                      <div>
+                        <p className="text-base font-bold text-foreground">Scan or Upload Medical Report</p>
+                        <p className="text-xs text-muted-foreground mt-1">Capture with mobile camera or pick a file from your device</p>
+                      </div>
+
+                      {/* Dual Action Buttons: Camera Scan & Document Upload */}
+                      <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+                        <button
+                          onClick={() => cameraInputRef.current?.click()}
+                          className="btn-primary px-4 py-2.5 text-xs font-bold flex items-center gap-2 shadow-md shadow-primary/20 cursor-pointer"
+                        >
+                          <Camera className="w-4 h-4" /> Scan with Camera
+                        </button>
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="btn-secondary px-4 py-2.5 text-xs font-semibold flex items-center gap-2 cursor-pointer"
+                        >
+                          <FileUp className="w-4 h-4 text-primary" /> Choose File / Gallery
+                        </button>
+                      </div>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Test multi-month predictive trends and regression confidence cones immediately:
-                    </p>
-                    <button
-                      onClick={handleSeedDemoData}
-                      disabled={isSeedingDemo}
-                      className="btn-primary w-full py-2.5 text-xs font-bold flex items-center justify-center gap-2"
-                    >
-                      {isSeedingDemo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                      Seed 4 Longitudinal Reports
-                    </button>
-                  </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-4">
+                      <div className="flex items-center gap-2 bg-secondary px-4 py-2.5 rounded-xl text-sm font-semibold border border-border">
+                        <FileText className="w-4 h-4 text-primary" /> {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+                      </div>
+
+                      {isUploading && (
+                        <div className="w-full max-w-sm bg-secondary/60 rounded-xl p-3 text-left space-y-1.5 border border-border/80">
+                          <div className="flex items-center gap-2 text-xs font-semibold text-primary">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Running OCR Pipeline...
+                          </div>
+                          <div className="text-[11px] text-muted-foreground space-y-0.5">
+                            <div>&bull; Applying adaptive contrast & deskewing</div>
+                            <div>&bull; Optical text recognition with EasyOCR & PyMuPDF</div>
+                            <div>&bull; Structuring clinical biomarkers with AI</div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 w-full max-w-sm">
+                        <button
+                          onClick={() => setSelectedFile(null)}
+                          className="btn flex-1 bg-secondary text-secondary-foreground cursor-pointer"
+                          disabled={isUploading}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleUploadReport}
+                          disabled={isUploading}
+                          className="btn btn-primary flex-1 flex items-center justify-center gap-2 shadow-lg shadow-primary/20 cursor-pointer"
+                        >
+                          {isUploading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" /> Processing...
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-4 h-4" /> Run OCR & Open Queue
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {uploadError && (
+                    <div className="text-destructive text-xs font-semibold mt-4 bg-destructive/10 p-3 rounded-xl border border-destructive/20">
+                      {uploadError}
+                    </div>
+                  )}
                 </div>
+              </div>
+
+              {/* Right Info Box */}
+              <div className="space-y-4">
+                <div className="card space-y-3 bg-secondary/15 border-primary/20">
+                  <div className="flex items-center gap-2 text-primary font-bold text-sm">
+                    <Shield className="w-4 h-4" /> Human Review Architecture
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Every extracted biomarker value undergoes optical confidence scoring and must be human-verified before being tagged with <code className="text-primary font-mono text-[10px]">source: clinicReportOCR</code> and ingested into your Digital Twin.
+                  </p>
+                </div>
+
+                <div className="card space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-sm text-foreground">Sample Test Reports</h4>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Test multi-month predictive trends and regression confidence cones immediately:
+                  </p>
+                  <button
+                    onClick={handleSeedDemoData}
+                    disabled={isSeedingDemo}
+                    className="btn-primary w-full py-2.5 text-xs font-bold flex items-center justify-center gap-2"
+                  >
+                    {isSeedingDemo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    Seed 4 Longitudinal Reports
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* ─── HUMAN-IN-THE-LOOP REVIEW QUEUE (shows below scanner when a report is active) ─── */}
+            {activeReviewReport && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 px-1">
+                  <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="text-xs font-bold text-amber-400 uppercase tracking-widest">Review Queue Active</span>
+                  <span className="text-xs text-muted-foreground">— Verify extracted metrics before ingesting into your Digital Twin</span>
+                </div>
+                <ReportReviewQueue
+                  reportId={activeReviewReport.id}
+                  filename={activeReviewReport.filename}
+                  reportDate={activeReviewReport.reportDate}
+                  labName={activeReviewReport.labName}
+                  initialMetrics={activeReviewReport.metrics}
+                  rawOcrLines={activeReviewReport.rawOcrLines || []}
+                  onConfirm={handleConfirmReview}
+                  onCancel={() => setActiveReviewReport(null)}
+                  isConfirming={isConfirming}
+                />
               </div>
             )}
 
@@ -526,7 +581,8 @@ export default function ClinicPage() {
                                 filename: r.filename,
                                 reportDate: r.report_date,
                                 labName: r.lab_name,
-                                metrics: r.metrics || []
+                                metrics: r.metrics || [],
+                                rawOcrLines: r.raw_ocr_lines || []
                               })}
                               className="btn-primary px-3 py-1.5 text-xs font-bold flex items-center gap-1 shadow-md shadow-primary/20"
                             >

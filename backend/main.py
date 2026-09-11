@@ -3233,11 +3233,39 @@ async def upload_clinical_report(
     file_size_bytes = os.path.getsize(saved_path)
     file_url = f"/uploads/reports/{saved_filename}"
 
-    # Run OCR Pipeline (PyMuPDF / EasyOCR)
-    raw_lines, page_count = clinic_ocr.extract_ocr_from_file(saved_path)
+    # ── For image files: try Gemini Vision first (bypasses EasyOCR entirely) ──
+    is_image_file = ext in [".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp", ".heic"]
+    parsed_metrics = []
+    raw_lines = []
+    page_count = 1
 
-    # Run Structured Parser
-    parsed_metrics = clinic_parser.parse_lab_records_from_ocr(raw_lines)
+    if is_image_file:
+        # Attempt direct Gemini Vision extraction
+        with open(saved_path, "rb") as img_f:
+            img_bytes = img_f.read()
+        mime_map = {
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+            ".png": "image/png", ".tiff": "image/tiff",
+            ".bmp": "image/bmp", ".webp": "image/webp"
+        }
+        mime_type = mime_map.get(ext, "image/jpeg")
+        parsed_metrics = clinic_parser.parse_lab_records_from_image(img_bytes, mime_type)
+
+        if parsed_metrics:
+            # Gemini succeeded — synthesize raw_lines from extracted snippets for UI display
+            raw_lines = [{"text": m.get("raw_snippet", ""), "confidence": 0.99, "engine": "gemini_vision", "page": 1}
+                         for m in parsed_metrics if m.get("raw_snippet")]
+            print(f"[clinic] Gemini Vision extracted {len(parsed_metrics)} metrics from {orig_name}")
+        else:
+            # Fallback: run EasyOCR + Groq text parser
+            print(f"[clinic] Gemini Vision unavailable, using EasyOCR+Groq fallback for {orig_name}")
+            raw_lines, page_count = clinic_ocr.extract_ocr_from_file(saved_path)
+            parsed_metrics = clinic_parser.parse_lab_records_from_ocr(raw_lines)
+    else:
+        # PDF: use PyMuPDF text extraction + Groq LLM text parser
+        raw_lines, page_count = clinic_ocr.extract_ocr_from_file(saved_path)
+        parsed_metrics = clinic_parser.parse_lab_records_from_ocr(raw_lines)
+
     parsed_report_dt = None
     if report_date:
         try:
@@ -3286,7 +3314,8 @@ async def upload_clinical_report(
         "report_date": report_doc.report_date.isoformat() if report_doc.report_date else None,
         "total_metrics": len(parsed_metrics),
         "parsed_metrics": parsed_metrics,
-        "raw_ocr_lines_count": len(raw_lines)
+        "raw_ocr_lines_count": len(raw_lines),
+        "raw_ocr_lines": [l.get("text", "") for l in raw_lines]
     }
 
 
@@ -3301,6 +3330,14 @@ def get_user_clinical_reports(user_id: str, db: Session = Depends(get_db)):
     for r in reports:
         parsed_metrics = []
         confirmed_metrics = []
+        raw_lines = []
+        try:
+            if r.raw_ocr_json:
+                raw_data = json.loads(r.raw_ocr_json)
+                if isinstance(raw_data, list):
+                    raw_lines = [item.get("text", "") if isinstance(item, dict) else str(item) for item in raw_data]
+        except Exception:
+            pass
         try:
             if r.extracted_data_json:
                 parsed_metrics = json.loads(r.extracted_data_json)
@@ -3326,6 +3363,7 @@ def get_user_clinical_reports(user_id: str, db: Session = Depends(get_db)):
             "status": r.status,
             "total_metrics_found": r.total_metrics_found,
             "metrics": confirmed_metrics if r.status == "confirmed" else parsed_metrics,
+            "raw_ocr_lines": raw_lines,
             "review_notes": r.review_notes
         })
     return result

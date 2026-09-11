@@ -292,7 +292,7 @@ function AppContent() {
         
         {/* Protected Routes */}
         <Route path="/twin"><ProtectedRoute component={TwinPage} /></Route>
-        <Route path="/history"><ProtectedRoute component={CapturesPage} /></Route>
+        <Route path="/history"><ProtectedRoute component={TimelinePage} /></Route>
         <Route path="/projection"><ProtectedRoute component={TwinPage} /></Route>
         <Route path="/leaderboard"><ProtectedRoute component={LeaderboardPage} /></Route>
         <Route path="/nutrition-recovery"><ProtectedRoute component={NutritionRecovery} /></Route>

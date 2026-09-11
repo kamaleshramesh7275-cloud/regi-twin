@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { 
   Activity, Camera, History, Clock, Brain, Settings, 
   User, BarChart2, ClipboardList, LineChart, Users, Building, UserCheck,
-  Pill, HeartPulse, BrainCircuit, BookOpen, Trophy, Apple, Dumbbell, LogOut
+  Pill, HeartPulse, BrainCircuit, BookOpen, Trophy, Apple, Dumbbell, LogOut, ImagePlus
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -52,10 +52,10 @@ export function Sidebar() {
         <NavSection title="Core" />
         <NavItem icon={<Activity className="w-4 h-4 md:w-5 md:h-5" />} label="Dashboard" href="/dashboard" active={location === '/dashboard'} />
         <NavItem icon={<User className="w-5 h-5 md:w-5 md:h-5" />} label="Twin" href="/twin" active={location === '/twin'} />
-        <NavItem icon={<Camera className="w-4 h-4 md:w-5 md:h-5" />} label="Capture" href="/capture" active={location === '/capture'} />
+        <NavItem icon={<ImagePlus className="w-4 h-4 md:w-5 md:h-5 text-cyan-400" />} label="Gallery Upload" href="/capture" active={location === '/capture'} />
         
         <NavSection title="Health & Training" />
-        <NavItem icon={<HeartPulse className="w-4 h-4 md:w-5 md:h-5" />} label="Vitals" href="/vitals" active={location === '/vitals'} />
+        {/* Temporarily hidden: <NavItem icon={<HeartPulse className="w-4 h-4 md:w-5 md:h-5" />} label="Vitals" href="/vitals" active={location === '/vitals'} /> */}
         <NavItem icon={<Apple className="w-4 h-4 md:w-5 md:h-5" />} label="Nutrition" href="/nutrition-recovery" active={location === '/nutrition-recovery'} />
         <NavItem icon={<Dumbbell className="w-4 h-4 md:w-5 md:h-5" />} label="Strain" href="/muscular-strain" active={location === '/muscular-strain'} />
         <NavItem icon={<Dumbbell className="w-4 h-4 md:w-5 md:h-5 text-emerald-400" />} label="Exercises" href="/exercises" active={location === '/exercises'} />
@@ -64,7 +64,6 @@ export function Sidebar() {
         
         <NavSection title="Data & Analysis" />
         <NavItem icon={<LineChart className="w-4 h-4 md:w-5 md:h-5" />} label="Analytics" href="/analytics" active={location === '/analytics'} />
-        <NavItem icon={<History className="w-4 h-4 md:w-5 md:h-5" />} label="History" href="/history" active={location === '/history'} />
         <NavItem icon={<Clock className="w-4 h-4 md:w-5 md:h-5" />} label="Timeline" href="/timeline" active={location === '/timeline'} />
         <NavItem icon={<Brain className="w-4 h-4 md:w-5 md:h-5" />} label="Insights" href="/insights" active={location === '/insights'} />
         
