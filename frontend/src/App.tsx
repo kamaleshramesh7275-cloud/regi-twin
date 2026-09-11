@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, Route, Switch, useLocation } from "wouter";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import Onboarding from "./Onboarding";
 import CaptureEngine from "./CaptureEngine";
@@ -10,6 +11,15 @@ import { WorkoutStrain } from "./WorkoutStrain";
 
 import { Camera, Brain, Target, Shield, ArrowRight } from "lucide-react";
 import { AvatarProvider } from "./AvatarContext";
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 30, // 30 seconds
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 
 
@@ -242,9 +252,11 @@ function AppContent() {
 
 function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
 

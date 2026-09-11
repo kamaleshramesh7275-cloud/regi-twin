@@ -751,20 +751,37 @@ def search_foods_database(q: Optional[str] = None, category: Optional[str] = Non
     if q and q.strip():
         query = query.filter(models.Food.name.ilike(f"%{q.strip()}%"))
     
-    foods = query.order_by(models.Food.name.asc()).limit(40).all()
+    foods = query.order_by(models.Food.name.asc()).limit(60).all()
     results = []
     for f in foods:
+        serving_g = f.serving_size_g if (f.serving_size_g and f.serving_size_g > 0) else 100.0
+        cal_100g = f.calories_per_100g if (f.calories_per_100g and f.calories_per_100g > 0) else (round((f.calories / serving_g) * 100, 1) if f.calories else 0.0)
+        prot_100g = f.protein_g_100g if (f.protein_g_100g and f.protein_g_100g > 0) else (round((f.protein_g / serving_g) * 100, 1) if f.protein_g else 0.0)
+        carbs_100g = f.carbs_g_100g if (f.carbs_g_100g and f.carbs_g_100g > 0) else (round((f.carbs_g / serving_g) * 100, 1) if f.carbs_g else 0.0)
+        fat_100g = f.fat_g_100g if (f.fat_g_100g and f.fat_g_100g > 0) else (round((f.fat_g / serving_g) * 100, 1) if f.fat_g else 0.0)
+        fiber_100g = f.fiber_g_100g if (f.fiber_g_100g and f.fiber_g_100g > 0) else (round((f.fiber_g / serving_g) * 100, 1) if f.fiber_g else 0.0)
+
         results.append({
             "id": f.id,
             "name": f.name,
             "category": f.category,
-            "serving_size_g": f.serving_size_g,
-            "calories_per_100g": f.calories_per_100g,
-            "protein_g_100g": f.protein_g_100g,
-            "carbs_g_100g": f.carbs_g_100g,
-            "fat_g_100g": f.fat_g_100g,
-            "fiber_g_100g": f.fiber_g_100g,
-            "micros": json.loads(f.micros_json) if f.micros_json else {}
+            "serving_unit": f.serving_unit,
+            "serving_size_g": serving_g,
+            "calories": f.calories,
+            "calories_per_100g": cal_100g,
+            "protein_g_100g": prot_100g,
+            "carbs_g_100g": carbs_100g,
+            "fat_g_100g": fat_100g,
+            "fiber_g_100g": fiber_100g,
+            "micros": json.loads(f.micros_json) if f.micros_json else {
+                "iron_mg": f.iron_mg or 0,
+                "calcium_mg": f.calcium_mg or 0,
+                "vitamin_d_iu": f.vitamin_d_iu or 0,
+                "b12_mcg": f.b12_mcg or 0,
+                "magnesium_mg": f.magnesium_mg or 0,
+                "potassium_mg": f.potassium_mg or 0,
+                "zinc_mg": f.zinc_mg or 0
+            }
         })
     return results
 
@@ -773,17 +790,34 @@ def get_food_by_id(food_id: str, db: Session = Depends(get_db)):
     f = db.query(models.Food).filter(models.Food.id == food_id).first()
     if not f:
         raise HTTPException(status_code=404, detail="Food item not found")
+    serving_g = f.serving_size_g if (f.serving_size_g and f.serving_size_g > 0) else 100.0
+    cal_100g = f.calories_per_100g if (f.calories_per_100g and f.calories_per_100g > 0) else (round((f.calories / serving_g) * 100, 1) if f.calories else 0.0)
+    prot_100g = f.protein_g_100g if (f.protein_g_100g and f.protein_g_100g > 0) else (round((f.protein_g / serving_g) * 100, 1) if f.protein_g else 0.0)
+    carbs_100g = f.carbs_g_100g if (f.carbs_g_100g and f.carbs_g_100g > 0) else (round((f.carbs_g / serving_g) * 100, 1) if f.carbs_g else 0.0)
+    fat_100g = f.fat_g_100g if (f.fat_g_100g and f.fat_g_100g > 0) else (round((f.fat_g / serving_g) * 100, 1) if f.fat_g else 0.0)
+    fiber_100g = f.fiber_g_100g if (f.fiber_g_100g and f.fiber_g_100g > 0) else (round((f.fiber_g / serving_g) * 100, 1) if f.fiber_g else 0.0)
+
     return {
         "id": f.id,
         "name": f.name,
         "category": f.category,
-        "serving_size_g": f.serving_size_g,
-        "calories_per_100g": f.calories_per_100g,
-        "protein_g_100g": f.protein_g_100g,
-        "carbs_g_100g": f.carbs_g_100g,
-        "fat_g_100g": f.fat_g_100g,
-        "fiber_g_100g": f.fiber_g_100g,
-        "micros": json.loads(f.micros_json) if f.micros_json else {}
+        "serving_unit": f.serving_unit,
+        "serving_size_g": serving_g,
+        "calories": f.calories,
+        "calories_per_100g": cal_100g,
+        "protein_g_100g": prot_100g,
+        "carbs_g_100g": carbs_100g,
+        "fat_g_100g": fat_100g,
+        "fiber_g_100g": fiber_100g,
+        "micros": json.loads(f.micros_json) if f.micros_json else {
+            "iron_mg": f.iron_mg or 0,
+            "calcium_mg": f.calcium_mg or 0,
+            "vitamin_d_iu": f.vitamin_d_iu or 0,
+            "b12_mcg": f.b12_mcg or 0,
+            "magnesium_mg": f.magnesium_mg or 0,
+            "potassium_mg": f.potassium_mg or 0,
+            "zinc_mg": f.zinc_mg or 0
+        }
     }
 
 @app.post("/nutrition/log/{user_id}")
