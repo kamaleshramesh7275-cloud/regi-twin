@@ -15,6 +15,10 @@ import sys
 try:
     from unsloth import FastLanguageModel, PatchDPOTrainer
     from trl import SFTTrainer, DPOTrainer
+    try:
+        from trl import DPOConfig
+    except ImportError:
+        from transformers import TrainingArguments as DPOConfig
     from transformers import TrainingArguments
     PatchDPOTrainer() # Apply DPO patch from Unsloth
 except ImportError as e:
@@ -118,10 +122,10 @@ def train_stage2_dpo(model, tokenizer, dpo_dataset_path: str, output_dir: str):
         train_dataset=dpo_dataset,
         max_length=MAX_SEQ_LENGTH,
         max_prompt_length=2048,
-        args=TrainingArguments(
+        args=DPOConfig(
             per_device_train_batch_size=1,
             gradient_accumulation_steps=8,
-            warmup_ratio=0.1,
+            warmup_steps=2,
             max_steps=20, # Increase for production alignment (e.g. 100-300)
             learning_rate=5e-6,
             fp16=not torch.cuda.is_bf16_supported(),
