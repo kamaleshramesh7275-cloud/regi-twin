@@ -19,6 +19,7 @@ from analytics import compute_capability_profile, generate_weekly_letter, genera
 import clinic_ocr
 import clinic_parser
 import clinic_predictor
+import role_auth
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -3568,6 +3569,91 @@ def delete_clinical_report(report_id: str, db: Session = Depends(get_db)):
     return {"status": "success", "message": "Report removed."}
 
 
+@app.get("/api/clinic/report/{report_id}/metrics")
+def get_report_confirmed_metrics(
+    report_id: str,
+    requesting_uid: Optional[str] = Query(None, description="Firebase UID of the requester (client passes their own UID)"),
+    db: Session = Depends(get_db),
+    caller: dict = Depends(role_auth.get_optional_caller()),
+):
+    """
+    Returns the confirmed metrics for a single clinical report document.
+    Access control:
+      - The report's own user_id always has access (verified via requesting_uid param
+        when caller is None / unauthenticated endpoint hit from client)
+      - Clinicians must have the report owner in their assignment list
+      - Superadmins have unrestricted access
+    This endpoint powers the ClinicPage History tab metric expansion and the
+    ClinicianDashboard drawer per-report detail view.
+    """
+    report = db.query(models.ClinicalReportDocument)\
+        .filter(models.ClinicalReportDocument.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found.")
+
+    # Determine effective caller UID
+    caller_uid = (caller["uid"] if caller else None) or requesting_uid or ""
+    caller_role = caller["role"] if caller else "client"
+
+    # Access check
+    if caller_role != "superadmin":
+        if caller_uid == report.user_id:
+            pass  # Owner — always allowed
+        elif caller_role == "clinician":
+            assignment = db.query(models.ClinicianAssignment)\
+                .filter(models.ClinicianAssignment.clinician_uid == caller_uid).first()
+            if not assignment:
+                raise HTTPException(status_code=403, detail="No clients assigned to you.")
+            assigned_uids = json.loads(assignment.client_uids_json or "[]")
+            if report.user_id not in assigned_uids:
+                raise HTTPException(status_code=403, detail="Access denied: this report's owner is not assigned to you.")
+        else:
+            # Client accessing a different user's report
+            if caller_uid != report.user_id:
+                raise HTTPException(status_code=403, detail="Access denied.")
+
+    # Parse confirmed metrics from JSON blob (fast path)
+    confirmed_json = report.confirmed_data_json or report.extracted_data_json or "[]"
+    try:
+        metrics = json.loads(confirmed_json)
+    except Exception:
+        metrics = []
+
+    # Supplement with individual ClinicalMetricRecord rows if available
+    if not metrics:
+        records = db.query(models.ClinicalMetricRecord)\
+            .filter(models.ClinicalMetricRecord.report_id == report_id)\
+            .order_by(models.ClinicalMetricRecord.canonical_name.asc()).all()
+        metrics = [
+            {
+                "metric_key": r.metric_key,
+                "canonical_name": r.canonical_name or r.metric_key,
+                "value": r.value,
+                "unit": r.unit,
+                "ref_low": r.ref_low,
+                "ref_high": r.ref_high,
+                "status": r.status,
+                "confidence": r.confidence_tier,
+                "confidence_score": r.confidence_score,
+                "recorded_at": r.recorded_at.isoformat() if r.recorded_at else None,
+            }
+            for r in records
+        ]
+
+    return {
+        "report_id": report_id,
+        "user_id": report.user_id,
+        "lab_name": report.lab_name,
+        "filename": report.original_filename or report.filename,
+        "report_date": report.report_date.isoformat() if report.report_date else None,
+        "uploaded_at": report.uploaded_at.isoformat() if report.uploaded_at else None,
+        "status": report.status,
+        "total_metrics": len(metrics),
+        "metrics": metrics,
+        "review_notes": report.review_notes,
+    }
+
+
 @app.get("/api/clinic/metrics/trends/{user_id}")
 def get_clinical_metric_trends(user_id: str, db: Session = Depends(get_db)):
     """
@@ -3816,6 +3902,534 @@ def seed_clinical_demo_data(user_id: str, db: Session = Depends(get_db)):
         "reports_count": len(created_reports),
         "metrics_per_report": len(metric_defs)
     }
+
+
+# ==============================================================================
+# ADMIN & CLINICIAN ROLE-GATED ENDPOINTS
+# ==============================================================================
+
+# ── Pydantic schemas ──────────────────────────────────────────────────────────
+
+class SetRoleRequest(BaseModel):
+    target_uid: str
+    target_email: Optional[str] = None
+    target_display_name: Optional[str] = None
+    role: str  # 'client' | 'clinician' | 'superadmin'
+
+class AssignClientRequest(BaseModel):
+    clinician_uid: str
+    clinician_email: Optional[str] = None
+    client_uids: List[str]  # full replacement list
+
+
+# ── Admin: Set user role ───────────────────────────────────────────────────────
+
+@app.post("/api/admin/set-role")
+def admin_set_role(
+    req: SetRoleRequest,
+    db: Session = Depends(get_db),
+    caller: dict = Depends(role_auth.require_role("superadmin")),
+):
+    """
+    Set Firebase custom claim role for a user.
+    Restricted to superadmins. Also mirrors assignment into UserRole table.
+    """
+    valid_roles = {"client", "clinician", "superadmin"}
+    if req.role not in valid_roles:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}")
+
+    # Set Firebase custom claim
+    firebase_success = role_auth.set_user_role(req.target_uid, req.role)
+
+    # Mirror into UserRole table for admin UI listing regardless of Firebase availability
+    existing = db.query(models.UserRole).filter(models.UserRole.uid == req.target_uid).first()
+    if existing:
+        existing.role = req.role
+        existing.set_by_uid = caller["uid"]
+        existing.updated_at = datetime.datetime.utcnow()
+        if req.target_email:
+            existing.email = req.target_email
+        if req.target_display_name:
+            existing.display_name = req.target_display_name
+    else:
+        db.add(models.UserRole(
+            uid=req.target_uid,
+            email=req.target_email or "",
+            display_name=req.target_display_name or "",
+            role=req.role,
+            set_by_uid=caller["uid"],
+        ))
+    db.commit()
+
+    return {
+        "status": "success",
+        "uid": req.target_uid,
+        "role": req.role,
+        "firebase_claim_set": firebase_success,
+        "message": (
+            f"Role '{req.role}' set for {req.target_uid}."
+            if firebase_success
+            else f"Role '{req.role}' saved locally (Firebase Admin not available — set claim manually)."
+        ),
+    }
+
+
+# ── Admin: Manage clinician → client assignments ───────────────────────────────
+
+@app.post("/api/admin/assign-clients")
+def admin_assign_clients(
+    req: AssignClientRequest,
+    db: Session = Depends(get_db),
+    caller: dict = Depends(role_auth.require_role("superadmin")),
+):
+    """
+    Set (replace) the full list of client UIDs assigned to a clinician.
+    Superadmin only.
+    """
+    existing = db.query(models.ClinicianAssignment)\
+        .filter(models.ClinicianAssignment.clinician_uid == req.clinician_uid).first()
+    if existing:
+        existing.client_uids_json = json.dumps(req.client_uids)
+        existing.updated_by_uid = caller["uid"]
+        existing.updated_at = datetime.datetime.utcnow()
+        if req.clinician_email:
+            existing.clinician_email = req.clinician_email
+    else:
+        db.add(models.ClinicianAssignment(
+            clinician_uid=req.clinician_uid,
+            clinician_email=req.clinician_email or "",
+            client_uids_json=json.dumps(req.client_uids),
+            updated_by_uid=caller["uid"],
+        ))
+    db.commit()
+    return {
+        "status": "success",
+        "clinician_uid": req.clinician_uid,
+        "assigned_client_count": len(req.client_uids),
+        "client_uids": req.client_uids,
+    }
+
+
+@app.get("/api/admin/clinician-assignments")
+def admin_get_clinician_assignments(
+    db: Session = Depends(get_db),
+    caller: dict = Depends(role_auth.require_role("superadmin")),
+):
+    """Get all clinician→client assignments."""
+    rows = db.query(models.ClinicianAssignment).all()
+    return [
+        {
+            "clinician_uid": r.clinician_uid,
+            "clinician_email": r.clinician_email,
+            "client_uids": json.loads(r.client_uids_json or "[]"),
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+        for r in rows
+    ]
+
+
+# ── Admin: Platform-wide stats ─────────────────────────────────────────────────
+
+@app.get("/api/admin/stats")
+def admin_get_stats(
+    db: Session = Depends(get_db),
+    caller: dict = Depends(role_auth.require_role("superadmin")),
+):
+    """
+    Platform-wide aggregate stats for the superadmin panel.
+    Pulls from SQLite (not per-document listeners — appropriate for aggregate data).
+    """
+    # User counts from UserRole table (mirrors Firebase)
+    roles_q = db.query(models.UserRole.role, func.count(models.UserRole.uid))\
+        .group_by(models.UserRole.role).all()
+    role_breakdown = {r: c for r, c in roles_q}
+    total_role_users = sum(role_breakdown.values())
+
+    # Total users in backend DB
+    total_backend_users = db.query(func.count(models.User.user_id)).scalar() or 0
+
+    # Recent sign-ups (UserRole set_at)
+    recent_cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=7)
+    recent_signups = db.query(models.UserRole)\
+        .filter(models.UserRole.set_at >= recent_cutoff)\
+        .order_by(models.UserRole.set_at.desc()).limit(20).all()
+
+    # Clinic report stats
+    total_reports = db.query(func.count(models.ClinicalReportDocument.id)).scalar() or 0
+    pending_reports = db.query(func.count(models.ClinicalReportDocument.id))\
+        .filter(models.ClinicalReportDocument.status == "pending_review").scalar() or 0
+    confirmed_reports = db.query(func.count(models.ClinicalReportDocument.id))\
+        .filter(models.ClinicalReportDocument.status == "confirmed").scalar() or 0
+
+    # Total workouts & nutrition logs
+    total_workouts = db.query(func.count(models.Workout.id)).scalar() or 0
+    total_nutrition_logs = db.query(func.count(models.NutritionLog.id)).scalar() or 0
+
+    # Clinician assignment count
+    total_assignments = db.query(func.count(models.ClinicianAssignment.clinician_uid)).scalar() or 0
+
+    # Try to augment with live Firebase user count
+    firebase_users = role_auth.list_firebase_users(max_results=1000)
+    firebase_user_count = len(firebase_users)
+    firebase_role_breakdown: Dict[str, int] = {}
+    for u in firebase_users:
+        r = u.get("role", "client")
+        firebase_role_breakdown[r] = firebase_role_breakdown.get(r, 0) + 1
+
+    return {
+        "total_backend_users": total_backend_users,
+        "total_firebase_users": firebase_user_count,
+        "role_breakdown_local": role_breakdown,
+        "role_breakdown_firebase": firebase_role_breakdown,
+        "total_role_records": total_role_users,
+        "recent_signups": [
+            {
+                "uid": u.uid,
+                "email": u.email,
+                "role": u.role,
+                "set_at": u.set_at.isoformat() if u.set_at else None,
+            }
+            for u in recent_signups
+        ],
+        "clinic_reports": {
+            "total": total_reports,
+            "pending_review": pending_reports,
+            "confirmed": confirmed_reports,
+        },
+        "total_workouts": total_workouts,
+        "total_nutrition_logs": total_nutrition_logs,
+        "total_clinician_assignments": total_assignments,
+    }
+
+
+@app.get("/api/admin/users")
+def admin_list_users(
+    db: Session = Depends(get_db),
+    caller: dict = Depends(role_auth.require_role("superadmin")),
+):
+    """List all users from Firebase (with roles) and cross-reference local UserRole table."""
+    firebase_users = role_auth.list_firebase_users(max_results=1000)
+
+    # Supplement with local role records
+    local_roles = {r.uid: r for r in db.query(models.UserRole).all()}
+
+    result = []
+    for fu in firebase_users:
+        local = local_roles.get(fu["uid"])
+        result.append({
+            "uid": fu["uid"],
+            "email": fu["email"],
+            "display_name": fu["display_name"],
+            "role": fu["role"],  # from Firebase custom claims
+            "local_role": local.role if local else None,
+            "disabled": fu["disabled"],
+            "email_verified": fu["email_verified"],
+            "created_at": fu["created_at"],
+        })
+
+    # If Firebase isn't available, fall back to local UserRole table
+    if not result:
+        for lr in db.query(models.UserRole).order_by(models.UserRole.set_at.desc()).all():
+            result.append({
+                "uid": lr.uid,
+                "email": lr.email,
+                "display_name": lr.display_name,
+                "role": lr.role,
+                "local_role": lr.role,
+                "disabled": False,
+                "email_verified": None,
+                "created_at": lr.set_at.timestamp() * 1000 if lr.set_at else None,
+            })
+
+    return result
+
+
+# ── Admin Settings (GET + POST) ────────────────────────────────────────────────
+
+_ADMIN_SETTINGS_KEY = "platform_settings"
+_DEFAULT_ADMIN_SETTINGS = {
+    "notification_thresholds": {
+        "twin_score_critical": 30,
+        "twin_score_caution": 50,
+        "alert_cooldown_hours": 24,
+    },
+    "report_oversight": {
+        "flag_pending_after_hours": 48,
+        "auto_notify_clinician_on_flag": True,
+    },
+    "clinician_assignment": {
+        "max_clients_per_clinician": 50,
+        "auto_assign_on_register": False,
+    },
+}
+
+# In-memory store (persists for server lifetime; good enough for platform config)
+_admin_settings_store: dict = dict(_DEFAULT_ADMIN_SETTINGS)
+
+
+class AdminSettingsBody(BaseModel):
+    settings: Dict[str, Any]
+
+
+@app.get("/api/admin/settings")
+def admin_get_settings(
+    caller: dict = Depends(role_auth.require_role("superadmin")),
+):
+    """Return current platform-level admin settings."""
+    return {"settings": _admin_settings_store}
+
+
+@app.post("/api/admin/settings")
+def admin_update_settings(
+    body: AdminSettingsBody,
+    caller: dict = Depends(role_auth.require_role("superadmin")),
+):
+    """Merge (shallow) the submitted settings dict into the current platform settings."""
+    global _admin_settings_store
+    _admin_settings_store = {**_admin_settings_store, **body.settings}
+    return {"message": "Settings updated.", "settings": _admin_settings_store}
+
+
+# ── Clinician: Get assigned clients summary ────────────────────────────────────
+
+@app.get("/api/clinician/clients")
+def clinician_get_clients(
+    page: int = 1,
+    page_size: int = 20,
+    db: Session = Depends(get_db),
+    caller: dict = Depends(role_auth.require_any_role(["clinician", "superadmin"])),
+):
+    """
+    Returns paginated list of clients assigned to the calling clinician.
+    Superadmins can see all users.
+    Enforced server-side — clinicians cannot see unassigned clients.
+    """
+    clinician_uid = caller["uid"]
+    caller_role = caller["role"]
+
+    if caller_role == "superadmin":
+        # Superadmins see all backend users
+        all_users = db.query(models.User)\
+            .order_by(models.User.created_at.desc())\
+            .offset((page - 1) * page_size).limit(page_size).all()
+        total = db.query(func.count(models.User.user_id)).scalar() or 0
+        client_ids = [u.user_id for u in all_users]
+    else:
+        assignment = db.query(models.ClinicianAssignment)\
+            .filter(models.ClinicianAssignment.clinician_uid == clinician_uid).first()
+        if not assignment:
+            return {"clients": [], "total": 0, "page": page, "page_size": page_size}
+
+        all_client_uids = json.loads(assignment.client_uids_json or "[]")
+        total = len(all_client_uids)
+        # Paginate the assigned UIDs
+        page_uids = all_client_uids[(page - 1) * page_size: page * page_size]
+        all_users = db.query(models.User)\
+            .filter(models.User.user_id.in_(page_uids)).all()
+        client_ids = [u.user_id for u in all_users]
+
+    result = []
+    for u in all_users:
+        # Latest capability profile for Twin Score
+        cap = db.query(models.CapabilityProfile)\
+            .filter(models.CapabilityProfile.user_id == u.user_id)\
+            .order_by(models.CapabilityProfile.timestamp.desc()).first()
+
+        # Latest confirmed clinical report summary
+        latest_report = db.query(models.ClinicalReportDocument)\
+            .filter(
+                models.ClinicalReportDocument.user_id == u.user_id,
+                models.ClinicalReportDocument.status == "confirmed"
+            )\
+            .order_by(models.ClinicalReportDocument.uploaded_at.desc()).first()
+
+        # Most recent wearable session for last-active
+        last_wearable = db.query(models.WearableSession)\
+            .filter(models.WearableSession.user_id == u.user_id)\
+            .order_by(models.WearableSession.timestamp.desc()).first()
+
+        # Latest unread clinical alert
+        latest_alert = db.query(models.ClinicalPredictionAlert)\
+            .filter(
+                models.ClinicalPredictionAlert.user_id == u.user_id,
+                models.ClinicalPredictionAlert.is_read == False,
+            )\
+            .order_by(models.ClinicalPredictionAlert.created_at.desc()).first()
+
+        twin_score = None
+        if cap:
+            scores = [
+                cap.mobility, cap.stability, cap.movement_quality,
+                cap.cardiovascular_efficiency, cap.recovery, cap.capability_reserve
+            ]
+            valid = [s for s in scores if s is not None]
+            twin_score = round(sum(valid) / len(valid) * 100) if valid else None
+
+        result.append({
+            "user_id": u.user_id,
+            "email": u.email,
+            "mode": u.mode,
+            "twin_score": twin_score,
+            "last_active": (
+                last_wearable.timestamp.isoformat() if last_wearable
+                else u.created_at.isoformat() if u.created_at else None
+            ),
+            "latest_alert": {
+                "title": latest_alert.title,
+                "severity": latest_alert.severity,
+                "metric_key": latest_alert.metric_key,
+            } if latest_alert else None,
+            "latest_confirmed_report": {
+                "id": latest_report.id,
+                "lab_name": latest_report.lab_name,
+                "report_date": latest_report.report_date.isoformat() if latest_report.report_date else None,
+                "total_metrics": latest_report.total_metrics_found,
+            } if latest_report else None,
+        })
+
+    return {"clients": result, "total": total, "page": page, "page_size": page_size}
+
+
+# ── Clinician: Per-client detail ───────────────────────────────────────────────
+
+@app.get("/api/clinician/client/{client_id}")
+def clinician_get_client_detail(
+    client_id: str,
+    db: Session = Depends(get_db),
+    caller: dict = Depends(role_auth.require_any_role(["clinician", "superadmin"])),
+):
+    """
+    Returns full detail for a single assigned client.
+    Clinicians must have this client in their assignment list.
+    Superadmins can access any client.
+    """
+    clinician_uid = caller["uid"]
+    caller_role = caller["role"]
+
+    # Enforce assignment check for clinician role
+    if caller_role == "clinician":
+        assignment = db.query(models.ClinicianAssignment)\
+            .filter(models.ClinicianAssignment.clinician_uid == clinician_uid).first()
+        if not assignment:
+            raise HTTPException(status_code=403, detail="No clients assigned to you.")
+        assigned_uids = json.loads(assignment.client_uids_json or "[]")
+        if client_id not in assigned_uids:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: this client is not assigned to you."
+            )
+
+    user = db.query(models.User).filter(models.User.user_id == client_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Client not found.")
+
+    # Capability history (last 10)
+    cap_history = db.query(models.CapabilityProfile)\
+        .filter(models.CapabilityProfile.user_id == client_id)\
+        .order_by(models.CapabilityProfile.timestamp.desc()).limit(10).all()
+
+    # Pain logs (last 20)
+    pain_logs = db.query(models.PainLog)\
+        .filter(models.PainLog.user_id == client_id)\
+        .order_by(models.PainLog.timestamp.desc()).limit(20).all()
+
+    # Case notes
+    case_notes = db.query(models.TwinNote)\
+        .filter(
+            models.TwinNote.user_id == client_id,
+            models.TwinNote.type == "user_note"
+        )\
+        .order_by(models.TwinNote.timestamp.desc()).limit(20).all()
+
+    # Latest wearable
+    last_wearable = db.query(models.WearableSession)\
+        .filter(models.WearableSession.user_id == client_id)\
+        .order_by(models.WearableSession.timestamp.desc()).first()
+
+    # All confirmed clinical reports
+    reports = db.query(models.ClinicalReportDocument)\
+        .filter(
+            models.ClinicalReportDocument.user_id == client_id,
+            models.ClinicalReportDocument.status == "confirmed"
+        )\
+        .order_by(models.ClinicalReportDocument.uploaded_at.desc()).all()
+
+    # Unread alerts
+    alerts = db.query(models.ClinicalPredictionAlert)\
+        .filter(
+            models.ClinicalPredictionAlert.user_id == client_id,
+            models.ClinicalPredictionAlert.is_read == False,
+        )\
+        .order_by(models.ClinicalPredictionAlert.created_at.desc()).limit(10).all()
+
+    return {
+        "user": {
+            "user_id": user.user_id,
+            "email": user.email,
+            "age": user.age,
+            "sex": user.sex,
+            "height": user.height,
+            "weight": user.weight,
+            "mode": user.mode,
+            "goals": user.goals,
+        },
+        "last_wearable": {
+            "heart_rate": last_wearable.heart_rate,
+            "hrv": last_wearable.hrv,
+            "spo2": last_wearable.spo2,
+            "sleep_hours": last_wearable.sleep_hours,
+            "readiness_score": last_wearable.readiness_score,
+            "timestamp": last_wearable.timestamp.isoformat(),
+        } if last_wearable else None,
+        "capability_history": [
+            {
+                "timestamp": c.timestamp.isoformat(),
+                "mobility": c.mobility,
+                "stability": c.stability,
+                "movement_quality": c.movement_quality,
+                "cardiovascular_efficiency": c.cardiovascular_efficiency,
+                "recovery": c.recovery,
+                "capability_reserve": c.capability_reserve,
+            }
+            for c in cap_history
+        ],
+        "pain_logs": [
+            {"zone": p.zone, "score": p.score, "timestamp": p.timestamp.isoformat()}
+            for p in pain_logs
+        ],
+        "case_notes": [
+            {"content": n.content, "timestamp": n.timestamp.isoformat()}
+            for n in case_notes
+        ],
+        "clinical_reports": [
+            {
+                "id": r.id,
+                "filename": r.original_filename,
+                "file_url": r.file_url,
+                "lab_name": r.lab_name,
+                "report_date": r.report_date.isoformat() if r.report_date else None,
+                "uploaded_at": r.uploaded_at.isoformat() if r.uploaded_at else None,
+                "total_metrics": r.total_metrics_found,
+                "status": r.status,
+            }
+            for r in reports
+        ],
+        "clinical_alerts": [
+            {
+                "id": a.id,
+                "title": a.title,
+                "severity": a.severity,
+                "message": a.message,
+                "metric_key": a.metric_key,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+            }
+            for a in alerts
+        ],
+    }
+
+
+# ── Legacy clinic roster: now protected by role check (keeps old admin_key for backward compat)
+# The existing /clinic/roster and /clinic/patient/{userId} routes remain unchanged.
 
 
 # ── Serve Built Frontend SPA Static Files (Production Render Deployment) ─────

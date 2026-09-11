@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { 
   Activity, Camera, History, Clock, Brain, Settings, 
   User, BarChart2, ClipboardList, LineChart, Users, Building, UserCheck,
-  Pill, HeartPulse, BrainCircuit, BookOpen, Trophy, Apple, Dumbbell, LogOut, ImagePlus
+  Pill, HeartPulse, BrainCircuit, BookOpen, Trophy, Apple, Dumbbell, LogOut, ImagePlus, Stethoscope
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -33,7 +33,7 @@ function NavSection({ title }: { title: string }) {
 
 export function Sidebar() {
   const [location, setLocation] = useLocation();
-  const { logout } = useAuth();
+  const { logout, role } = useAuth();
 
   const handleLogout = async () => {
     await logout();
@@ -79,6 +79,17 @@ export function Sidebar() {
         <NavItem icon={<BookOpen className="w-4 h-4 md:w-5 md:h-5" />} label="Wiki" href="/wiki" active={location === '/wiki'} />
         <NavItem icon={<Settings className="w-4 h-4 md:w-5 md:h-5" />} label="Settings" href="/settings" active={location === '/settings'} />
         
+        {/* Back to Admin Portal — visible only for clinician/superadmin */}
+        {(role === 'clinician' || role === 'superadmin') && (
+          <Link
+            href="/admin"
+            className="nav-link flex flex-col md:flex-row items-center justify-center md:justify-start min-w-[62px] md:min-w-0 px-2 md:px-3 py-1.5 md:py-2 rounded-xl text-teal-400 hover:text-teal-300 hover:bg-teal-500/10 transition-all mt-0 md:mt-2 border border-teal-800/30 md:border-transparent"
+          >
+            <span className="mb-0.5 md:mb-0 md:mr-2.5 shrink-0"><Stethoscope className="w-4 h-4 md:w-5 md:h-5" /></span>
+            <span className="text-[10px] md:text-sm font-medium leading-tight whitespace-nowrap">Admin Portal</span>
+          </Link>
+        )}
+
         <button
           onClick={handleLogout}
           title="Sign out of PhysioTwin"

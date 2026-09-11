@@ -1,29 +1,31 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useRef } from "react";
 import { Sidebar } from "./components/Sidebar";
 import {
   Building,
   FileText,
   Send,
   UserCheck,
-  Calendar,
   Shield,
   Share2,
-  UploadCloud,
   CheckCircle2,
   Loader2,
-  AlertCircle,
   TrendingUp,
   Sparkles,
   Bell,
-  RefreshCw,
-  Clock,
   ChevronRight,
+  ChevronDown,
   Database,
   Trash2,
   FileUp,
   Camera,
-  ScanLine
+  ScanLine,
+  History,
+  FlaskConical,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus,
 } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "./context/AuthContext";
 import { api } from "./api";
 import { Link } from "wouter";
@@ -31,14 +33,231 @@ import { ReportReviewQueue, type ExtractedMetric } from "./components/ReportRevi
 import { PredictiveTrendsView, type MetricTrendItem } from "./components/PredictiveTrendsView";
 import { ClinicalAlertsDrawer, type ClinicalAlertItem } from "./components/ClinicalAlertsDrawer";
 
+const API_BASE = typeof window !== "undefined" ? "" : "http://localhost:8000";
+
+// ── Report History Tab ─────────────────────────────────────────────────────────
+
+function StatusIcon({ status }: { status: string }) {
+  if (status === "high")
+    return <ArrowUpRight className="w-3.5 h-3.5 text-red-400" />;
+  if (status === "low")
+    return <ArrowDownRight className="w-3.5 h-3.5 text-amber-400" />;
+  return <Minus className="w-3.5 h-3.5 text-emerald-400" />;
+}
+
+function statusColor(status: string) {
+  if (status === "high") return "text-red-400 bg-red-500/10 border-red-500/20";
+  if (status === "low") return "text-amber-400 bg-amber-500/10 border-amber-500/20";
+  return "text-emerald-400 bg-emerald-500/10 border-emerald-500/20";
+}
+
+function ReportMetricRow({ metric }: { metric: any }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
+      <span className="text-xs text-foreground/80 font-medium truncate max-w-[55%]">
+        {metric.canonical_name || metric.metric_key}
+      </span>
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs font-bold text-foreground">
+          {metric.value != null ? Number(metric.value).toFixed(metric.value < 10 ? 2 : 1) : "—"}
+        </span>
+        <span className="text-[10px] text-muted-foreground">{metric.unit || ""}</span>
+        <span
+          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold border ${statusColor(metric.status || "normal")}`}
+        >
+          <StatusIcon status={metric.status || "normal"} />
+          {(metric.status || "normal").toUpperCase()}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function ReportHistoryRow({
+  report,
+  token,
+  userId,
+}: {
+  report: any;
+  token: string | null;
+  userId: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const { data: detail, isLoading: detailLoading } = useQuery({
+    queryKey: ["report-metrics", report.id],
+    queryFn: async () => {
+      const url = `${API_BASE}/api/clinic/report/${report.id}/metrics?requesting_uid=${encodeURIComponent(userId)}`;
+      const res = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("Failed to load metrics");
+      return res.json();
+    },
+    enabled: expanded,
+    staleTime: 60_000,
+  });
+
+  const isConfirmed = report.status === "confirmed";
+
+  return (
+    <div className="border border-border/60 rounded-xl overflow-hidden mb-3">
+      {/* Row header */}
+      <button
+        onClick={() => isConfirmed && setExpanded((e) => !e)}
+        className={`w-full p-3.5 flex items-center gap-3 bg-card/60 hover:bg-secondary/30 transition-colors text-left ${
+          isConfirmed ? "cursor-pointer" : "cursor-default"
+        }`}
+      >
+        <div
+          className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+            isConfirmed
+              ? "bg-emerald-500/15 text-emerald-400"
+              : "bg-amber-500/15 text-amber-400"
+          }`}
+        >
+          <FileText className="w-4.5 h-4.5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-xs text-foreground flex items-center gap-2 flex-wrap">
+            <span className="truncate">{report.lab_name || report.filename}</span>
+            <span
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                isConfirmed
+                  ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                  : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+              }`}
+            >
+              {isConfirmed ? "Confirmed" : "Pending Review"}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-0.5">
+            <span>
+              {report.report_date
+                ? new Date(report.report_date).toLocaleDateString("en-US", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })
+                : "Date unknown"}
+            </span>
+            <span>·</span>
+            <span>{report.total_metrics_found || 0} metrics</span>
+            {report.uploaded_at && (
+              <>
+                <span>·</span>
+                <span>Scanned {new Date(report.uploaded_at).toLocaleDateString()}</span>
+              </>
+            )}
+          </div>
+        </div>
+        {isConfirmed && (
+          <div className="ml-auto shrink-0">
+            {expanded ? (
+              <ChevronDown className="w-4 h-4 text-white/40" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-white/40" />
+            )}
+          </div>
+        )}
+      </button>
+
+      {/* Expanded metrics */}
+      {expanded && (
+        <div className="bg-black/20 border-t border-border/40 px-4 py-3">
+          {detailLoading ? (
+            <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading confirmed metrics…
+            </div>
+          ) : detail?.metrics?.length > 0 ? (
+            <div>
+              <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                <FlaskConical className="w-3 h-3" /> Confirmed Lab Values
+              </div>
+              <div>
+                {detail.metrics.map((m: any, i: number) => (
+                  <ReportMetricRow key={m.metric_key || i} metric={m} />
+                ))}
+              </div>
+              {detail.review_notes && (
+                <p className="text-[10px] text-muted-foreground mt-2 italic">
+                  Notes: {detail.review_notes}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground py-2">No confirmed metrics found for this report.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReportHistoryTab({
+  reports,
+  isLoading,
+  token,
+  userId,
+}: {
+  reports: any[];
+  isLoading: boolean;
+  token: string | null;
+  userId: string;
+}) {
+  const confirmed = reports.filter((r) => r.status === "confirmed");
+  const sorted = [...confirmed].sort(
+    (a, b) =>
+      new Date(b.uploaded_at || b.report_date || 0).getTime() -
+      new Date(a.uploaded_at || a.report_date || 0).getTime()
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-3 py-16 justify-center text-white/40">
+        <Loader2 className="w-5 h-5 animate-spin" /> Loading report history…
+      </div>
+    );
+  }
+
+  if (sorted.length === 0) {
+    return (
+      <div className="text-center py-16 text-white/30">
+        <History className="w-14 h-14 mx-auto mb-4 opacity-20" />
+        <h3 className="text-lg font-bold mb-2 text-white/50">No confirmed reports yet</h3>
+        <p className="text-sm">
+          Upload and confirm a lab report in the OCR tab — it will appear here as a permanent history entry.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-bold text-base flex items-center gap-2">
+          <History className="w-4.5 h-4.5 text-primary" /> Scan History
+        </h3>
+        <span className="text-xs text-muted-foreground">
+          {sorted.length} confirmed report{sorted.length !== 1 ? "s" : ""} · click any row to expand metrics
+        </span>
+      </div>
+      {sorted.map((r) => (
+        <ReportHistoryRow key={r.id} report={r} token={token} userId={userId} />
+      ))}
+    </div>
+  );
+}
+
 export default function ClinicPage() {
-  const { user } = useAuth();
+  const { user, idToken } = useAuth();
   const userId = user?.uid || "test-user";
+  const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  // Active Tab: 'ocr' | 'trends' | 'alerts' | 'providers'
-  const [activeTab, setActiveTab] = useState<"ocr" | "trends" | "alerts" | "providers">("ocr");
+  // Active Tab: 'ocr' | 'history' | 'trends' | 'alerts' | 'providers'
+  const [activeTab, setActiveTab] = useState<"ocr" | "history" | "trends" | "alerts" | "providers">("ocr");
 
   // Upload & Review Queue States
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -54,14 +273,6 @@ export default function ClinicPage() {
     rawOcrLines?: string[];
   } | null>(null);
   const [isConfirming, setIsConfirming] = useState(false);
-  const [reportsList, setReportsList] = useState<any[]>([]);
-  const [isLoadingReports, setIsLoadingReports] = useState(false);
-
-  // Digital Twin Trends & Alerts States
-  const [metricTrends, setMetricTrends] = useState<MetricTrendItem[]>([]);
-  const [isLoadingTrends, setIsLoadingTrends] = useState(false);
-  const [alerts, setAlerts] = useState<ClinicalAlertItem[]>([]);
-  const [isLoadingAlerts, setIsLoadingAlerts] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
 
   // Therapist Notes States (Preserved)
@@ -69,50 +280,53 @@ export default function ClinicPage() {
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
 
-  // Data Fetching
-  const fetchAllData = async () => {
-    setIsLoadingReports(true);
-    setIsLoadingTrends(true);
-    setIsLoadingAlerts(true);
-    try {
-      const [reports, trendsData, alertsData, notes] = await Promise.all([
-        api.getClinicReports(userId).catch(() => []),
-        api.getClinicMetricTrends(userId).catch(() => ({ metrics: [] })),
-        api.getClinicNotifications(userId).catch(() => []),
-        api.getCaseNotes(userId).catch(() => [])
-      ]);
+  // ── React Query — auto-refreshing data ────────────────────────────────────
+  const { data: reportsData = [], isLoading: isLoadingReports, refetch: refetchReports } = useQuery<any[]>({
+    queryKey: ["clinic-reports", userId],
+    queryFn: () => api.getClinicReports(userId),
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+    enabled: !!userId,
+  });
+  const reportsList = reportsData;
 
-      setReportsList(reports || []);
-      setMetricTrends(trendsData?.metrics || []);
-      setAlerts(alertsData || []);
-      setCaseNotes(notes || []);
+  const { data: trendsData, isLoading: isLoadingTrends, refetch: refetchTrends } = useQuery({
+    queryKey: ["clinic-trends", userId],
+    queryFn: () => api.getClinicMetricTrends(userId),
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+    enabled: !!userId,
+  });
+  const metricTrends: MetricTrendItem[] = trendsData?.metrics || [];
 
-      // If there is any pending report, auto-stage it in the review queue if none is open
-      if (!activeReviewReport) {
-        const pending = (reports || []).find((r: any) => r.status === "pending_review");
-        if (pending && pending.metrics) {
-          setActiveReviewReport({
-            id: pending.id,
-            filename: pending.filename,
-            reportDate: pending.report_date,
-            labName: pending.lab_name,
-            metrics: pending.metrics || [],
-            rawOcrLines: pending.raw_ocr_lines || []
-          });
-        }
-      }
-    } catch (err) {
-      console.error("Error loading clinic data:", err);
-    } finally {
-      setIsLoadingReports(false);
-      setIsLoadingTrends(false);
-      setIsLoadingAlerts(false);
-    }
+  const { data: alertsData = [], isLoading: isLoadingAlerts, refetch: refetchAlerts } = useQuery<ClinicalAlertItem[]>({
+    queryKey: ["clinic-alerts", userId],
+    queryFn: () => api.getClinicNotifications(userId),
+    refetchInterval: 30_000,
+    staleTime: 20_000,
+    enabled: !!userId,
+  });
+  const alerts = alertsData;
+
+  const { data: caseNotesData = [] } = useQuery<any[]>({
+    queryKey: ["clinic-notes", userId],
+    queryFn: () => api.getCaseNotes(userId),
+    staleTime: 60_000,
+    enabled: !!userId,
+  });
+
+  // Keep caseNotes in local state for optimistic adds
+  const [caseNotesLocal, setCaseNotesLocal] = useState<any[]>([]);
+  const effectiveCaseNotes = caseNotesLocal.length > 0 ? caseNotesLocal : caseNotesData;
+
+  const invalidateAll = () => {
+    qc.invalidateQueries({ queryKey: ["clinic-reports", userId] });
+    qc.invalidateQueries({ queryKey: ["clinic-trends", userId] });
+    qc.invalidateQueries({ queryKey: ["clinic-alerts", userId] });
+    qc.invalidateQueries({ queryKey: ["clinic-notes", userId] });
   };
 
-  useEffect(() => {
-    fetchAllData();
-  }, [userId]);
+
 
   // Handle OCR Document Upload
   const processReportFile = async (fileToProcess: File) => {
@@ -138,7 +352,7 @@ export default function ClinicPage() {
 
       setSelectedFile(null);
       setLabNameInput("");
-      await fetchAllData();
+      await invalidateAll();
     } catch (err: any) {
       setUploadError(err.message || "Failed to process document OCR. Please check file format.");
     } finally {
@@ -167,7 +381,7 @@ export default function ClinicPage() {
     setIsConfirming(true);
     try {
       await api.confirmClinicReport(activeReviewReport.id, {
-        confirmed_metrics: confirmedMetrics.map(m => ({
+        confirmed_metrics: confirmedMetrics.map((m) => ({
           metric_key: m.metric_key,
           canonical_name: m.canonical_name || m.display_name || m.metric_key,
           value: Number(m.value),
@@ -176,14 +390,13 @@ export default function ClinicPage() {
           ref_high: m.ref_high !== undefined ? m.ref_high : (m.ref_max ?? null),
           status: m.status || "normal",
           confidence: m.confidence || "high",
-          confidence_score: m.confidence_score || 0.95
+          confidence_score: m.confidence_score || 0.95,
         })),
-        notes: notes || "Confirmed via Human-in-the-loop Review Queue"
+        notes: notes || "Confirmed via Human-in-the-loop Review Queue",
       });
-
       setActiveReviewReport(null);
-      await fetchAllData();
-      setActiveTab("trends"); // Switch to trends view to show updated Digital Twin
+      invalidateAll();
+      setActiveTab("history"); // Switch to history view so user sees the new confirmed entry
     } catch (err: any) {
       console.error("Failed to confirm report:", err);
       alert("Error ingesting report metrics into Digital Twin: " + (err.message || "Unknown error"));
@@ -197,8 +410,8 @@ export default function ClinicPage() {
     setIsSeedingDemo(true);
     try {
       await api.seedClinicDemo(userId);
-      await fetchAllData();
-      setActiveTab("trends");
+      invalidateAll();
+      setActiveTab("history");
     } catch (err: any) {
       console.error("Failed to seed demo data:", err);
     } finally {
@@ -214,7 +427,7 @@ export default function ClinicPage() {
       if (activeReviewReport?.id === reportId) {
         setActiveReviewReport(null);
       }
-      await fetchAllData();
+      invalidateAll();
     } catch (err) {
       console.error(err);
     }
@@ -224,7 +437,7 @@ export default function ClinicPage() {
   const handleMarkAlertRead = async (alertId: string | number) => {
     try {
       await api.markClinicNotificationRead(alertId);
-      setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, is_read: true } : a));
+      qc.invalidateQueries({ queryKey: ["clinic-alerts", userId] });
     } catch (err) {
       console.error(err);
     }
@@ -237,8 +450,9 @@ export default function ClinicPage() {
     try {
       await api.createCaseNote(userId, noteText);
       setNoteText("");
-      const notes = await api.getCaseNotes(userId);
-      setCaseNotes(notes);
+      // Optimistic update + invalidate
+      setCaseNotesLocal([]);
+      qc.invalidateQueries({ queryKey: ["clinic-notes", userId] });
     } catch (e) {
       console.error(e);
     } finally {
@@ -281,59 +495,60 @@ export default function ClinicPage() {
           </div>
         </header>
 
-        {/* Tab Navigation Navigation Bar */}
+        {/* Tab Navigation Bar */}
         <div className="flex flex-wrap items-center gap-2 border-b border-border/70 pb-3">
-          <button
-            onClick={() => setActiveTab("ocr")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === "ocr"
-                ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-            }`}
-          >
-            <FileUp className="w-4 h-4" /> OCR Ingestion & Review Queue
-            {reportsList.filter(r => r.status === "pending_review").length > 0 && (
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab("trends")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === "trends"
-                ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-            }`}
-          >
-            <TrendingUp className="w-4 h-4" /> Digital Twin Biomarker Trends ({metricTrends.length})
-          </button>
-
-          <button
-            onClick={() => setActiveTab("alerts")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === "alerts"
-                ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-            }`}
-          >
-            <Bell className="w-4 h-4" /> Clinical Alerts & Flags
-            {unreadAlertsCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-500 text-black">
-                {unreadAlertsCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab("providers")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
-              activeTab === "providers"
-                ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
-                : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-            }`}
-          >
-            <UserCheck className="w-4 h-4" /> Providers & Case Notes
-          </button>
+          {([
+            {
+              key: "ocr",
+              label: "OCR & Review Queue",
+              icon: <FileUp className="w-4 h-4" />,
+              badge: reportsList.filter((r) => r.status === "pending_review").length > 0 ? (
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              ) : null,
+            },
+            {
+              key: "history",
+              label: `History (${reportsList.filter((r) => r.status === "confirmed").length})`,
+              icon: <History className="w-4 h-4" />,
+              badge: null,
+            },
+            {
+              key: "trends",
+              label: `Twin Trends (${metricTrends.length})`,
+              icon: <TrendingUp className="w-4 h-4" />,
+              badge: null,
+            },
+            {
+              key: "alerts",
+              label: "Clinical Alerts",
+              icon: <Bell className="w-4 h-4" />,
+              badge: alerts.filter((a) => !a.is_read).length > 0 ? (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-black">
+                  {alerts.filter((a) => !a.is_read).length}
+                </span>
+              ) : null,
+            },
+            {
+              key: "providers",
+              label: "Providers & Notes",
+              icon: <UserCheck className="w-4 h-4" />,
+              badge: null,
+            },
+          ] as const).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === tab.key
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/25"
+                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+              {tab.badge}
+            </button>
+          ))}
         </div>
 
         {/* TAB 1: OCR Ingestion & Review Queue */}
@@ -606,7 +821,17 @@ export default function ClinicPage() {
           </div>
         )}
 
-        {/* TAB 2: Digital Twin Predictive Trends */}
+        {/* TAB: History */}
+        {activeTab === "history" && (
+          <ReportHistoryTab
+            reports={reportsList}
+            isLoading={isLoadingReports}
+            token={idToken}
+            userId={userId}
+          />
+        )}
+
+        {/* TAB: Digital Twin Predictive Trends */}
         {activeTab === "trends" && (
           <div className="space-y-6">
             <PredictiveTrendsView metrics={metricTrends} isLoading={isLoadingTrends} />
@@ -712,15 +937,15 @@ export default function ClinicPage() {
 
                 <div className="space-y-2 mt-4 max-h-60 overflow-y-auto">
                   <div className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">Logged Notes History</div>
-                  {caseNotes.length === 0 ? (
+                  {effectiveCaseNotes.length === 0 ? (
                     <div className="text-xs text-muted-foreground italic py-2 text-center">No case notes logged.</div>
                   ) : (
-                    caseNotes.map((n, i) => (
+                    effectiveCaseNotes.map((n: any, i: number) => (
                       <div key={i} className="p-3 bg-secondary/35 rounded-lg border border-border/50 text-xs">
                         <div className="text-muted-foreground text-[10px] mb-1">
                           {new Date(n.timestamp).toLocaleString()}
                         </div>
-                        <p className="leading-relaxed text-foreground font-medium">{n.note}</p>
+                        <p className="leading-relaxed text-foreground font-medium">{n.note || n.content}</p>
                       </div>
                     ))
                   )}

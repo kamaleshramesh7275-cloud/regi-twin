@@ -496,3 +496,39 @@ class ClinicalPredictionAlert(Base):
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+
+# ==============================================================================
+# ROLE MODEL: USER ROLES & CLINICIAN ASSIGNMENTS
+# ==============================================================================
+
+class UserRole(Base):
+    """
+    Persists role assignments for audit trail and quick lookup.
+    The authoritative role is always the Firebase custom claim — this table
+    is a mirror/cache and used for admin UI listing only.
+    Roles: 'client' | 'clinician' | 'superadmin'
+    """
+    __tablename__ = "user_roles"
+
+    uid = Column(String, primary_key=True)   # Firebase UID
+    email = Column(String, nullable=True, index=True)
+    display_name = Column(String, nullable=True)
+    role = Column(String, default="client", index=True)
+    set_by_uid = Column(String, nullable=True)  # UID of the superadmin who set this
+    set_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+
+class ClinicianAssignment(Base):
+    """
+    Maps a clinician's Firebase UID to a JSON list of client UIDs they are
+    authorised to view. Maintained by superadmins via the /admin panel.
+    """
+    __tablename__ = "clinician_assignments"
+
+    clinician_uid = Column(String, primary_key=True)  # Firebase UID of the clinician
+    clinician_email = Column(String, nullable=True)
+    client_uids_json = Column(Text, default="[]")     # JSON array of client Firebase UIDs
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    updated_by_uid = Column(String, nullable=True)    # UID of the superadmin who last edited
+
