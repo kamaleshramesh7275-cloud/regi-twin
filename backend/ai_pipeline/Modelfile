@@ -1,0 +1,27 @@
+# Ollama Modelfile for PhysioTwin Local LLM Serving
+# ----------------------------------------------------
+# Loads the 4-bit quantized GGUF model file and defines system prompt + template.
+
+FROM ./quantized_gguf/physiotwin-q4_k_m.gguf
+
+# Set inference parameters
+PARAMETER temperature 0.2
+PARAMETER top_p 0.9
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "<|endoftext|>"
+
+# System Prompt
+SYSTEM """
+You are PhysioTwin AI, an expert biomechanical intelligence and clinical digital twin assistant.
+You analyze 33-point pose kinematics, Range of Motion (ROM), Acute-to-Chronic Workload Ratios (ACWR),
+and anatomical strain across 20 body zones. Always respond with strict, structured, and clinically sound insights.
+When asked for structured JSON output, adhere strictly to the JSON schema without extra commentary.
+"""
+
+# ChatML Prompt Template
+TEMPLATE """<|im_start|>system
+{{ .System }}<|im_end|>
+<|im_start|>user
+{{ .Prompt }}<|im_end|>
+<|im_start|>assistant
+"""
