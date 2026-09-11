@@ -13,6 +13,8 @@ import { useAuth } from "./context/AuthContext";
 import { useAvatar } from "./AvatarContext";
 import { fetchGoogleHealthData } from "./lib/googleHealthApi";
 import { api } from "./api";
+import { useClinicInsights } from "./context/ClinicInsightsContext";
+import { SystemicInsightsPanel } from "./components/SystemicInsightsPanel";
 
 // ── Zone risk colour helpers ───────────────────────────────
 function riskLabel(r: number) { return r < 35 ? "Healthy" : r < 55 ? "Watch" : r < 70 ? "Elevated" : "Critical"; }
@@ -102,6 +104,7 @@ export default function TwinPage() {
 
   const { user, googleFitToken } = useAuth();
   const { userSex, setUserSex, setUserHeight, setUserWeight } = useAvatar();
+  const { regionalInsights, systemicInsights, isLoading: insightsLoading } = useClinicInsights();
   
   const [showCaptureToast, setShowCaptureToast] = useState(() => window.location.search.includes("captured=true"));
   const [selectedZone, setSelectedZone] = useState<ZoneId | null>(null);
@@ -226,6 +229,7 @@ export default function TwinPage() {
         }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        regionalInsights={regionalInsights}
       />
       
       {/* Legend (Positioned above mobile bottom bar) */}
@@ -246,6 +250,36 @@ export default function TwinPage() {
       </div>
 
       <Sidebar />
+
+      {/* ── Floating Lab Insights Panel — anchored beside the twin ── */}
+      {(systemicInsights.length > 0 || insightsLoading) && mode === "active" && (
+        <div
+          className="pointer-events-auto absolute left-[68px] md:left-[272px] top-1/2 -translate-y-1/2 z-20"
+          style={{ maxHeight: "70vh" }}
+        >
+          <div className="w-[200px] md:w-[220px] bg-black/75 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: "70vh" }}>
+            {/* Panel header */}
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/8 shrink-0">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                <span className="text-[10px] font-black text-white/70 uppercase tracking-widest">Lab Insights</span>
+              </div>
+              {systemicInsights.filter(m => m.latest_status === "high" || m.latest_status === "low" || m.latest_status === "flagged").length > 0 && (
+                <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-500/25 text-red-400 border border-red-500/30">
+                  {systemicInsights.filter(m => m.latest_status === "high" || m.latest_status === "low" || m.latest_status === "flagged").length} flagged
+                </span>
+              )}
+            </div>
+            {/* Scrollable metrics */}
+            <div className="overflow-y-auto scrollbar-hide p-2 flex-1">
+              <SystemicInsightsPanel
+                metrics={systemicInsights}
+                isLoading={insightsLoading}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Drawer Trigger Button */}
       <div className="md:hidden fixed bottom-20 left-3 z-30 pointer-events-auto">

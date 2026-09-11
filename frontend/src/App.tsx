@@ -252,6 +252,7 @@ import ExerciseLibrary from "./ExerciseLibrary";
 import WorkoutLogger from "./WorkoutLogger";
 import LoginPage from "./LoginPage";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { ClinicInsightsProvider } from "./context/ClinicInsightsContext";
 
 function ProtectedRoute({ component: Component, ...rest }: any) {
   const { user, loading } = useAuth();
@@ -280,49 +281,51 @@ function AppContent() {
 
   return (
     <AvatarProvider>
-      <div className="min-h-screen bg-background text-foreground">
-        <Switch>
-        <Route path="/" component={LandingPage} />
-        <Route path="/login" component={LoginPage} />
-        <Route path="/register" component={LoginPage} />
-        <Route path="/onboarding" component={Onboarding} />
-        <Route path="/capture" component={CaptureEngine} />
-        <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
-        <Route path="/demo" component={DemoDashboard} />
-        
-        {/* Protected Routes */}
-        <Route path="/twin"><ProtectedRoute component={TwinPage} /></Route>
-        <Route path="/history"><ProtectedRoute component={TimelinePage} /></Route>
-        <Route path="/projection"><ProtectedRoute component={TwinPage} /></Route>
-        <Route path="/leaderboard"><ProtectedRoute component={LeaderboardPage} /></Route>
-        <Route path="/nutrition-recovery"><ProtectedRoute component={NutritionRecovery} /></Route>
-        <Route path="/muscular-strain"><ProtectedRoute component={WorkoutStrain} /></Route>
-        <Route path="/exercises"><ProtectedRoute component={ExerciseLibrary} /></Route>
-        <Route path="/workout-logger"><ProtectedRoute component={WorkoutLogger} /></Route>
-        <Route path="/timeline"><ProtectedRoute component={TimelinePage} /></Route>
-        <Route path="/insights"><ProtectedRoute component={InsightsPage} /></Route>
-        <Route path="/settings"><ProtectedRoute component={SettingsPage} /></Route>
-        <Route path="/programs"><ProtectedRoute component={ProgramsPage} /></Route>
-        <Route path="/analytics"><ProtectedRoute component={AnalyticsPage} /></Route>
-        <Route path="/community"><ProtectedRoute component={CommunityPage} /></Route>
-        <Route path="/clinic/roster"><ProtectedRoute component={ClinicRosterPage} /></Route>
-        <Route path="/clinic"><ProtectedRoute component={ClinicPage} /></Route>
-        <Route path="/meds"><ProtectedRoute component={MedicationPage} /></Route>
-        <Route path="/vitals"><ProtectedRoute component={VitalsPage} /></Route>
-        <Route path="/readiness"><ProtectedRoute component={MentalReadinessPage} /></Route>
-        <Route path="/wiki"><ProtectedRoute component={WikiPage} /></Route>
-        <Route path="/achievements"><ProtectedRoute component={AchievementsPage} /></Route>
+      <ClinicInsightsProvider>
+        <div className="min-h-screen bg-background text-foreground">
+          <Switch>
+          <Route path="/" component={LandingPage} />
+          <Route path="/login" component={LoginPage} />
+          <Route path="/register" component={LoginPage} />
+          <Route path="/onboarding" component={Onboarding} />
+          <Route path="/capture" component={CaptureEngine} />
+          <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
+          <Route path="/demo" component={DemoDashboard} />
+          
+          {/* Protected Routes */}
+          <Route path="/twin"><ProtectedRoute component={TwinPage} /></Route>
+          <Route path="/history"><ProtectedRoute component={TimelinePage} /></Route>
+          <Route path="/projection"><ProtectedRoute component={TwinPage} /></Route>
+          <Route path="/leaderboard"><ProtectedRoute component={LeaderboardPage} /></Route>
+          <Route path="/nutrition-recovery"><ProtectedRoute component={NutritionRecovery} /></Route>
+          <Route path="/muscular-strain"><ProtectedRoute component={WorkoutStrain} /></Route>
+          <Route path="/exercises"><ProtectedRoute component={ExerciseLibrary} /></Route>
+          <Route path="/workout-logger"><ProtectedRoute component={WorkoutLogger} /></Route>
+          <Route path="/timeline"><ProtectedRoute component={TimelinePage} /></Route>
+          <Route path="/insights"><ProtectedRoute component={InsightsPage} /></Route>
+          <Route path="/settings"><ProtectedRoute component={SettingsPage} /></Route>
+          <Route path="/programs"><ProtectedRoute component={ProgramsPage} /></Route>
+          <Route path="/analytics"><ProtectedRoute component={AnalyticsPage} /></Route>
+          <Route path="/community"><ProtectedRoute component={CommunityPage} /></Route>
+          <Route path="/clinic/roster"><ProtectedRoute component={ClinicRosterPage} /></Route>
+          <Route path="/clinic"><ProtectedRoute component={ClinicPage} /></Route>
+          <Route path="/meds"><ProtectedRoute component={MedicationPage} /></Route>
+          <Route path="/vitals"><ProtectedRoute component={VitalsPage} /></Route>
+          <Route path="/readiness"><ProtectedRoute component={MentalReadinessPage} /></Route>
+          <Route path="/wiki"><ProtectedRoute component={WikiPage} /></Route>
+          <Route path="/achievements"><ProtectedRoute component={AchievementsPage} /></Route>
 
-        <Route>
-          <div className="min-h-screen flex items-center justify-center flex-col gap-4">
-            <div className="text-6xl font-black text-gradient">404</div>
-            <div className="text-muted-foreground">Page not found</div>
-            <Link href="/" className="btn btn-primary mt-4">Go Home</Link>
-          </div>
-        </Route>
-        </Switch>
-        <OfflineIndicator />
-      </div>
+          <Route>
+            <div className="min-h-screen flex items-center justify-center flex-col gap-4">
+              <div className="text-6xl font-black text-gradient">404</div>
+              <div className="text-muted-foreground">Page not found</div>
+              <Link href="/" className="btn btn-primary mt-4">Go Home</Link>
+            </div>
+          </Route>
+          </Switch>
+          <OfflineIndicator />
+        </div>
+      </ClinicInsightsProvider>
     </AvatarProvider>
   );
 }

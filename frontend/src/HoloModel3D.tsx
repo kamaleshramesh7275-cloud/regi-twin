@@ -5,9 +5,11 @@ import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { OBJLoader } from "three-stdlib";
 import HoloOverlay from "./HoloOverlay";
-import { AlertTriangle, Flame, Layers, Sparkles } from "lucide-react";
+import { AlertTriangle, Flame, Layers, Sparkles, FlaskConical, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAvatar } from "./AvatarContext";
+import { Link } from "wouter";
+import type { GroupedRegionalInsight } from "./context/ClinicInsightsContext";
 
 export type ZoneId =
   | "head" | "neck" | "chest" | "lumbar"
@@ -30,6 +32,8 @@ export interface HoloModel3DProps {
   onZoneClick: (zone: ZoneId) => void;
   viewMode?: "scan" | "3d";
   onViewModeChange?: (mode: "scan" | "3d") => void;
+  /** Confirmed clinic insights grouped by anatomical zone */
+  regionalInsights?: GroupedRegionalInsight[];
 }
 
 const HEAT_ZONES: ZoneId[] = [
@@ -68,7 +72,6 @@ const SKIN_PRESETS: Record<SkinPreset, { label: string; baseHex: string; roughne
 
 function InfoCard({ zoneId, risk, confidence, position }: { zoneId: ZoneId, risk: number, confidence: string, position: [number, number, number] }) {
   const isHighRisk = risk > 60;
-  const isElevated = risk > 30;
   const label = zoneId.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 
   return (
@@ -92,10 +95,145 @@ function InfoCard({ zoneId, risk, confidence, position }: { zoneId: ZoneId, risk
   );
 }
 
+// ── Clinic Insight Marker — reuses identical InfoCard visual language ──────────
+function trendStatusColor(dir: string | undefined, status: string | undefined) {
+  if (status === "high" || status === "low" || status === "flagged") return "text-red-400";
+  if (dir === "up" || dir === "down") return "text-amber-400";
+  return "text-emerald-400";
+}
+function trendStatusLabel(dir: string | undefined, status: string | undefined) {
+  if (status === "high" || status === "low" || status === "flagged") return "Flagged";
+  if (dir === "up")   return "Rising";
+  if (dir === "down") return "Falling";
+  return "Stable";
+}
+
+function ClinicInsightMarker({
+  group,
+  position,
+}: {
+  group: GroupedRegionalInsight;
+  position: [number, number, number];
+}) {
+  const [open, setOpen] = useState(false);
+  const { metrics, hasFlagged } = group;
+  const isGroup = metrics.length > 1;
+
+  // Offset slightly so it does not overlap the biomechanical InfoCard
+  const markerPos: [number, number, number] = [position[0] + 0.18, position[1], position[2]];
+
+  return (
+    <Html position={markerPos} center zIndexRange={[90, 0]}>
+      <div className="relative">
+        {/* Glow dot / trigger */}
+        <button
+          onClick={() => setOpen(p => !p)}
+          className={`relative flex items-center justify-center w-5 h-5 rounded-full border shadow-lg cursor-pointer focus:outline-none transition-transform hover:scale-110 ${
+            hasFlagged
+              ? "bg-red-500/30 border-red-400/60 shadow-red-500/40"
+              : "bg-cyan-500/25 border-cyan-400/50 shadow-cyan-500/30"
+          }`}
+          aria-label={`Clinic insight for ${group.zone}`}
+        >
+          {/* Pulse ring */}
+          <span
+            className={`absolute inset-0 rounded-full animate-ping opacity-50 ${
+              hasFlagged ? "bg-red-400" : "bg-cyan-400"
+            }`}
+            style={{ animationDuration: hasFlagged ? "1.2s" : "2.4s" }}
+          />
+          {hasFlagged ? (
+            <AlertTriangle className="w-2.5 h-2.5 text-red-400 relative z-10" />
+          ) : (
+            <FlaskConical className="w-2.5 h-2.5 text-cyan-300 relative z-10" />
+          )}
+          {/* Count badge */}
+          {isGroup && (
+            <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-white text-black text-[8px] font-black flex items-center justify-center z-20">
+              {metrics.length}
+            </span>
+          )}
+        </button>
+
+        {/* Tooltip card — matches InfoCard style exactly */}
+        <AnimatePresence>
+          {open && (
+            <motion.div
+              key="clinic-tip"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 5 }}
+              transition={{ duration: 0.15 }}
+              className="absolute left-7 top-0 bg-black/90 border border-white/15 rounded-xl px-3 py-2 text-xs w-52 shadow-xl z-50"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between mb-1.5 pb-1.5 border-b border-white/10">
+                <span className="font-black text-white text-[11px] flex items-center gap-1">
+                  <FlaskConical className="w-3 h-3 text-cyan-400" />
+                  Lab Insights
+                </span>
+                <button onClick={() => setOpen(false)} className="text-white/40 hover:text-white text-[10px] cursor-pointer">
+                  ✕
+                </button>
+              </div>
+
+              {/* Metric rows */}
+              <div className="space-y-1.5">
+                {metrics.map(m => {
+                  const dir    = m.prediction?.trend_direction;
+                  const status = m.latest_status;
+                  const isFl   = status === "high" || status === "low" || status === "flagged";
+                  return (
+                    <div key={m.metric_key} className="space-y-0.5">
+                      {/* Title row — font-bold text-white like existing InfoCard */}
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-white">{m.canonical_name}</span>
+                        <span className="font-mono font-black text-white">
+                          {m.latest_value ?? "—"}
+                          <span className="text-gray-400 font-normal ml-0.5 text-[9px]">{m.unit}</span>
+                        </span>
+                      </div>
+                      {/* Trend row — styled like the 'Confidence: high' row */}
+                      <div className="flex justify-between text-[10px] text-gray-400">
+                        <span>Trend</span>
+                        <span className={trendStatusColor(dir, status)}>
+                          {trendStatusLabel(dir, status)}
+                        </span>
+                      </div>
+                      {isFl && (
+                        <div className="flex items-center gap-1 text-[10px] text-red-400">
+                          <AlertTriangle className="w-3 h-3 shrink-0" /> Outside reference range
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Report link tag */}
+              <div className="mt-2 pt-1.5 border-t border-white/10">
+                <Link
+                  href="/clinic"
+                  className="flex items-center gap-1 text-[10px] text-cyan-400/80 hover:text-cyan-300 transition-colors font-semibold"
+                  onClick={() => setOpen(false)}
+                >
+                  <ExternalLink className="w-3 h-3" /> From clinic report
+                </Link>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </Html>
+  );
+}
+
 // ── Realistic Human 3D Model ─────────────────────────────────────────────
 function RealHumanoid3D({
   riskData, confidenceData, selectedZone, onZoneClick,
   heatMapEnabled = true, preset = "ecorche",
+  regionalInsights = [],
 }: HoloModel3DProps & { heatMapEnabled?: boolean; preset?: SkinPreset }) {
   const { userHeight } = useAvatar();
   
@@ -313,6 +451,17 @@ function RealHumanoid3D({
           </group>
         );
       })}
+
+      {/* ── Clinic insight markers ─────────────────────────────────── */}
+      {regionalInsights.map((group) => {
+        const pos = jointPositions[group.zone];
+        if (!pos) return null;
+        return (
+          <group key={`clinic-${group.zone}`} position={pos}>
+            <ClinicInsightMarker group={group} position={[0, 0, 0]} />
+          </group>
+        );
+      })}
     </group>
   );
 }
@@ -340,6 +489,7 @@ export default function HoloModel3D(props: HoloModel3DProps) {
   const [preset, setPreset] = useState<SkinPreset>("ecorche");
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const activeMode = props.viewMode ?? "3d";
+  const regionalInsights = props.regionalInsights ?? [];
 
   useEffect(() => {
     const handleResize = () => {
@@ -386,7 +536,7 @@ export default function HoloModel3D(props: HoloModel3DProps) {
             </mesh>
 
             <Suspense fallback={<ModelLoadingOverlay />}>
-              <RealHumanoid3D {...props} heatMapEnabled={heatMapEnabled} preset={preset} />
+              <RealHumanoid3D {...props} heatMapEnabled={heatMapEnabled} preset={preset} regionalInsights={regionalInsights} />
             </Suspense>
 
             <OrbitControls 
