@@ -60,6 +60,10 @@
 
     <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
 
     <!-- Health Connect Read Permissions for Realme Watch Vitals -->
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />

@@ -84,7 +84,7 @@ export function HistoryPage() {
   }));
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-24 md:pb-0">
       <Sidebar />
       <main className="flex-1 md:overflow-y-auto p-4 md:p-6 space-y-6 anim-fade relative z-10">
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 pointer-events-auto">
@@ -339,7 +339,7 @@ export function TimelinePage() {
   };
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-24 md:pb-0">
       <Sidebar />
       <main className="flex-1 md:overflow-y-auto p-4 md:p-6 space-y-6 anim-fade relative z-10">
         <header className="pointer-events-auto">
@@ -457,7 +457,7 @@ export function InsightsPage() {
   const annotatedImage = sessionStorage.getItem("lastAnnotatedImage");
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-24 md:pb-0">
       <Sidebar />
       <main className="flex-1 md:overflow-y-auto p-4 md:p-6 space-y-6 anim-fade relative z-10">
         <header className="flex items-center justify-between pointer-events-auto">

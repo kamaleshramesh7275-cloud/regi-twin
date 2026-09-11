@@ -2,11 +2,27 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>PhysioTwin — Biomechanical Digital Twin & Clinical Intelligence</title>
+    
+    <!-- PWA & Mobile Web App Meta Tags -->
+    <meta name="description" content="Elite 3D biomechanical motion capture, training strain forecasting, and clinical laboratory intelligence." />
+    <meta name="theme-color" content="#070A10" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="PhysioTwin" />
+    <meta name="application-name" content="PhysioTwin" />
+
+    <!-- Icons & Manifest -->
+    <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="mask-icon" href="/favicon.svg" color="#38BDF8" />
   </head>
-  <body>
+  <body class="bg-background text-foreground antialiased selection:bg-primary/30 select-none md:select-auto">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

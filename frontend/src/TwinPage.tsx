@@ -210,6 +210,8 @@ export default function TwinPage() {
       ? `${activeProjections[projIdx].horizon} ${showTreatment ? "(w/ treatment)" : "(no treatment)"}`
       : "Projection Loading...";
 
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
   return (
     <div className="relative w-full h-screen text-foreground overflow-hidden bg-black font-sans">
       
@@ -218,67 +220,75 @@ export default function TwinPage() {
         riskData={displayRisk}
         confidenceData={liveConfidence}
         selectedZone={selectedZone}
-        onZoneClick={(id) => setSelectedZone(prev => prev === id ? null : id)}
+        onZoneClick={(id) => {
+          setSelectedZone(prev => prev === id ? null : id);
+          setMobileDrawerOpen(true);
+        }}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
       />
       
-      {/* Legend */}
-      <div className="absolute bottom-4 right-4 pointer-events-none z-10 bg-black/40 backdrop-blur-md border border-white/10 p-3 rounded-xl flex flex-col gap-2 shadow-2xl">
-        <div className="text-[10px] text-white/70 uppercase tracking-widest font-bold mb-1">Strain Level</div>
-        <div className="flex items-center gap-2 text-[11px] text-gray-300">
-          <span className="w-3 h-3 rounded-full bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+      {/* Legend (Positioned above mobile bottom bar) */}
+      <div className="absolute bottom-20 md:bottom-4 right-3 md:right-4 pointer-events-none z-10 bg-black/70 backdrop-blur-md border border-white/10 p-2.5 md:p-3 rounded-xl flex flex-col gap-1.5 md:gap-2 shadow-2xl">
+        <div className="text-[9px] md:text-[10px] text-white/70 uppercase tracking-widest font-bold">Strain Level</div>
+        <div className="flex items-center gap-1.5 text-[10px] md:text-[11px] text-gray-300">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
           <span>Low (0-30)</span>
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-gray-300">
-          <span className="w-3 h-3 rounded-full bg-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
+        <div className="flex items-center gap-1.5 text-[10px] md:text-[11px] text-gray-300">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
           <span>Moderate (31-60)</span>
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-gray-300">
-          <span className="w-3 h-3 rounded-full bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.6)] animate-pulse" />
+        <div className="flex items-center gap-1.5 text-[10px] md:text-[11px] text-gray-300">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.6)] animate-pulse" />
           <span>High (61-100)</span>
-        </div>
-        <div className="flex items-center gap-2 text-[11px] text-gray-400 mt-1 pt-2 border-t border-white/10">
-          <span className="w-3 h-3 rounded-full bg-gray-500/40 border border-gray-400/50" />
-          <span>No Data</span>
         </div>
       </div>
 
       <Sidebar />
 
+      {/* Mobile Drawer Trigger Button */}
+      <div className="md:hidden fixed bottom-20 left-3 z-30 pointer-events-auto">
+        <button
+          onClick={() => setMobileDrawerOpen(p => !p)}
+          className="flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-primary text-white font-bold text-xs shadow-xl shadow-primary/30 border border-primary/50 cursor-pointer"
+        >
+          <BarChart2 className="w-4 h-4" />
+          {mobileDrawerOpen ? "Hide Metrics" : "View Diagnostics"}
+        </button>
+      </div>
+
       {/* ── Floating Controls Layer ── */}
-      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col md:flex-row md:pl-60">
+      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col md:flex-row md:pl-64">
         
         {/* Main Center Area (Controls overlay) */}
         <div className="flex-1 flex flex-col relative pointer-events-none">
           
-          <div className="pointer-events-auto flex items-center justify-between p-6 shrink-0 mt-2 mx-4 gap-3">
+          <div className="pointer-events-auto flex items-center justify-between p-3 sm:p-6 shrink-0 mt-1 mx-2 sm:mx-4 gap-2 flex-wrap sm:flex-nowrap">
             {/* View Mode Switcher */}
-            <div className="flex gap-3">
-              <div className="bg-black/60 backdrop-blur-xl border border-white/10 p-1.5 rounded-2xl flex items-center gap-1.5 shadow-2xl">
+            <div className="flex gap-2">
+              <div className="bg-black/70 backdrop-blur-xl border border-white/10 p-1 rounded-2xl flex items-center gap-1 shadow-2xl">
                 <button
                   onClick={() => setViewMode("scan")}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1 sm:gap-1.5 cursor-pointer ${
                     viewMode === "scan"
                       ? "bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-lg shadow-cyan-500/20"
                       : "text-muted-foreground hover:text-white"
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> Human Anatomy Scan
+                  <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> Anatomy Scan
                 </button>
                 <button
                   onClick={() => setViewMode("3d")}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1 sm:gap-1.5 cursor-pointer ${
                     viewMode === "3d"
                       ? "bg-blue-600/30 text-blue-300 border border-blue-500/50 shadow-lg shadow-blue-500/20"
                       : "text-muted-foreground hover:text-white"
                   }`}
                 >
-                  <Box className="w-3.5 h-3.5 text-blue-400" /> 3D Humanoid Mesh
+                  <Box className="w-3.5 h-3.5 text-blue-400" /> 3D Mesh
                 </button>
               </div>
-
-
             </div>
 
             {/* Twin Score & Notification */}
@@ -351,10 +361,23 @@ export default function TwinPage() {
         </div>
 
         {/* ── Right Panel ── */}
-        <aside className="pointer-events-auto w-full md:w-[380px] bg-black/40 backdrop-blur-2xl border-l border-white/10 flex flex-col md:overflow-y-auto shrink-0 shadow-2xl">
+        <aside className={`pointer-events-auto ${mobileDrawerOpen ? 'fixed inset-x-0 bottom-0 max-h-[75vh] z-40 rounded-t-3xl border-t' : 'hidden'} md:flex md:relative md:max-h-none md:rounded-none md:border-t-0 w-full md:w-[380px] bg-[#070A12]/95 backdrop-blur-2xl md:border-l border-white/10 flex-col overflow-y-auto shrink-0 shadow-2xl pb-24 md:pb-6`}>
+          {/* Mobile Drawer Handle & Close */}
+          <div className="md:hidden flex items-center justify-between px-5 py-3.5 border-b border-white/10 sticky top-0 bg-[#070A12] z-10">
+            <div className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> Biomechanical Insights
+            </div>
+            <button 
+              onClick={() => setMobileDrawerOpen(false)}
+              className="p-1 px-3 rounded-xl bg-white/10 text-xs font-bold text-white hover:bg-white/20 cursor-pointer"
+            >
+              Close ✕
+            </button>
+          </div>
+
           {/* ACTIVE MODE */}
           {mode === "active" && (
-            <div className="p-6 flex-1 overflow-y-auto scrollbar-hide">
+            <div className="p-4 sm:p-6 flex-1 overflow-y-auto scrollbar-hide">
               
               <div className="mb-6 flex flex-col gap-2">
                 <button 

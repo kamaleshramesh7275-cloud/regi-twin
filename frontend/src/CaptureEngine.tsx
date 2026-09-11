@@ -1758,7 +1758,7 @@ function CaptureEngineContent() {
 
 export default function CaptureEngine() {
   return (
-    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground pb-[72px] md:pb-0 bg-background">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground pb-24 md:pb-0 bg-background">
       <Sidebar />
       <main className="flex-1 overflow-y-auto relative z-10 w-full flex flex-col">
         <CaptureEngineContent />

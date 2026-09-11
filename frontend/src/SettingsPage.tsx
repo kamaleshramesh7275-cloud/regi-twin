@@ -2,6 +2,7 @@ import React from "react";
 import { Sidebar } from "./components/Sidebar";
 import { Smartphone, Shield, Bell, Check, LogOut, User, Dumbbell, Apple, Database } from "lucide-react";
 import { useAuth } from "./context/AuthContext";
+import { useLocation } from "wouter";
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
   return (
@@ -29,6 +30,12 @@ function usePersistentToggle(key: string, defaultValue: boolean): [boolean, () =
 
 export default function SettingsPage() {
   const { user, logout } = useAuth();
+  const [, setLocation] = useLocation();
+
+  const handleLogout = async () => {
+    await logout();
+    setLocation("/login");
+  };
 
   // Notification toggles — persisted to localStorage
   const [weeklyReport, toggleWeeklyReport] = usePersistentToggle('setting_notif_weekly', true);
@@ -40,10 +47,10 @@ export default function SettingsPage() {
   const [hapticFeedback, toggleHapticFeedback] = usePersistentToggle('setting_haptics', true);
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0 bg-black">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-24 md:pb-0 bg-black">
       <Sidebar />
       
-      <main className="flex-1 overflow-y-auto p-4 md:p-10 space-y-8 max-w-4xl mx-auto w-full pt-12 md:pt-10">
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-10 space-y-8 max-w-4xl mx-auto w-full pt-6 md:pt-10">
         <header className="mb-8">
           <h1 className="text-3xl font-black tracking-tight text-white">Settings & Preferences</h1>
           <p className="text-muted-foreground mt-1">Manage your native profile, local storage engines, and notifications.</p>
@@ -64,7 +71,7 @@ export default function SettingsPage() {
                     <Check className="w-4 h-4" /> Native Tracking Plan • Unlimited Access
                   </div>
                 </div>
-                <button onClick={logout} className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 font-bold px-4 py-2 bg-red-400/10 rounded-xl transition-colors">
+                <button onClick={handleLogout} className="flex items-center gap-2 text-sm text-red-400 hover:text-red-300 font-bold px-4 py-2 bg-red-400/10 rounded-xl transition-colors cursor-pointer">
                   <LogOut className="w-4 h-4" /> Sign Out
                 </button>
               </div>
@@ -189,10 +196,10 @@ export default function SettingsPage() {
         </div>
 
         {/* Log Out Action */}
-        <div className="mt-12 flex justify-center pb-12">
+        <div className="mt-12 flex justify-center pb-8">
           <button 
-            onClick={logout} 
-            className="flex items-center gap-2 text-lg text-white font-bold px-8 py-4 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-xl transition-all shadow-[0_0_20px_rgba(239,68,68,0.15)] hover:shadow-[0_0_30px_rgba(239,68,68,0.3)]"
+            onClick={handleLogout} 
+            className="flex items-center gap-2 text-base md:text-lg text-white font-bold px-8 py-3.5 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded-xl transition-all shadow-[0_0_20px_rgba(239,68,68,0.15)] hover:shadow-[0_0_30px_rgba(239,68,68,0.3)] cursor-pointer"
           >
             <LogOut className="w-5 h-5" /> Log Out
           </button>

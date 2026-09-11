@@ -227,3 +227,27 @@ input[type=range]::-webkit-slider-thumb {
 }
 .nav-link:hover { color: var(--color-foreground); background: rgba(255,255,255,0.05); }
 .nav-link.active { color: var(--color-primary); background: rgba(6, 182, 212, 0.12); font-weight: 600; }
+
+/* ── Mobile & Responsive Utilities ────────────────────── */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+.pb-safe {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 5rem);
+}
+
+@media (max-width: 640px) {
+  input, select, textarea {
+    font-size: 16px !important; /* Prevents iOS auto-zoom on focus */
+  }
+}
+

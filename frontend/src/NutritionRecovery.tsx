@@ -441,9 +441,9 @@ export function NutritionRecovery() {
   const hasData = meals.length > 0 || (weeklyData?.nutrition && weeklyData.nutrition.length > 0);
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-slate-100 md:overflow-hidden pb-[72px] md:pb-0 bg-[#07090E]">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-slate-100 md:overflow-hidden pb-24 md:pb-0 bg-[#07090E]">
       <Sidebar />
-      <main className="flex-1 md:overflow-y-auto p-4 md:p-8 space-y-6 relative z-10">
+      <main className="flex-1 md:overflow-y-auto p-4 sm:p-6 md:p-8 space-y-6 relative z-10">
         
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">

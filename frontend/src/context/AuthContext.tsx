@@ -18,18 +18,16 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    const isLoggedOut = localStorage.getItem("physiotwin_logged_out") === "true";
+    if (isLoggedOut) return null;
+    const storedEmail = localStorage.getItem("physiotwin_user_email") || "test@example.com";
+    return { uid: "test-user", email: storedEmail, displayName: "Demo Athlete" } as User;
+  });
   const [googleFitToken, setGoogleFitToken] = useState<string | null>(() => {
     return localStorage.getItem("googleFitToken");
   });
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Mock user for local testing without Firebase configured
-    const mockUser = { uid: "test-user", email: "test@example.com", displayName: "Demo User" } as User;
-    setUser(mockUser);
-    setLoading(false);
-  }, []);
+  const [loading, setLoading] = useState(false);
 
   const connectGoogleFit = async (): Promise<string | null> => {
     try {
@@ -49,29 +47,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogle = async () => {
     try {
+      localStorage.removeItem("physiotwin_logged_out");
       await connectGoogleFit();
+      setUser({ uid: "google-user", email: "google.athlete@physiotwin.com", displayName: "Google Athlete" } as User);
     } catch (error) {
       console.error("Login failed", error);
       throw error;
     }
   };
 
-  const loginWithEmail = async (email: string, pass: string) => {
-    // Mock login success
-    const mockUser = { uid: "test-user", email, displayName: "Demo User" } as User;
+  const loginWithEmail = async (email: string, _pass: string) => {
+    localStorage.removeItem("physiotwin_logged_out");
+    localStorage.setItem("physiotwin_user_email", email);
+    const mockUser = { uid: "test-user", email, displayName: email.split("@")[0] || "Demo Athlete" } as User;
     setUser(mockUser);
   };
 
-  const registerWithEmail = async (email: string, pass: string) => {
-    // Mock register success
-    const mockUser = { uid: "test-user", email, displayName: "Demo User" } as User;
+  const registerWithEmail = async (email: string, _pass: string) => {
+    localStorage.removeItem("physiotwin_logged_out");
+    localStorage.setItem("physiotwin_user_email", email);
+    const mockUser = { uid: "test-user", email, displayName: email.split("@")[0] || "Demo Athlete" } as User;
     setUser(mockUser);
   };
 
   const logout = async () => {
-    await signOut(auth);
-    setGoogleFitToken(null);
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.warn("Firebase signout fallback:", err);
+    }
+    localStorage.setItem("physiotwin_logged_out", "true");
+    localStorage.removeItem("physiotwin_user_email");
     localStorage.removeItem("googleFitToken");
+    setGoogleFitToken(null);
+    setUser(null);
   };
 
   return (

@@ -1,7 +1,15 @@
-const isLocal = typeof window !== 'undefined' && 
-  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+import { offlineStorage } from "./lib/offlineStorage";
 
-const API_BASE = isLocal ? `http://${window.location.hostname}:8000` : '';
+const isLocalOrLAN = typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' || 
+  window.location.hostname === '127.0.0.1' ||
+  /^172\.|^192\.168\.|^10\./.test(window.location.hostname) ||
+  window.location.hostname.endsWith('.local')
+);
+
+// In browser, relative URL ('') automatically uses Vite's reverse proxy for seamless HTTPS & CORS
+const API_BASE = typeof window !== 'undefined' ? '' : 'http://localhost:8000';
+
 
 async function fetchWithTimeout(resource: string, options: RequestInit & { timeout?: number } = {}) {
   const { timeout = 10000 } = options;
@@ -22,9 +30,19 @@ async function fetchWithTimeout(resource: string, options: RequestInit & { timeo
 
 export const api = {
   async getDashboard(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/analytics/dashboard/${userId}?min_hours_ago=1&max_hours_ago=10`);
-    if (!res.ok) throw new Error("Failed to fetch dashboard");
-    return res.json();
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/analytics/dashboard/${userId}?min_hours_ago=1&max_hours_ago=10`);
+      if (res.ok) {
+        const data = await res.json();
+        offlineStorage.setCache(`dashboard_${userId}`, data).catch(() => {});
+        return data;
+      }
+    } catch (err) {
+      console.warn("Network request for dashboard failed, attempting offline cache lookup:", err);
+    }
+    const cached = await offlineStorage.getCache(`dashboard_${userId}`);
+    if (cached) return cached;
+    throw new Error("Failed to fetch dashboard and no offline cache available");
   },
   
   async getWeeklyLetter(userId: string) {
@@ -364,9 +382,23 @@ export const api = {
     if (params?.equipment) query.append('equipment', params.equipment);
     if (params?.search) query.append('search', params.search);
     const qs = query.toString() ? `?${query.toString()}` : '';
-    const res = await fetchWithTimeout(`${API_BASE}/exercises${qs}`);
-    if (!res.ok) throw new Error("Failed to fetch exercises");
-    return res.json();
+    const cacheKey = `exercises_${qs || 'all'}`;
+
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/exercises${qs}`);
+      if (res.ok) {
+        const data = await res.json();
+        offlineStorage.setCache(cacheKey, data).catch(() => {});
+        return data;
+      }
+    } catch (err) {
+      console.warn("Network request for exercises failed, attempting offline cache lookup:", err);
+    }
+    const cached = await offlineStorage.getCache(cacheKey);
+    if (cached) return cached;
+    const allCached = await offlineStorage.getCache('exercises_all');
+    if (allCached) return allCached;
+    throw new Error("Failed to fetch exercises and no offline cache available");
   },
 
   async getExercise(exerciseId: string) {
@@ -639,6 +671,101 @@ export const api = {
     if (!res.ok) throw new Error("Failed to submit readiness survey");
     return res.json();
   },
+
+  // ── CLINIC PORTAL — OCR LAB REPORT ANALYSIS & PREDICTIONS ───────────────────
+
+  async uploadClinicReport(userId: string, file: File, labName?: string, reportType?: string, reportDate?: string) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("user_id", userId);
+    if (labName) formData.append("lab_name", labName);
+    if (reportType) formData.append("report_type", reportType);
+    if (reportDate) formData.append("report_date", reportDate);
+
+    const res = await fetch(`${API_BASE}/api/clinic/reports/upload`, {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Upload failed" }));
+      throw new Error(err.detail || "Failed to process clinical report OCR");
+    }
+    return res.json();
+  },
+
+  async getClinicReports(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/api/clinic/reports/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch clinical reports");
+    return res.json();
+  },
+
+  async getClinicReportDetail(reportId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/api/clinic/reports/detail/${reportId}`);
+    if (!res.ok) throw new Error("Failed to fetch report detail");
+    return res.json();
+  },
+
+  async confirmClinicReport(reportId: string, payload: {
+    confirmed_metrics: Array<{
+      metric_key: string;
+      canonical_name: string;
+      value: number;
+      unit: string;
+      ref_low?: number | null;
+      ref_high?: number | null;
+      status?: string;
+      confidence?: string;
+      confidence_score?: number;
+    }>;
+    report_date?: string;
+    lab_name?: string;
+    notes?: string;
+  }) {
+    const res = await fetchWithTimeout(`${API_BASE}/api/clinic/reports/${reportId}/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("Failed to confirm report metrics");
+    return res.json();
+  },
+
+  async deleteClinicReport(reportId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/api/clinic/reports/${reportId}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("Failed to delete report");
+    return res.json();
+  },
+
+  async getClinicMetricTrends(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/api/clinic/metrics/trends/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch clinical metric trends");
+    return res.json();
+  },
+
+  async getClinicNotifications(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/api/clinic/notifications/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch clinical alerts");
+    return res.json();
+  },
+
+  async markClinicNotificationRead(alertId: string | number) {
+    const res = await fetchWithTimeout(`${API_BASE}/api/clinic/notifications/${alertId}/read`, {
+      method: "PATCH",
+    });
+    if (!res.ok) throw new Error("Failed to mark alert as read");
+    return res.json();
+  },
+
+  async seedClinicDemo(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/api/clinic/seed-demo/${userId}`, {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error("Failed to seed demo clinical data");
+    return res.json();
+  },
 };
+
 
 

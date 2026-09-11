@@ -410,3 +410,89 @@ class ReadinessSurvey(Base):
     # Psychological indices
     kinesiophobia_score = Column(Integer)     # Tampa Scale (11 to 44)
     sport_confidence_score = Column(Integer)  # ACL-RSI (0 to 100)
+
+
+# ==============================================================================
+# CLINICAL OCR, DIGITAL TWIN INGESTION & PREDICTIVE TREND MODELS
+# ==============================================================================
+
+class ClinicalReportDocument(Base):
+    """Uploaded clinical / laboratory report document (PDF or image)."""
+    __tablename__ = "clinical_reports"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    filename = Column(String, nullable=True)
+    original_filename = Column(String, nullable=True)
+    file_path = Column(String, nullable=True)
+    stored_filepath = Column(String, nullable=True)
+    file_url = Column(String, nullable=True)
+    file_type = Column(String, default="pdf")  # 'pdf' | 'image'
+    file_size_bytes = Column(Integer, default=0)
+    report_type = Column(String, default="lab_panel")
+    lab_name = Column(String, nullable=True)
+    report_date = Column(DateTime, nullable=True)
+    page_count = Column(Integer, default=1)
+    raw_ocr_json = Column(Text, nullable=True)  # JSON array of raw text lines, bboxes, confidences
+    extracted_data_json = Column(Text, nullable=True)  # JSON array of pending parsed lab metrics
+    confirmed_data_json = Column(Text, nullable=True)  # JSON array of confirmed lab metrics
+    status = Column(String, default="pending_review")  # 'pending_review' | 'confirmed' | 'rejected'
+    total_metrics_found = Column(Integer, default=0)
+    uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
+    reviewed_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+    review_notes = Column(Text, nullable=True)
+
+
+class ClinicalMetricRecord(Base):
+    """Confirmed clinical metric reading ingested into the Digital Twin with provenance."""
+    __tablename__ = "clinical_metrics"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    report_id = Column(String, ForeignKey("clinical_reports.id"), nullable=True, index=True)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    metric_key = Column(String, index=True)  # canonical key e.g. 'hemoglobin', 'fasting_blood_glucose'
+    canonical_name = Column(String, nullable=True)
+    display_name = Column(String, nullable=True)
+    value = Column(Float)
+    unit = Column(String)
+    ref_low = Column(Float, nullable=True)
+    ref_high = Column(Float, nullable=True)
+    reference_range = Column(String, nullable=True)
+    status = Column(String, default="normal")  # 'normal' | 'high' | 'low'
+    confidence_tier = Column(String, default="high")  # 'high' | 'medium' | 'low'
+    confidence_score = Column(Float, default=1.0)
+    ocr_confidence = Column(Float, nullable=True)
+    source = Column(String, default="clinicReportOCR")  # 'clinicReportOCR' | 'manual'
+    recorded_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    recorded_date = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    is_out_of_range = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+class ClinicalPredictionAlert(Base):
+    """Informational predictive trend notification with non-diagnostic medical disclaimer."""
+    __tablename__ = "clinical_alerts"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    metric_key = Column(String, index=True)
+    canonical_name = Column(String, nullable=True)
+    metric_name = Column(String, nullable=True)
+    trigger_value = Column(Float, nullable=True)
+    actual_value = Column(Float, nullable=True)
+    predicted_value = Column(Float, nullable=True)
+    expected_range_min = Column(Float, nullable=True)
+    expected_range_max = Column(Float, nullable=True)
+    alert_type = Column(String, default="trend_anomaly")  # 'trend_anomaly' | 'out_of_reference'
+    severity = Column(String, default="info")  # 'info' | 'caution'
+    title = Column(String)
+    message = Column(String)
+    suggested_action = Column(String, nullable=True)
+    disclaimer = Column(
+        String, 
+        default="This is a pattern-based observation, not a medical diagnosis. Please discuss this result with a healthcare professional."
+    )
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+

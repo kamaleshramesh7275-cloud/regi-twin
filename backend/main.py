@@ -16,6 +16,9 @@ import json
 from database import engine, get_db, Base
 import models
 from analytics import compute_capability_profile, generate_weekly_letter, generate_deep_insights, chat_with_twin, simulate_activity, compute_injury_risk
+import clinic_ocr
+import clinic_parser
+import clinic_predictor
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -34,7 +37,22 @@ app.add_middleware(
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(os.path.join(UPLOAD_DIR, "workouts"), exist_ok=True)
 os.makedirs(os.path.join(UPLOAD_DIR, "meals"), exist_ok=True)
+os.makedirs(os.path.join(UPLOAD_DIR, "reports"), exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+@app.get("/download/app.apk")
+@app.get("/PhysioTwin.apk")
+def download_app_apk():
+    apk_paths = [
+        os.path.join(os.path.dirname(__file__), "..", "frontend", "public", "PhysioTwin.apk"),
+        os.path.join(os.path.dirname(__file__), "..", "frontend", "android", "app", "build", "outputs", "apk", "debug", "app-debug.apk"),
+        os.path.join(UPLOAD_DIR, "PhysioTwin.apk")
+    ]
+    for p in apk_paths:
+        if os.path.exists(p):
+            return FileResponse(p, media_type="application/vnd.android.package-archive", filename="PhysioTwin.apk")
+    raise HTTPException(status_code=404, detail="APK build in progress or not found")
+
 
 @app.on_event("startup")
 def startup_seed_catalog():
@@ -3160,6 +3178,606 @@ def get_achievements(user_id: str, db: Session = Depends(get_db)):
         {"id": "rom_140",       "title": "Full Range of Motion", "desc": "Achieved 140° of Range of Motion in a session.",             "unlocked": max_rom >= 140,         "progress": round(min(max_rom, 140), 1), "target": 140},
         {"id": "cleared",       "title": "Cleared for Sport",   "desc": "Passed all clinical return-to-sport metrics (all >= 85%).",  "unlocked": bool(cleared),         "progress": round(min((cp.mobility or 0) + (cp.stability or 0) + (cp.recovery or 0), 255) / 3, 1) if cp else 0, "target": 85},
     ]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CLINIC PORTAL — OCR LAB REPORT ANALYSIS & PREDICTIVE DIGITAL TWIN INGESTION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class ClinicConfirmMetricItem(BaseModel):
+    metric_key: str
+    canonical_name: str
+    value: float
+    unit: str
+    ref_low: Optional[float] = None
+    ref_high: Optional[float] = None
+    status: Optional[str] = "normal"
+    confidence: Optional[str] = "high"
+    confidence_score: Optional[float] = 1.0
+
+class ClinicReportConfirmRequest(BaseModel):
+    confirmed_metrics: List[ClinicConfirmMetricItem]
+    report_date: Optional[str] = None
+    lab_name: Optional[str] = None
+    notes: Optional[str] = None
+
+@app.post("/api/clinic/reports/upload")
+async def upload_clinical_report(
+    file: UploadFile = File(...),
+    user_id: str = Form(...),
+    report_type: Optional[str] = Form("lab_panel"),
+    lab_name: Optional[str] = Form(None),
+    report_date: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Accepts clinical report (PDF/PNG/JPEG), executes OCR extraction,
+    applies structured lab parser, and stages records into the Human-in-the-loop Review Queue.
+    Zero auto-commit to Digital Twin until verified by human.
+    """
+    allowed_exts = [".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"]
+    orig_name = file.filename or "uploaded_report"
+    ext = os.path.splitext(orig_name)[1].lower()
+    if ext not in allowed_exts:
+        raise HTTPException(status_code=400, detail=f"Unsupported file format '{ext}'. Allowed: {', '.join(allowed_exts)}")
+
+    report_id = f"rpt_{uuid.uuid4().hex[:12]}"
+    saved_filename = f"{report_id}{ext}"
+    reports_dir = os.path.join(UPLOAD_DIR, "reports")
+    os.makedirs(reports_dir, exist_ok=True)
+    saved_path = os.path.join(reports_dir, saved_filename)
+
+    with open(saved_path, "wb") as f_out:
+        shutil.copyfileobj(file.file, f_out)
+
+    file_size_bytes = os.path.getsize(saved_path)
+    file_url = f"/uploads/reports/{saved_filename}"
+
+    # Run OCR Pipeline (PyMuPDF / EasyOCR)
+    raw_lines, page_count = clinic_ocr.extract_ocr_from_file(saved_path)
+
+    # Run Structured Parser
+    parsed_metrics = clinic_parser.parse_lab_records_from_ocr(raw_lines)
+    parsed_report_dt = None
+    if report_date:
+        try:
+            parsed_report_dt = datetime.datetime.fromisoformat(report_date)
+        except Exception:
+            try:
+                parsed_report_dt = datetime.datetime.strptime(report_date, "%Y-%m-%d")
+            except Exception:
+                pass
+    if not parsed_report_dt:
+        parsed_report_dt = datetime.datetime.utcnow()
+
+    # Create ClinicalReportDocument in pending_review state
+    report_doc = models.ClinicalReportDocument(
+        id=report_id,
+        user_id=user_id,
+        filename=orig_name,
+        original_filename=orig_name,
+        file_path=saved_path,
+        stored_filepath=saved_path,
+        file_url=file_url,
+        file_type="pdf" if ext == ".pdf" else "image",
+        file_size_bytes=file_size_bytes,
+        report_type=report_type or "lab_panel",
+        lab_name=lab_name or "Diagnostic Laboratory",
+        report_date=parsed_report_dt,
+        page_count=page_count,
+        status="pending_review",
+        raw_ocr_json=json.dumps(raw_lines),
+        extracted_data_json=json.dumps(parsed_metrics),
+        confirmed_data_json=None,
+        total_metrics_found=len(parsed_metrics),
+        review_notes=None
+    )
+    db.add(report_doc)
+    db.commit()
+    db.refresh(report_doc)
+
+    return {
+        "status": "success",
+        "message": f"Successfully parsed {len(parsed_metrics)} clinical metrics. Staged in Review Queue.",
+        "report_id": report_doc.id,
+        "filename": report_doc.filename,
+        "file_url": report_doc.file_url,
+        "file_type": report_doc.file_type,
+        "report_date": report_doc.report_date.isoformat() if report_doc.report_date else None,
+        "total_metrics": len(parsed_metrics),
+        "parsed_metrics": parsed_metrics,
+        "raw_ocr_lines_count": len(raw_lines)
+    }
+
+
+@app.get("/api/clinic/reports/{user_id}")
+def get_user_clinical_reports(user_id: str, db: Session = Depends(get_db)):
+    """Fetch all uploaded clinical reports and their review status for the given user."""
+    reports = db.query(models.ClinicalReportDocument)\
+        .filter(models.ClinicalReportDocument.user_id == user_id)\
+        .order_by(models.ClinicalReportDocument.uploaded_at.desc()).all()
+
+    result = []
+    for r in reports:
+        parsed_metrics = []
+        confirmed_metrics = []
+        try:
+            if r.extracted_data_json:
+                parsed_metrics = json.loads(r.extracted_data_json)
+        except Exception:
+            pass
+        try:
+            if r.confirmed_data_json:
+                confirmed_metrics = json.loads(r.confirmed_data_json)
+        except Exception:
+            pass
+
+        result.append({
+            "id": r.id,
+            "user_id": r.user_id,
+            "filename": r.original_filename,
+            "file_url": r.file_url,
+            "file_type": r.file_type,
+            "file_size_bytes": r.file_size_bytes,
+            "report_type": r.report_type,
+            "lab_name": r.lab_name,
+            "report_date": r.report_date.isoformat() if r.report_date else None,
+            "uploaded_at": r.uploaded_at.isoformat() if r.uploaded_at else None,
+            "status": r.status,
+            "total_metrics_found": r.total_metrics_found,
+            "metrics": confirmed_metrics if r.status == "confirmed" else parsed_metrics,
+            "review_notes": r.review_notes
+        })
+    return result
+
+
+@app.get("/api/clinic/reports/detail/{report_id}")
+def get_clinical_report_detail(report_id: str, db: Session = Depends(get_db)):
+    """Retrieve deep detail for a report, including raw OCR bounding boxes and extracted metrics."""
+    report = db.query(models.ClinicalReportDocument)\
+        .filter(models.ClinicalReportDocument.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report document not found")
+
+    raw_ocr = {}
+    extracted = []
+    confirmed = []
+    try:
+        if report.raw_ocr_json:
+            raw_ocr = json.loads(report.raw_ocr_json)
+    except Exception:
+        pass
+    try:
+        if report.extracted_data_json:
+            extracted = json.loads(report.extracted_data_json)
+    except Exception:
+        pass
+    try:
+        if report.confirmed_data_json:
+            confirmed = json.loads(report.confirmed_data_json)
+    except Exception:
+        pass
+
+    return {
+        "id": report.id,
+        "user_id": report.user_id,
+        "filename": report.original_filename,
+        "file_url": report.file_url,
+        "file_type": report.file_type,
+        "lab_name": report.lab_name,
+        "report_date": report.report_date.isoformat() if report.report_date else None,
+        "uploaded_at": report.uploaded_at.isoformat() if report.uploaded_at else None,
+        "status": report.status,
+        "raw_ocr": raw_ocr,
+        "extracted_metrics": extracted,
+        "confirmed_metrics": confirmed,
+        "review_notes": report.review_notes
+    }
+
+
+@app.post("/api/clinic/reports/{report_id}/confirm")
+def confirm_clinical_report(
+    report_id: str,
+    payload: ClinicReportConfirmRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Human-in-the-loop confirmation step.
+    Ingests reviewed metrics into ClinicalMetricRecord tagged source='clinicReportOCR'.
+    Calculates predictive trend regressions and generates informational notifications if anomalies exist.
+    """
+    report = db.query(models.ClinicalReportDocument)\
+        .filter(models.ClinicalReportDocument.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Clinical report not found")
+
+    user_id = report.user_id
+    report_date_dt = report.report_date or datetime.datetime.utcnow()
+    if payload.report_date:
+        try:
+            report_date_dt = datetime.datetime.fromisoformat(payload.report_date)
+        except Exception:
+            try:
+                report_date_dt = datetime.datetime.strptime(payload.report_date, "%Y-%m-%d")
+            except Exception:
+                pass
+
+    if payload.lab_name:
+        report.lab_name = payload.lab_name
+    if payload.notes:
+        report.review_notes = payload.notes
+
+    # Clear prior confirmed records associated with this report_id to avoid duplicates if re-confirmed
+    db.query(models.ClinicalMetricRecord)\
+        .filter(models.ClinicalMetricRecord.report_id == report_id).delete()
+
+    saved_metric_records = []
+    for item in payload.confirmed_metrics:
+        # Determine status relative to reference ranges
+        status = item.status or "normal"
+        val = float(item.value)
+        if item.ref_low is not None and val < item.ref_low:
+            status = "low"
+        elif item.ref_high is not None and val > item.ref_high:
+            status = "high"
+
+        rec = models.ClinicalMetricRecord(
+            user_id=user_id,
+            report_id=report.id,
+            metric_key=item.metric_key,
+            canonical_name=item.canonical_name,
+            value=val,
+            unit=item.unit,
+            ref_low=item.ref_low,
+            ref_high=item.ref_high,
+            status=status,
+            confidence_tier=item.confidence or "high",
+            confidence_score=item.confidence_score or 1.0,
+            recorded_at=report_date_dt,
+            source="clinicReportOCR"
+        )
+        db.add(rec)
+        saved_metric_records.append(rec)
+
+    # Update report status to confirmed
+    confirmed_data_list = [item.dict() for item in payload.confirmed_metrics]
+    report.status = "confirmed"
+    report.confirmed_data_json = json.dumps(confirmed_data_list)
+    report.reviewed_at = datetime.datetime.utcnow()
+    report.report_date = report_date_dt
+
+    db.commit()
+
+    # Re-evaluate predictive trend regressions and create alerts
+    new_alerts = []
+    for item in payload.confirmed_metrics:
+        mkey = item.metric_key
+        # Fetch all historical points for this metric
+        hist_rows = db.query(models.ClinicalMetricRecord)\
+            .filter(models.ClinicalMetricRecord.user_id == user_id, models.ClinicalMetricRecord.metric_key == mkey)\
+            .order_by(models.ClinicalMetricRecord.recorded_at.asc()).all()
+
+        if len(hist_rows) >= 3:
+            pts = [{"date": r.recorded_at.isoformat(), "value": r.value} for r in hist_rows]
+            pred = clinic_predictor.compute_metric_prediction(
+                metric_key=mkey,
+                canonical_name=item.canonical_name,
+                unit=item.unit,
+                historical_points=pts,
+                ref_low=item.ref_low,
+                ref_high=item.ref_high,
+                forecast_days=60
+            )
+
+            latest_val = hist_rows[-1].value
+            anomaly = clinic_predictor.evaluate_clinical_anomaly(
+                metric_name=item.canonical_name,
+                unit=item.unit,
+                latest_value=latest_val,
+                ref_low=item.ref_low,
+                ref_high=item.ref_high,
+                prediction_result=pred
+            )
+
+            if anomaly:
+                alert = models.ClinicalPredictionAlert(
+                    user_id=user_id,
+                    metric_key=mkey,
+                    canonical_name=item.canonical_name,
+                    alert_type=anomaly["alert_type"],
+                    severity=anomaly["severity"],
+                    title=anomaly["title"],
+                    message=anomaly["message"],
+                    disclaimer=anomaly["disclaimer"],
+                    suggested_action=anomaly["suggested_action"],
+                    trigger_value=latest_val,
+                    expected_range_min=anomaly.get("expected_range_min"),
+                    expected_range_max=anomaly.get("expected_range_max"),
+                    is_read=False
+                )
+                db.add(alert)
+                new_alerts.append({
+                    "title": alert.title,
+                    "severity": alert.severity,
+                    "message": alert.message,
+                    "disclaimer": alert.disclaimer
+                })
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Successfully ingested {len(saved_metric_records)} metrics into Digital Twin.",
+        "report_id": report.id,
+        "metrics_confirmed": len(saved_metric_records),
+        "alerts_generated": new_alerts
+    }
+
+
+@app.delete("/api/clinic/reports/{report_id}")
+def delete_clinical_report(report_id: str, db: Session = Depends(get_db)):
+    """Delete a report document and its associated records."""
+    report = db.query(models.ClinicalReportDocument)\
+        .filter(models.ClinicalReportDocument.id == report_id).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    # Remove metrics
+    db.query(models.ClinicalMetricRecord)\
+        .filter(models.ClinicalMetricRecord.report_id == report_id).delete()
+    db.delete(report)
+    db.commit()
+    return {"status": "success", "message": "Report removed."}
+
+
+@app.get("/api/clinic/metrics/trends/{user_id}")
+def get_clinical_metric_trends(user_id: str, db: Session = Depends(get_db)):
+    """
+    Returns grouped time-series metrics ingested from clinical reports,
+    along with predictive trend regressions, confidence cones, and history thresholds.
+    """
+    records = db.query(models.ClinicalMetricRecord)\
+        .filter(models.ClinicalMetricRecord.user_id == user_id)\
+        .order_by(models.ClinicalMetricRecord.recorded_at.asc()).all()
+
+    grouped: Dict[str, Dict[str, Any]] = {}
+    for r in records:
+        if r.metric_key not in grouped:
+            grouped[r.metric_key] = {
+                "metric_key": r.metric_key,
+                "canonical_name": r.canonical_name,
+                "unit": r.unit,
+                "ref_low": r.ref_low,
+                "ref_high": r.ref_high,
+                "points": []
+            }
+        grouped[r.metric_key]["points"].append({
+            "id": r.id,
+            "report_id": r.report_id,
+            "date": r.recorded_at.strftime("%Y-%m-%d"),
+            "timestamp": r.recorded_at.isoformat(),
+            "value": r.value,
+            "status": r.status,
+            "confidence_tier": r.confidence_tier,
+            "source": r.source
+        })
+
+    # Compute prediction forecasts for each metric
+    trends = []
+    for mkey, data in grouped.items():
+        hist_pts = [{"date": p["timestamp"], "value": p["value"]} for p in data["points"]]
+        prediction = clinic_predictor.compute_metric_prediction(
+            metric_key=mkey,
+            canonical_name=data["canonical_name"],
+            unit=data["unit"],
+            historical_points=hist_pts,
+            ref_low=data["ref_low"],
+            ref_high=data["ref_high"],
+            forecast_days=60
+        )
+        latest_pt = data["points"][-1] if data["points"] else None
+        trends.append({
+            "metric_key": mkey,
+            "canonical_name": data["canonical_name"],
+            "unit": data["unit"],
+            "ref_low": data["ref_low"],
+            "ref_high": data["ref_high"],
+            "history": data["points"],
+            "latest_value": latest_pt["value"] if latest_pt else None,
+            "latest_status": latest_pt["status"] if latest_pt else "normal",
+            "prediction": prediction
+        })
+
+    return {
+        "user_id": user_id,
+        "total_metrics_tracked": len(trends),
+        "metrics": trends
+    }
+
+
+@app.get("/api/clinic/notifications/{user_id}")
+def get_clinical_notifications(user_id: str, db: Session = Depends(get_db)):
+    """
+    Fetch all informational clinical prediction notifications and anomaly alerts.
+    Always includes the mandatory non-diagnostic disclaimer.
+    """
+    alerts = db.query(models.ClinicalPredictionAlert)\
+        .filter(models.ClinicalPredictionAlert.user_id == user_id)\
+        .order_by(models.ClinicalPredictionAlert.created_at.desc()).all()
+
+    return [{
+        "id": a.id,
+        "metric_key": a.metric_key,
+        "canonical_name": a.canonical_name,
+        "alert_type": a.alert_type,
+        "severity": a.severity,
+        "title": a.title,
+        "message": a.message,
+        "disclaimer": a.disclaimer,
+        "suggested_action": a.suggested_action,
+        "trigger_value": a.trigger_value,
+        "expected_range_min": a.expected_range_min,
+        "expected_range_max": a.expected_range_max,
+        "is_read": a.is_read,
+        "created_at": a.created_at.isoformat() if a.created_at else None
+    } for a in alerts]
+
+
+@app.patch("/api/clinic/notifications/{alert_id}/read")
+def mark_clinical_notification_read(alert_id: int, db: Session = Depends(get_db)):
+    """Mark an informational notification as read."""
+    alert = db.query(models.ClinicalPredictionAlert)\
+        .filter(models.ClinicalPredictionAlert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    alert.is_read = True
+    db.commit()
+    return {"status": "success", "alert_id": alert_id, "is_read": True}
+
+
+@app.post("/api/clinic/seed-demo/{user_id}")
+def seed_clinical_demo_data(user_id: str, db: Session = Depends(get_db)):
+    """
+    Seeds realistic longitudinal lab panel reports (4 sequential reports spanning 6 months)
+    with blood glucose, lipid profile, metabolic markers, HbA1c, and Vitamin D.
+    Enables instant testing of predictive trend cones, confidence tiers, and informational alerts.
+    """
+    now = datetime.datetime.utcnow()
+    intervals = [
+        {"days_ago": 180, "name": "Quest Diagnostics - Comprehensive Metabolic & Lipid Panel", "lab": "Quest Diagnostics", "glucose": 92.0, "hba1c": 5.3, "cholesterol": 184.0, "ldl": 102.0, "hdl": 56.0, "triglycerides": 120.0, "creatinine": 0.94, "egfr": 99.0, "vit_d": 24.0, "hemoglobin": 14.8},
+        {"days_ago": 120, "name": "LabCorp - Routine Wellness Screening Panel", "lab": "LabCorp Diagnostics", "glucose": 96.0, "hba1c": 5.5, "cholesterol": 194.0, "ldl": 114.0, "hdl": 53.0, "triglycerides": 138.0, "creatinine": 0.98, "egfr": 96.0, "vit_d": 29.0, "hemoglobin": 14.6},
+        {"days_ago": 60, "name": "BioReference - Metabolic Progress Check", "lab": "BioReference Laboratories", "glucose": 101.0, "hba1c": 5.7, "cholesterol": 208.0, "ldl": 126.0, "hdl": 49.0, "triglycerides": 158.0, "creatinine": 1.02, "egfr": 93.0, "vit_d": 33.0, "hemoglobin": 14.5},
+        {"days_ago": 7, "name": "Apex Pathology - Quarterly Clinical Follow-up", "lab": "Apex Pathology Associates", "glucose": 107.0, "hba1c": 5.9, "cholesterol": 222.0, "ldl": 138.0, "hdl": 46.0, "triglycerides": 178.0, "creatinine": 1.06, "egfr": 89.0, "vit_d": 38.0, "hemoglobin": 14.3}
+    ]
+
+    metric_defs = [
+        ("fasting_blood_glucose", "Fasting Blood Glucose", "mg/dL", 70.0, 99.0, "glucose"),
+        ("hba1c", "Hemoglobin A1c (HbA1c)", "%", 4.0, 5.6, "hba1c"),
+        ("total_cholesterol", "Total Cholesterol", "mg/dL", 125.0, 200.0, "cholesterol"),
+        ("ldl_cholesterol", "LDL Cholesterol", "mg/dL", 0.0, 100.0, "ldl"),
+        ("hdl_cholesterol", "HDL Cholesterol", "mg/dL", 40.0, 100.0, "hdl"),
+        ("triglycerides", "Triglycerides", "mg/dL", 0.0, 150.0, "triglycerides"),
+        ("serum_creatinine", "Serum Creatinine", "mg/dL", 0.7, 1.3, "creatinine"),
+        ("egfr", "eGFR", "mL/min/1.73m²", 60.0, 120.0, "egfr"),
+        ("vitamin_d", "Vitamin D (25-OH)", "ng/mL", 30.0, 100.0, "vit_d"),
+        ("hemoglobin", "Hemoglobin", "g/dL", 13.5, 17.5, "hemoglobin")
+    ]
+
+    created_reports = []
+    for step in intervals:
+        report_dt = now - datetime.timedelta(days=step["days_ago"])
+        report_id = f"demo_rpt_{uuid.uuid4().hex[:8]}"
+        
+        extracted_list = []
+        for key, name, unit, r_low, r_high, data_key in metric_defs:
+            val = float(step[data_key])
+            status = "normal"
+            if val < r_low:
+                status = "low"
+            elif val > r_high:
+                status = "high"
+            extracted_list.append({
+                "metric_key": key,
+                "canonical_name": name,
+                "value": val,
+                "unit": unit,
+                "ref_low": r_low,
+                "ref_high": r_high,
+                "status": status,
+                "confidence": "high",
+                "confidence_score": 0.98
+            })
+
+        doc = models.ClinicalReportDocument(
+            id=report_id,
+            user_id=user_id,
+            original_filename=f"{step['name']}.pdf",
+            stored_filepath=f"uploads/reports/{report_id}.pdf",
+            file_url=f"/uploads/reports/sample_{step['days_ago']}d.pdf",
+            file_type="pdf",
+            file_size_bytes=248500,
+            report_type="lab_panel",
+            lab_name=step["lab"],
+            report_date=report_dt,
+            status="confirmed",
+            raw_ocr_json=json.dumps({"lines": [{"text": f"{step['name']} - {step['lab']}", "confidence": 0.99}]}),
+            extracted_data_json=json.dumps(extracted_list),
+            confirmed_data_json=json.dumps(extracted_list),
+            total_metrics_found=len(extracted_list),
+            review_notes="Demo multi-month baseline verified and ingested into Digital Twin."
+        )
+        db.add(doc)
+
+        for item in extracted_list:
+            rec = models.ClinicalMetricRecord(
+                user_id=user_id,
+                report_id=report_id,
+                metric_key=item["metric_key"],
+                canonical_name=item["canonical_name"],
+                value=item["value"],
+                unit=item["unit"],
+                ref_low=item["ref_low"],
+                ref_high=item["ref_high"],
+                status=item["status"],
+                confidence_tier="high",
+                confidence_score=0.98,
+                recorded_at=report_dt,
+                source="clinicReportOCR"
+            )
+            db.add(rec)
+
+        created_reports.append(doc)
+
+    db.commit()
+
+    # Generate alerts for glucose and cholesterol upward trends
+    fbg_pred = clinic_predictor.compute_metric_prediction(
+        metric_key="fasting_blood_glucose",
+        canonical_name="Fasting Blood Glucose",
+        unit="mg/dL",
+        historical_points=[
+            {"date": (now - datetime.timedelta(days=180)).isoformat(), "value": 92.0},
+            {"date": (now - datetime.timedelta(days=120)).isoformat(), "value": 96.0},
+            {"date": (now - datetime.timedelta(days=60)).isoformat(), "value": 101.0},
+            {"date": (now - datetime.timedelta(days=7)).isoformat(), "value": 107.0}
+        ],
+        ref_low=70.0,
+        ref_high=99.0,
+        forecast_days=60
+    )
+    anomaly_fbg = clinic_predictor.evaluate_clinical_anomaly(
+        metric_name="Fasting Blood Glucose",
+        unit="mg/dL",
+        latest_value=107.0,
+        ref_low=70.0,
+        ref_high=99.0,
+        prediction_result=fbg_pred
+    )
+    if anomaly_fbg:
+        db.add(models.ClinicalPredictionAlert(
+            user_id=user_id,
+            metric_key="fasting_blood_glucose",
+            canonical_name="Fasting Blood Glucose",
+            alert_type=anomaly_fbg["alert_type"],
+            severity=anomaly_fbg["severity"],
+            title=anomaly_fbg["title"],
+            message=anomaly_fbg["message"],
+            disclaimer=anomaly_fbg["disclaimer"],
+            suggested_action=anomaly_fbg["suggested_action"],
+            trigger_value=107.0,
+            expected_range_min=anomaly_fbg.get("expected_range_min"),
+            expected_range_max=anomaly_fbg.get("expected_range_max"),
+            is_read=False
+        ))
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Seeded 4 comprehensive longitudinal clinical reports across 6 months for user '{user_id}'.",
+        "reports_count": len(created_reports),
+        "metrics_per_report": len(metric_defs)
+    }
 
 
 # ── Serve Built Frontend SPA Static Files (Production Render Deployment) ─────

@@ -148,27 +148,27 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-24 md:pb-0">
       <Sidebar />
 
       {/* ── Main Content ── */}
-      <main className="flex-1 md:overflow-y-auto p-4 md:p-6 space-y-6 anim-fade z-10 relative pointer-events-none">
+      <main className="flex-1 md:overflow-y-auto p-4 sm:p-6 space-y-6 anim-fade z-10 relative pointer-events-none">
 
         {/* Header */}
-        <header className="flex items-center justify-between pointer-events-auto">
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pointer-events-auto">
           <div>
-            <h1 className="text-2xl font-black">Digital Twin Overview</h1>
-            <p className="text-muted-foreground text-sm mt-0.5">Last updated just now</p>
+            <h1 className="text-xl sm:text-2xl font-black">Digital Twin Overview</h1>
+            <p className="text-muted-foreground text-xs sm:text-sm mt-0.5">Last updated just now</p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="badge badge-purple">General Human Mode</span>
-            <span className="badge badge-cyan">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            <span className="badge badge-purple text-[10px]">General Human</span>
+            <span className="badge badge-cyan text-[10px]">
               <span className="w-1.5 h-1.5 rounded-full bg-primary" />
               Simulated
             </span>
             <button
               onClick={() => setLocation('/capture')}
-              className="btn-primary text-xs py-2 px-4 ml-2"
+              className="btn-primary text-xs py-2 px-3.5 sm:px-4 cursor-pointer"
             >
               + New Session
             </button>

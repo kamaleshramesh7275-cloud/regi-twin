@@ -68,7 +68,7 @@ export default function ClinicRosterPage() {
   const riskCfg = (level: string) => RISK_CONFIG[level] || RISK_CONFIG.Unknown;
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen text-foreground md:overflow-hidden pb-[72px] md:pb-0 bg-background">
+    <div className="flex flex-col md:flex-row min-h-screen text-foreground md:overflow-hidden pb-24 md:pb-0 bg-background">
       <Sidebar />
       <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6">
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">

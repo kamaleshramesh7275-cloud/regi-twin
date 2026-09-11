@@ -108,7 +108,7 @@ export default function DemoDashboard() {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen bg-background text-foreground md:overflow-hidden pb-[72px] md:pb-0">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen bg-background text-foreground md:overflow-hidden pb-24 md:pb-0">
 
       {/* ── Left Sidebar (Bottom Nav on Mobile) ── */}
       <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-md md:relative md:w-60 flex md:flex-col border-t md:border-t-0 md:border-r border-border p-2 md:p-4 shrink-0 shadow-[0_-4px_10px_-2px_rgba(0,0,0,0.05)] md:shadow-none h-[72px] md:h-auto overflow-x-auto md:overflow-visible">

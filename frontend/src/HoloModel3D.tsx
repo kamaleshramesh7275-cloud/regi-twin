@@ -1,11 +1,11 @@
-import React, { useState, useRef, useMemo, Suspense } from "react";
+import React, { useState, useEffect, useRef, useMemo, Suspense } from "react";
 import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { OBJLoader } from "three-stdlib";
 import HoloOverlay from "./HoloOverlay";
-import { AlertTriangle, Flame, Layers } from "lucide-react";
+import { AlertTriangle, Flame, Layers, Sparkles } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAvatar } from "./AvatarContext";
 
@@ -317,14 +317,44 @@ function RealHumanoid3D({
   );
 }
 
+// ── 3D Asset Loading Overlay ───────────────────────────────────────────────
+function ModelLoadingOverlay() {
+  return (
+    <Html center zIndexRange={[100, 0]}>
+      <div className="flex flex-col items-center justify-center p-6 rounded-3xl bg-black/85 backdrop-blur-2xl border border-cyan-500/30 text-white shadow-2xl min-w-[240px] text-center anim-fade">
+        <div className="relative w-14 h-14 mb-3 flex items-center justify-center">
+          <div className="absolute inset-0 rounded-full border-2 border-cyan-500/20 animate-ping" />
+          <div className="w-12 h-12 rounded-full border-2 border-cyan-400 border-t-transparent animate-spin" />
+          <Sparkles className="w-5 h-5 text-cyan-400 absolute" />
+        </div>
+        <div className="text-xs font-black uppercase tracking-wider text-cyan-300">Loading 3D Twin Mesh</div>
+        <div className="text-[10px] text-slate-400 mt-1">Calibrating anatomical geometry...</div>
+      </div>
+    </Html>
+  );
+}
+
 // ── Main HoloModel3D Viewport ─────────────────────────────────────────────────
 export default function HoloModel3D(props: HoloModel3DProps) {
   const [heatMapEnabled, setHeatMapEnabled] = useState(true);
   const [preset, setPreset] = useState<SkinPreset>("ecorche");
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const activeMode = props.viewMode ?? "3d";
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const cyclePreset = () =>
     setPreset(p => p === "ecorche" ? "clay" : p === "clay" ? "realistic" : p === "realistic" ? "anatomy" : p === "anatomy" ? "thermal" : "ecorche");
+
+  // Adaptive camera position for mobile portrait vs desktop landscape
+  const cameraPos: [number, number, number] = isMobile ? [0, 0.82, 3.9] : [0, 0.95, 2.8];
+  const cameraFov = isMobile ? 48 : 40;
 
   return (
     <div className="absolute inset-0 z-0 overflow-hidden" style={{ background: "#3e424a" }}>
@@ -333,50 +363,64 @@ export default function HoloModel3D(props: HoloModel3DProps) {
         <HoloOverlay {...props} />
       ) : (
         <>
-          <Canvas shadows camera={{ position: [0, 0.95, 2.8], fov: 40 }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.15 }}>
+          <Canvas 
+            shadows={!isMobile} 
+            camera={{ position: cameraPos, fov: cameraFov }} 
+            gl={{ 
+              antialias: true, 
+              powerPreference: "high-performance",
+              toneMapping: THREE.ACESFilmicToneMapping, 
+              toneMappingExposure: 1.15 
+            }}
+          >
             <color attach="background" args={["#484d56"]} />
-            <ambientLight intensity={0.65} color="#edf1f7" />
-            <directionalLight position={[2.2, 4.0, 3.2]} intensity={3.8} color="#ffffff" castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} shadow-camera-near={0.5} shadow-camera-far={8} shadow-camera-left={-2} shadow-camera-right={2} shadow-camera-top={2.5} shadow-camera-bottom={-0.5} />
+            <ambientLight intensity={0.7} color="#edf1f7" />
+            <directionalLight position={[2.2, 4.0, 3.2]} intensity={3.8} color="#ffffff" castShadow={!isMobile} />
             <directionalLight position={[-2.4, 2.0, 2.2]} intensity={2.0} color="#dce6f2" />
             <directionalLight position={[0.2, 2.8, -3.0]} intensity={2.8} color="#f4e8e1" />
             <pointLight position={[0, 0.6, 1.8]} intensity={1.0} color="#f5e6de" />
-            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
+            
+            <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow={!isMobile}>
               <planeGeometry args={[6, 6]} />
               <shadowMaterial opacity={0.35} />
             </mesh>
 
-            <Suspense fallback={null}>
+            <Suspense fallback={<ModelLoadingOverlay />}>
               <RealHumanoid3D {...props} heatMapEnabled={heatMapEnabled} preset={preset} />
             </Suspense>
 
-            <OrbitControls target={[0, 0.88, 0]} enablePan={false} minPolarAngle={Math.PI / 6} maxPolarAngle={Math.PI / 1.6} minDistance={1.5} maxDistance={4.2} dampingFactor={0.06} enableDamping />
-            <EffectComposer>
-              <Bloom luminanceThreshold={0.80} luminanceSmoothing={0.9} intensity={0.25} height={256} />
-              <Vignette eskil={false} offset={0.35} darkness={0.50} />
-            </EffectComposer>
+            <OrbitControls 
+              target={[0, 0.85, 0]} 
+              enablePan={false} 
+              minPolarAngle={Math.PI / 6} 
+              maxPolarAngle={Math.PI / 1.6} 
+              minDistance={1.2} 
+              maxDistance={5.0} 
+              dampingFactor={0.06} 
+              enableDamping 
+            />
+            
+            {!isMobile && (
+              <EffectComposer>
+                <Bloom luminanceThreshold={0.80} luminanceSmoothing={0.9} intensity={0.25} height={256} />
+                <Vignette eskil={false} offset={0.35} darkness={0.50} />
+              </EffectComposer>
+            )}
           </Canvas>
 
-          <div className="absolute top-20 left-6 z-20 flex flex-col gap-2 pointer-events-auto">
-            <button onClick={() => setHeatMapEnabled(p => !p)} className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 backdrop-blur-xl border shadow-lg transition-all cursor-pointer ${heatMapEnabled ? "bg-orange-500/20 border-orange-400/50 text-orange-300 shadow-orange-500/15" : "bg-black/60 border-white/10 text-gray-400 hover:text-white"}`}>
-              <Flame className={`w-3.5 h-3.5 ${heatMapEnabled ? "text-orange-400 animate-pulse" : "text-gray-500"}`} /> Strain Heat Map {heatMapEnabled ? "ON" : "OFF"}
+          {/* Preset Controls */}
+          <div className="absolute top-16 md:top-20 left-4 md:left-6 z-20 flex flex-row md:flex-col gap-2 pointer-events-auto">
+            <button onClick={() => setHeatMapEnabled(p => !p)} className={`px-3 py-1.5 rounded-xl text-[11px] md:text-xs font-bold flex items-center gap-1.5 backdrop-blur-xl border shadow-lg transition-all cursor-pointer ${heatMapEnabled ? "bg-orange-500/20 border-orange-400/50 text-orange-300 shadow-orange-500/15" : "bg-black/60 border-white/10 text-gray-400 hover:text-white"}`}>
+              <Flame className={`w-3.5 h-3.5 ${heatMapEnabled ? "text-orange-400 animate-pulse" : "text-gray-500"}`} /> Heat Map {heatMapEnabled ? "ON" : "OFF"}
             </button>
-            <button onClick={cyclePreset} className="px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 bg-black/60 border border-white/10 text-gray-300 hover:text-white backdrop-blur-xl shadow-lg transition-all cursor-pointer">
+            <button onClick={cyclePreset} className="px-3 py-1.5 rounded-xl text-[11px] md:text-xs font-bold flex items-center gap-1.5 bg-black/60 border border-white/10 text-gray-300 hover:text-white backdrop-blur-xl shadow-lg transition-all cursor-pointer">
               <Layers className="w-3.5 h-3.5 text-slate-400" /> {SKIN_PRESETS[preset].label}
             </button>
           </div>
 
-          <div className="absolute bottom-4 left-4 z-20 pointer-events-none flex items-center gap-2 bg-black/50 backdrop-blur-md border border-white/10 px-3.5 py-1.5 rounded-xl text-[11px] text-white/60 shadow-lg">
+          <div className="hidden md:flex absolute bottom-4 left-4 z-20 pointer-events-none items-center gap-2 bg-black/50 backdrop-blur-md border border-white/10 px-3.5 py-1.5 rounded-xl text-[11px] text-white/60 shadow-lg">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
             <span>Digital Twin · Real-time kinematic strain analysis active</span>
-          </div>
-          
-          {/* Legend */}
-          <div className="absolute bottom-4 right-4 z-20 pointer-events-none bg-black/60 backdrop-blur-md border border-white/10 p-3 rounded-xl flex flex-col gap-2 text-xs">
-             <div className="font-bold text-white mb-1">Strain Legend</div>
-             <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-red-500" /> High Risk (&gt;60%)</div>
-             <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-amber-500" /> Elevated (31-60%)</div>
-             <div className="flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-emerald-500" /> Healthy (0-30%)</div>
-             <div className="flex items-center gap-2 mt-1 pt-1 border-t border-white/10 text-white/50 italic">No Data = Clean Skin</div>
           </div>
         </>
       )}

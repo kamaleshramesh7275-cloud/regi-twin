@@ -1,0 +1,84 @@
+{
+  "id": "/?source=pwa",
+  "name": "PhysioTwin — Biomechanical Digital Twin & Clinical Intelligence",
+  "short_name": "PhysioTwin",
+  "description": "Elite 3D biomechanical motion analysis, acute-to-chronic training strain forecasting, and clinical laboratory intelligence.",
+  "theme_color": "#070A10",
+  "background_color": "#070A10",
+  "display": "standalone",
+  "display_override": [
+    "window-controls-overlay",
+    "standalone",
+    "fullscreen"
+  ],
+  "orientation": "portrait-primary",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "categories": [
+    "health",
+    "fitness",
+    "medical"
+  ],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/maskable-icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Digital Twin",
+      "short_name": "Twin",
+      "description": "Inspect 3D holographic digital twin posture and mobility",
+      "url": "/twin",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Workout Tracker",
+      "short_name": "Workouts",
+      "description": "Log and analyze training strain and volume",
+      "url": "/workout",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Clinic Portal",
+      "short_name": "Clinic",
+      "description": "OCR lab reports and predictive biomarker trends",
+      "url": "/clinic",
+      "icons": [
+        {
+          "src": "/pwa-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}
