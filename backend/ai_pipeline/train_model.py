@@ -11,14 +11,22 @@ import torch
 from datasets import load_dataset
 
 # Fallback imports with descriptive instructions
+import sys
 try:
     from unsloth import FastLanguageModel, PatchDPOTrainer
     from trl import SFTTrainer, DPOTrainer
+    try:
+        from trl import DPOConfig
+    except ImportError:
+        from transformers import TrainingArguments as DPOConfig
     from transformers import TrainingArguments
     PatchDPOTrainer() # Apply DPO patch from Unsloth
-except ImportError:
-    print("Error: Unsloth and TRL packages required.")
-    print("Install via: pip install unsloth trl transformers datasets accelerate bitsandbytes")
+except ImportError as e:
+    print(f"\n[ERROR] Required packages missing or failed to load: {e}")
+    print("Please install required dependencies in Colab using:")
+    print("!pip install \"unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git\"")
+    print("!pip install --no-deps trl peft accelerate bitsandbytes datasets")
+    sys.exit(1)
 
 # Model configuration
 MAX_SEQ_LENGTH = 4096
@@ -29,10 +37,28 @@ DEFAULT_MODEL_NAME = "unsloth/Qwen2.5-7B-Instruct-bnb-4bit"
 def train_stage1_sft(model, tokenizer, sft_dataset_path: str, output_dir: str):
     """Stage 1: Supervised Fine-Tuning"""
     print("\n==========================================")
-    print("🚀 Stage 1: Starting Supervised Fine-Tuning (SFT)")
+    print("Stage 1: Starting Supervised Fine-Tuning (SFT)")
     print("==========================================")
     
     dataset = load_dataset("json", data_files=sft_dataset_path, split="train")
+    
+    # Format messages into ChatML prompt string format for SFTTrainer
+    def formatting_prompts_func(examples):
+        convos = examples["messages"]
+        texts = []
+        for convo in convos:
+            try:
+                # Apply model tokenizer chat template if available
+                text = tokenizer.apply_chat_template(convo, tokenize=False, add_generation_prompt=False)
+            except Exception:
+                # Fallback ChatML manual formatter
+                text = ""
+                for msg in convo:
+                    text += f"<|im_start|>{msg['role']}\n{msg['content']}<|im_end|>\n"
+            texts.append(text)
+        return {"text": texts}
+
+    dataset = dataset.map(formatting_prompts_func, batched=True)
     
     # Target all linear projection modules for QLoRA
     model = FastLanguageModel.get_peft_model(
@@ -50,10 +76,10 @@ def train_stage1_sft(model, tokenizer, sft_dataset_path: str, output_dir: str):
         model=model,
         tokenizer=tokenizer,
         train_dataset=dataset,
-        dataset_text_field="messages",
+        dataset_text_field="text",
         max_seq_length=MAX_SEQ_LENGTH,
         dataset_num_proc=2,
-        packing=False, # Set to True for larger datasets to speed up training
+        packing=False,
         args=TrainingArguments(
             per_device_train_batch_size=2,
             gradient_accumulation_steps=4,
@@ -91,15 +117,15 @@ def train_stage2_dpo(model, tokenizer, dpo_dataset_path: str, output_dir: str):
     dpo_trainer = DPOTrainer(
         model=model,
         ref_model=None, # Unsloth handles implicit reference model without doubling VRAM
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         beta=0.1,
         train_dataset=dpo_dataset,
         max_length=MAX_SEQ_LENGTH,
         max_prompt_length=2048,
-        args=TrainingArguments(
+        args=DPOConfig(
             per_device_train_batch_size=1,
             gradient_accumulation_steps=8,
-            warmup_ratio=0.1,
+            warmup_steps=2,
             max_steps=20, # Increase for production alignment (e.g. 100-300)
             learning_rate=5e-6,
             fp16=not torch.cuda.is_bf16_supported(),
