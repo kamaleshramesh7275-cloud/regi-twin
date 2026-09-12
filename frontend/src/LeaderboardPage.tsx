@@ -23,7 +23,7 @@ export default function LeaderboardPage() {
       try {
         const [lbData, dashboardData] = await Promise.all([
           api.getLeaderboard(),
-          api.getDashboard(user?.uid || "demo_user")
+          api.getDashboard(user?.uid || "")
         ]);
         setLeaderboardData(lbData);
         setCapabilityMark(dashboardData.capability_mark || 0);

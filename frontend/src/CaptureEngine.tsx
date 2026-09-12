@@ -106,7 +106,7 @@ function PostureBar({ label, value, good }: { label: string; value: number; good
 function CaptureEngineContent() {
   const [, setLocation] = useLocation();
   const { user } = useAuth();
-  const currentUserId = user?.uid || auth.currentUser?.uid || "demo_user";
+  const currentUserId = user?.uid || auth.currentUser?.uid || "";
 
   // Mode & stage
   const [mode, setMode] = useState<Mode>("standing-posture");
