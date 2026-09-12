@@ -250,53 +250,53 @@ regi-twin/
 PhysioTwin combines quantitative kinematics with sports-science load formulas:
 
 ### 1. Kinematic Joint Angle Calculation
-For three consecutive 3D joint landmarks $A(x_1, y_1, z_1)$, $B(x_2, y_2, z_2)$ (vertex), and $C(x_3, y_3, z_3)$, the joint angle $\theta$ is computed via vector dot product:
+For three consecutive 3D joint landmarks A(x1, y1, z1), B(x2, y2, z2) (vertex), and C(x3, y3, z3), the joint angle θ is computed via vector dot product:
 
-$$\vec{u} = A - B, \quad \vec{v} = C - B$$
+- Vector u = A - B = (x1 - x2, y1 - y2, z1 - z2)
+- Vector v = C - B = (x3 - x2, y3 - y2, z3 - z2)
+- θ = arccos( (u · v) / (|u| × |v|) ) × (180 / π)
 
-$$\theta = \arccos\left(\frac{\vec{u} \cdot \vec{v}}{\|\vec{u}\| \|\vec{v}\|}\right) \times \frac{180^\circ}{\pi}$$
-
-### 2. Bilateral Coronal Symmetry ($S_{bilateral}$)
+### 2. Bilateral Coronal Symmetry (S_bilateral)
 Evaluates asymmetry between contralateral joint pairs (e.g. left vs. right knee flexion or shoulder elevation):
 
-$$S_{bilateral} = 1.0 - \min\left(1.0, \frac{|\theta_{left} - \theta_{right}|}{\max(\theta_{left}, \theta_{right})}\right)$$
+- S_bilateral = 1.0 - min( 1.0, |θ_left - θ_right| / max(θ_left, θ_right) )
 
 A score of `1.0` represents perfect bilateral symmetry.
 
-### 3. Postural Stability Score ($S_{stability}$)
+### 3. Postural Stability Score (S_stability)
 Measures center-of-mass sway variance during static holds or dynamic transitions:
 
-$$S_{stability} = \max\left(0.0, 1.0 - k \cdot \sigma^2_{CoM}\right)$$
+- S_stability = max( 0.0, 1.0 - k × σ²_CoM )
 
-where $\sigma^2_{CoM}$ is the spatial variance of midpoint hip/shoulder coordinates across video frames.
+where σ²_CoM is the spatial variance of midpoint hip/shoulder coordinates across video frames.
 
 ### 4. Holistic Capability Profile (6-Dimensional Vector)
-The capability state vector $\mathbf{C} = [M, S, Q, C, R, Reserve]$ is computed over rolling sessions:
-- **Mobility ($M$):** Mean active Range of Motion normalized to normative physiological ranges ($0-100$).
-- **Stability ($S$):** Mean stability score $\times 100$.
-- **Quality ($Q$):** Mean bilateral symmetry score $\times 100$.
-- **Cardiovascular Efficiency ($C$):** Exertion response vs. recovery baseline ($0-100$).
-- **Recovery State ($R$):** Base recovery modified by nutritional support and workout strain:
-  $$R = \text{clamp}\left(0, 100, R_{base} - 5 \cdot N_{heavy\_workouts} + 3 \cdot N_{high\_protein\_days}\right)$$
-- **Capability Reserve ($Reserve$):** Metabolic energy buffer available before fatigue-induced kinematic breakdown occurs:
-  $$Reserve = \text{clamp}\left(0, 100, Reserve_{base} - 3 \cdot N_{heavy\_workouts} + 2 \cdot N_{high\_protein\_days}\right)$$
+The capability state vector C = [Mobility, Stability, Quality, Cardiovascular, Recovery, Reserve] is computed over rolling sessions:
+- **Mobility (M):** Mean active Range of Motion normalized to normative physiological ranges (0 to 100).
+- **Stability (S):** Mean stability score × 100.
+- **Quality (Q):** Mean bilateral symmetry score × 100.
+- **Cardiovascular Efficiency (C):** Exertion response vs. recovery baseline (0 to 100).
+- **Recovery State (R):** Base recovery modified by nutritional support and workout strain:
+  - R = clamp(0, 100, R_base - 5 × N_heavy_workouts + 3 × N_high_protein_days)
+- **Capability Reserve (Reserve):** Metabolic energy buffer available before fatigue-induced kinematic breakdown occurs:
+  - Reserve = clamp(0, 100, Reserve_base - 3 × N_heavy_workouts + 2 × N_high_protein_days)
 
 ### 5. Anatomical Zone Risk Formulas
 Joint risks are computed dynamically from angular deviations:
-- **Knee Joint Risk:** $Z_{knee} = \min(100, 20 + \theta_{hip\_tilt} \times 5)$
-- **Lumbar Spine Risk:** $Z_{lumbar} = \min(100, 30 + (\theta_{shoulder\_tilt} + \theta_{hip\_tilt}) \times 2)$
-- **Cervical Spine Risk:** $Z_{cervical} = \min(100, 30 + \theta_{forward\_head} \times 3)$
-- **Shoulder Girdle Risk:** $Z_{shoulder} = \min(100, 20 + \theta_{shoulder\_tilt} \times 4)$
+- **Knee Joint Risk:** Z_knee = min(100, 20 + θ_hip_tilt × 5)
+- **Lumbar Spine Risk:** Z_lumbar = min(100, 30 + (θ_shoulder_tilt + θ_hip_tilt) × 2)
+- **Cervical Spine Risk:** Z_cervical = min(100, 30 + θ_forward_head × 3)
+- **Shoulder Girdle Risk:** Z_shoulder = min(100, 20 + θ_shoulder_tilt × 4)
 
 ### 6. Acute-to-Chronic Workload Ratio (ACWR)
 Used to monitor training load progression from connected workout apps (Hevy):
 
-$$ACWR = \frac{\text{Acute Workload (Last 7 Days Rolling Volume)}}{\text{Chronic Workload (Last 28 Days Rolling Volume / 4)}}$$
+- ACWR = (Acute Workload: Last 7 Days Rolling Volume) / (Chronic Workload: Last 28 Days Rolling Volume / 4)
 
-- **$< 0.8$:** Under-training / fitness decay
-- **$0.8 - 1.3$:** Optimal "Sweet Spot" (minimal injury risk)
-- **$1.3 - 1.5$:** Elevated Caution Zone
-- **$> 1.5$:** "Danger Zone" (exponentially increased soft-tissue injury risk)
+- **Less than 0.8:** Under-training / fitness decay
+- **0.8 to 1.3:** Optimal "Sweet Spot" (minimal injury risk)
+- **1.3 to 1.5:** Elevated Caution Zone
+- **Greater than 1.5:** "Danger Zone" (exponentially increased soft-tissue injury risk)
 
 ---
 

@@ -997,27 +997,51 @@ All requests:
 
 #### `CaptureEngine.tsx` — Core Vision Engine
 
-The largest file (1,597 lines) and the heart of the platform. It implements a multi-stage UI wizard for biomechanical assessments.
+The largest frontend component and the heart of the platform. It implements a multi-stage UI wizard for biomechanical assessments and converts standard camera feeds into a 60 FPS 3D kinematic analysis suite.
 
 **Capture Modes:**
 
-| Mode | Description |
-|---|---|
-| `sit-to-stand` | Counts sit-to-stand reps; measures ROM, speed, symmetry |
-| `standing-posture` | Static posture analysis via live video |
-| `squat-analysis` | Squat depth and symmetry analysis |
-| `gait-analysis` | Walking gait pattern analysis (reserved) |
-| `medical-report` | Upload a medical report PDF/image |
-| `static-image` | Upload a static posture photo for analysis |
+| Mode | Description | Key Biomechanical Metrics |
+|---|---|---|
+| `sit-to-stand` | Repetition counter, concentric/eccentric speed, ROM | Min/max knee angle, bilateral symmetry %, rep duration |
+| `standing-posture` | Static posture hold & plumb line alignment | Shoulder tilt (°), hip tilt (°), forward head offset (px/cm) |
+| `squat-analysis` | Deep squat kinematic breakdown | Knee valgus collapse (θ_valgus), lumbar flexion ("butt wink") |
+| `gait-analysis` | 15-second gait assessment | Step cadence (steps/min), stride width, dynamic hip drop |
+| `medical-report` | Upload clinical PDFs, MRIs, or doctor notes | Tesseract OCR scan parsing mapped to twin timeline |
+| `static-image` | Upload static posture photo for analysis | Static 33-landmark 3D coordinate extractions |
+
+**Exhaustive Data Outputs from Vision Capture:**
+1. **33 3D Spatial Landmarks**: Extracted in real time via MediaPipe Tasks Vision (`pose_landmarker_heavy.task`) with WASM acceleration (0 video frames sent to server).
+2. **Kinematic & Biomechanical Metrics**:
+   - Knee Valgus/Varus Collapse Angle: $\theta_{valgus} = |\text{arctan2}(y_{knee}-y_{hip}, x_{knee}-x_{hip}) - \text{arctan2}(y_{ankle}-y_{knee}, x_{ankle}-x_{knee})|$
+   - Bilateral Coronal Symmetry: $S_{bilateral} = 100 \times \left(1 - \frac{|\theta_L - \theta_R|}{\max(\theta_L, \theta_R)}\right)$
+   - Range of Motion (ROM): Degrees of active angular excursion across repetitions.
+   - Plumb Line Deviations: Lateral shoulder tilt, pelvic tilt, and cranial forward posture offset.
+   - Gait Mechanics: Step cadence, stride width symmetry, and Trendelenburg dynamic hip drop ($>5^\circ$).
+3. **Performance & Exertion Telemetry**:
+   - Repetition counter with concentric/eccentric phase breakdown.
+   - Movement speed and rep tempo.
+   - Postural Stability Score ($S_{stability}$) measuring center-of-mass sway variance ($\sigma^2_{CoM}$).
+   - Micro-tremor fatigue onset calculation.
+4. **Digital Twin Capability Profile & Risk Updates**:
+   - Recomputes 6D Capability Vector: `[Mobility, Stability, Quality, Cardiovascular, Recovery, Reserve]`.
+   - Updates Anatomical Zone Risk Scores: Knee Risk ($Z_{knee}$), Lumbar Risk ($Z_{lumbar}$), Cervical Risk ($Z_{cervical}$), Shoulder Risk ($Z_{shoulder}$).
+5. **Real-time Diagnostic & Coaching Outputs**:
+   - **Annotated Skeleton Overlay Canvas**: Green/Amber/Red colored landmark connectors.
+   - **Speech Synthesis Audio Cues**: Immediate voice feedback ("Push your knees out", "Stabilize your hips").
+   - **Groq Llama 3.1 LLM Deep Insights**: Automated clinical root-cause analysis and corrective exercise prescription.
+   - **IndexedDB Local Storage**: Raw session blobs stored locally in browser IndexedDB for offline video review.
+
+**Advanced Biomechanical Sub-Components:**
+
+- **Bilateral Symmetry Radar (`BilateralSymmetryRadar.tsx`)**: Real-time side-by-side limb angle & velocity disparity tracking across contralateral joints (hip extension, knee flexion, ankle dorsiflexion, valgus deviation). Calculates limb imbalance index: `Imbalance % = (|θ_L - θ_R| / max(θ_L, θ_R)) * 100`. Scores >12% trigger imbalance alerts.
+- **Ground Reaction Force Estimator (`GRFEstimatorPanel.tsx`)**: Camera-derived vertical ground reaction force ($F_v = m \cdot (g + a_y)$) in Newtons ($N$) and Bodyweight multiples ($BW$) calculated from double-differentiation of hip landmark displacement ($a_y = d^2 y_{hip}/dt^2$). Identifies landing impact forces $> 2.5x BW$.
+- **Spinal Segmental Segmenting (`SpinalSegmentationView.tsx`)**: 3-zone spinal column articulation tracking across Cervical ($0^\circ-15^\circ$), Thoracic ($20^\circ-40^\circ$), and Lumbar ($15^\circ-25^\circ$) regions, categorizing disc strain status as Optimal, Watch, or Warning.
+- **Valgus Velocity Alerts (`ValgusVelocityAlert.tsx`)**: Inward knee collapse angular velocity ($\omega = d\theta_{valgus}/dt$) and acceleration ($\alpha$) tracking. Angular velocities $> 120^\circ/\text{sec}$ trigger high-priority ACL non-contact tear warnings and real-time voice prompts.
+- **Form Decay Tracker (`FormDecayTracker.tsx`)**: Rep-by-rep stability decay analysis tracking symmetry %, valgus angle, and rep duration across multi-rep sets. Automatically pinpoints breakdown set limits (e.g. rep where symmetry drops below 75%) to prevent fatigue-induced soft-tissue injury.
 
 **UI Stages:**
 `landing -> options -> select -> setup -> countdown -> recording -> processing -> done`
-
-**MediaPipe Integration:**
-- Uses `@mediapipe/tasks-vision` with the **full** model (`pose_landmarker_full.task`).
-- Processes video frames in a `requestAnimationFrame` loop.
-- Draws landmarks on a `<canvas>` overlay using `DrawingUtils`.
-- Computes joint angles from 3D landmark coordinates.
 
 **Session Submission:**
 After recording completes, the engine submits a `VisionSession` to the backend via `api.submitVisionSession()`, which triggers automatic capability profile recomputation.
@@ -1094,7 +1118,34 @@ Unified login/register page with:
 
 #### `LeaderboardPage.tsx` — Community Ranking
 
-Fetches and displays the leaderboard via `api.getLeaderboard()`. Shows username, score, and rank change indicator.
+Fetches global peer capability rankings via `api.getLeaderboard()`. Shows rank, username, capability mark, and rank change delta. Clicking any athlete row (`/profile?id=...`) opens their dedicated Athlete Profile.
+
+---
+
+#### `ProfilePage.tsx` — Athlete Profile & Capability Passport
+
+Dedicated user profile hub accessible at `/profile`. Displays:
+- **Biometric Grid** — Age, Sex, Height, Weight, Active Twin Mode, Primary Joint Focus, and overall Injury Risk Index (0% baseline for healthy accounts).
+- **Motion Capture Activity Feed** — Historical vision capture sessions showing date, duration, bilateral symmetry %, and valgus collapse angle.
+- **Connected Integrations Status** — Real-time connection indicators for Strava, Google Health (Fitbit), Hevy, and Nutritionix.
+- **Clinical Badges & Milestones** — Display of unlocked trophies and rehabilitation achievements.
+
+---
+
+#### `AchievementsPage.tsx` — Trophy Room & Milestones
+
+Gamified milestone tracking page featuring unlockable clinical badges and progress rings:
+- 🏆 **Kinematic Pioneer** (10 Vision Capture Scans)
+- 🏆 **Symmetry Master** (95%+ Bilateral Joint Symmetry)
+- 🏆 **Mobility Champion** (140° Knee Flexion without Valgus Collapse)
+- 🏆 **Clinical Clearance** (0% Injury Risk across all 20 anatomical zones)
+- 🏆 **Fueling Consistency** (5 Consecutive Days Macro Logging)
+
+---
+
+#### `ExerciseLibrary.tsx` — Visual Exercise Directory
+
+Comprehensive directory of 1,300+ exercises with animated GIF execution guides, target muscle filters, and equipment selectors. Features a prominent sticky **`← Exit to Dashboard`** header button for fluid mobile/desktop navigation.
 
 ---
 
@@ -1102,8 +1153,14 @@ Fetches and displays the leaderboard via `api.getLeaderboard()`. Shows username,
 
 Components built on `@react-three/fiber` and `@react-three/drei` that:
 - Load `model.glb` (the generated body mesh)
-- Apply risk-based colour gradients (green -> yellow -> red) per mesh segment
-- Optionally add holographic overlay effects
+- Apply procedural obsidian compression attire shaders and risk-based color gradients (green -> yellow -> red) per mesh segment
+- Feature 20 invisible raycasting hit-spheres for joint diagnostic popups
+
+---
+
+#### `useAutoUpdateChecker.ts` — OTA Mobile Auto-Update Pipeline
+
+Client-side React hook that continuously polls `/api/app/version` to check for newer Android APK release builds generated automatically by GitHub Actions (`.github/workflows/build-apk.yml`). Triggers an in-app download banner whenever a new build is detected.
 
 ---
 
@@ -1254,10 +1311,10 @@ Displayed in `WorkoutStrain.tsx` — computed using sports-science training load
 - **Authentication:** OAuth 2.0 (`scope=read,activity:read_all`) with per-user encrypted refresh tokens stored in SQLite / PostgreSQL via Fernet (`STRAVA_TOKEN_ENCRYPTION_SECRET`). Short-lived access tokens refreshed on demand.
 - **Strain & TRIMP Model:**
   - Computes intensity factor:
-    $$\text{Intensity Factor} = 1.0 + \min(1.5, \text{suffer\_score} / 45.0)$$
+    `Intensity Factor = 1.0 + min(1.5, suffer_score / 45.0)`
     or heart rate fallback (Zone 1: 1.0, Zone 2: 1.3, Zone 3: 1.6, Zone 4: 2.0, Zone 5: 2.5).
   - Session Load Score:
-    $$\text{Load Score} = (\text{Duration (mins)} \times \text{Intensity Factor}) + (\text{Elevation Gain (m)} / 100 \times 2.0)$$
+    `Load Score = (Duration in mins × Intensity Factor) + (Elevation Gain in meters / 100 × 2.0)`
   - Acute:Chronic Workload Ratio (ACWR): Computes 7-day rolling acute load vs. 28-day chronic baseline with cold-start detection.
 
 ### Google Health API (Fitbit — Live Integration)

@@ -73,28 +73,28 @@ export default function LeaderboardPage() {
           </div>
         ) : (
           <>
-            <div className="bg-secondary/10 border border-border/50 rounded-2xl p-8 mb-6 text-center relative overflow-hidden">
-              <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart2 className="w-24 h-24" /></div>
-              <div className="text-sm font-medium text-muted-foreground mb-2 relative z-10">Your Capability Mark</div>
-              <div className="text-6xl font-bold text-foreground font-mono tracking-tighter relative z-10">{capabilityMark}</div>
-              <div className="text-sm text-muted-foreground mt-4 relative z-10">Age 30 Baseline: 650 (Top 24%)</div>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 mb-6 text-center relative overflow-hidden shadow-xl">
+              <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart2 className="w-24 h-24 text-emerald-400" /></div>
+              <div className="text-sm font-bold text-slate-400 mb-2 relative z-10 uppercase tracking-wider">Your Capability Mark</div>
+              <div className="text-6xl font-black text-white font-mono-numbers tracking-tighter relative z-10 drop-shadow-md">{capabilityMark}</div>
+              <div className="text-sm font-semibold text-slate-300 mt-4 relative z-10">Age 30 Baseline: <span className="text-emerald-400 font-bold">650</span> (Top 24%)</div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Leaderboard Column */}
               <div className="space-y-3">
-                <h2 className="text-lg font-semibold mb-4">Global Rankings</h2>
+                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">Global Rankings</h2>
                 {leaderboardData.map((u, i) => (
                   <a
                     key={i}
                     href={`/profile?id=${u.user_id || u.username}`}
-                    className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all cursor-pointer group"
+                    className="flex items-center justify-between p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-emerald-500/60 hover:bg-slate-900 transition-all cursor-pointer group shadow-md"
                   >
                     <div className="flex items-center gap-4">
-                      <div className={`w-8 text-center font-medium text-lg ${i + 1 <= 3 ? 'text-foreground font-bold' : 'text-muted-foreground'}`}>#{i + 1}</div>
-                      <div className="text-base font-medium group-hover:text-emerald-400 transition-colors">{u.username}</div>
+                      <div className={`w-8 text-center font-black text-lg ${i + 1 <= 3 ? 'text-amber-400 font-black' : 'text-slate-400'}`}>#{i + 1}</div>
+                      <div className="text-base font-bold text-white group-hover:text-emerald-400 transition-colors">{u.username}</div>
                     </div>
-                    <div className="font-mono text-base font-medium text-primary">{u.score}</div>
+                    <div className="font-mono-numbers text-lg font-black text-emerald-400">{u.score}</div>
                   </a>
                 ))}
                 {/* Current User */}
@@ -103,12 +103,12 @@ export default function LeaderboardPage() {
                   const myRankDisplay = myIndex !== -1 ? `#${myIndex + 1}` : "#—";
                   const displayUsername = user?.email ? user.email.split("@")[0] : "You";
                   return (
-                    <div className="flex items-center justify-between p-4 rounded-xl bg-primary/10 border border-primary/20 mt-4 shadow-sm">
+                    <div className="flex items-center justify-between p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/40 mt-4 shadow-lg">
                       <div className="flex items-center gap-4">
-                        <div className="w-8 text-center font-bold text-primary text-lg">{myRankDisplay}</div>
-                        <div className="text-base font-bold text-primary">You ({displayUsername})</div>
+                        <div className="w-8 text-center font-black text-emerald-400 text-lg">{myRankDisplay}</div>
+                        <div className="text-base font-extrabold text-white">You ({displayUsername})</div>
                       </div>
-                      <div className="font-mono text-base font-bold text-primary">{capabilityMark}</div>
+                      <div className="font-mono-numbers text-lg font-black text-emerald-400">{capabilityMark}</div>
                     </div>
                   );
                 })()}
