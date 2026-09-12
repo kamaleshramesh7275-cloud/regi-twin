@@ -142,7 +142,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-24 md:pb-0">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-28 md:pb-0">
       <Sidebar />
 
       {/* ── Main Content ── */}

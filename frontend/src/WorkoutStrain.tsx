@@ -156,14 +156,14 @@ export function WorkoutStrain() {
         if (parsed.manualSessions && parsed.manualSessions.length > 0) {
           setManualSessions(parsed.manualSessions);
         } else {
-          initDefaultSessions();
+          setManualSessions([]);
         }
       } else {
-        initDefaultSessions();
+        setManualSessions([]);
       }
     } catch (e) {
       console.error("Failed to load local strain preferences:", e);
-      initDefaultSessions();
+      setManualSessions([]);
     } finally {
       setLoading(false);
     }

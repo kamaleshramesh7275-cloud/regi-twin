@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import {
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   GoogleAuthProvider,
   signInWithEmailAndPassword,
@@ -128,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
     if (DEV_BYPASS) return DEV_MOCK_USER;
     if (hasAdminSession()) return MOCK_ADMIN_USER;
-    return getPersistedSessionUser() || getLocalAthleteUser();
+    return getPersistedSessionUser();
   });
   const [role, setRole] = useState<UserRole>(() => {
     if (DEV_BYPASS || hasAdminSession()) return "superadmin";
@@ -141,7 +143,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (hasAdminSession()) return "admin-code-token";
     const p = localStorage.getItem("physiotwin_active_session");
     if (p) return "persisted-token";
-    if (getLocalAthleteUser()) return "athlete-token";
     return null;
   });
   const [googleFitToken, setGoogleFitToken] = useState<string | null>(() =>
@@ -289,12 +290,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Google sign-in (Accounts created strictly via Google OAuth) ─────────────
   const loginWithGoogle = async () => {
-    const result = await signInWithPopup(auth, googleProvider);
-    const additionalInfo = getAdditionalUserInfo(result);
-    return {
-      user: result.user,
-      isNewUser: !!additionalInfo?.isNewUser
-    };
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const additionalInfo = getAdditionalUserInfo(result);
+      return {
+        user: result.user,
+        isNewUser: !!additionalInfo?.isNewUser
+      };
+    } catch (popupErr: any) {
+      if (popupErr?.code === 'auth/popup-blocked' || popupErr?.code === 'auth/operation-not-supported-in-this-environment') {
+        console.warn("Popup blocked or not supported in mobile webview, trying redirect...", popupErr);
+        await signInWithRedirect(auth, googleProvider);
+        return { user: null as any, isNewUser: false };
+      }
+      throw popupErr;
+    }
   };
 
   // ── Email sign-in ──────────────────────────────────────────────────────────

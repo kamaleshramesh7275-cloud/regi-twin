@@ -294,7 +294,7 @@ export default function TwinPage() {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
   return (
-    <div className="relative w-full h-screen text-foreground overflow-hidden bg-black font-sans">
+    <div className="flex flex-col md:flex-row min-h-screen text-foreground md:overflow-hidden pb-28 md:pb-0 bg-background relative selection:bg-emerald-500 selection:text-white">
       
       {/* ── 3D / Holographic Twin Model ── */}
       <HoloModel3D 

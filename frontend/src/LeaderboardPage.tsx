@@ -85,13 +85,17 @@ export default function LeaderboardPage() {
               <div className="space-y-3">
                 <h2 className="text-lg font-semibold mb-4">Global Rankings</h2>
                 {leaderboardData.map((u, i) => (
-                  <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5">
+                  <a
+                    key={i}
+                    href={`/profile?id=${u.user_id || u.username}`}
+                    className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5 hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all cursor-pointer group"
+                  >
                     <div className="flex items-center gap-4">
-                      <div className={`w-8 text-center font-medium text-lg ${i + 1 <= 3 ? 'text-foreground' : 'text-muted-foreground'}`}>#{i + 1}</div>
-                      <div className="text-base font-medium">{u.username}</div>
+                      <div className={`w-8 text-center font-medium text-lg ${i + 1 <= 3 ? 'text-foreground font-bold' : 'text-muted-foreground'}`}>#{i + 1}</div>
+                      <div className="text-base font-medium group-hover:text-emerald-400 transition-colors">{u.username}</div>
                     </div>
                     <div className="font-mono text-base font-medium text-primary">{u.score}</div>
-                  </div>
+                  </a>
                 ))}
                 {/* Current User */}
                 {(() => {

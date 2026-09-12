@@ -79,6 +79,14 @@ export default function ExerciseLibrary() {
 
   return (
     <div className="min-h-screen bg-[#07090E] text-slate-100 p-4 md:p-8 space-y-8">
+      {/* Sticky Exit Header */}
+      <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+        <a href="/dashboard" className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-emerald-500/50 text-xs font-bold transition-all shadow-md">
+          ← Exit to Dashboard
+        </a>
+        <span className="text-xs text-slate-500 font-semibold">Press Esc or click exit to return</span>
+      </div>
+
       {/* HEADER SECTION */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-950/40 via-cyan-950/30 to-indigo-950/40 border border-emerald-500/20 p-6 md:p-10 shadow-2xl backdrop-blur-xl">
         <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20"></div>

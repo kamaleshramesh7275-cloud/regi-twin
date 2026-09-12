@@ -38,7 +38,7 @@ export function HistoryPage() {
 
   const fetchPainLogs = async () => {
     try {
-      const uid = auth.currentUser?.uid || "test-user";
+      const uid = auth.currentUser?.uid || "";
       const logs = await api.getPainHistory(uid);
       setPainLogs(logs);
     } catch (err) {
@@ -48,7 +48,7 @@ export function HistoryPage() {
 
   const fetchHistory = async () => {
     try {
-      const uid = auth.currentUser?.uid || "test-user";
+      const uid = auth.currentUser?.uid || "";
       const data = await api.getSessionHistory(uid);
       setSessions(data || []);
     } catch (err) {

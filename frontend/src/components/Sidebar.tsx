@@ -65,6 +65,7 @@ export function Sidebar() {
 
   const navItemsList = [
     { label: "Dashboard", href: "/dashboard", section: "Core", icon: <Activity className="w-4 h-4" /> },
+    { label: "My Profile", href: "/profile", section: "Core", icon: <User className="w-4 h-4 text-emerald-400" /> },
     { label: "3D Digital Twin", href: "/twin", section: "Core", icon: <User className="w-4 h-4" /> },
     { label: "What-If Simulator", href: "/simulator", section: "Core", icon: <Brain className="w-4 h-4 text-emerald-400" />, tag: "New" },
     { label: "Live Vision Mocap", href: "/capture", section: "Core", icon: <Camera className="w-4 h-4 text-cyan-400" /> },

@@ -29,6 +29,16 @@ async function fetchWithTimeout(resource: string, options: RequestInit & { timeo
 }
 
 export const api = {
+  async getAppVersion() {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/api/app/version`, { timeout: 3000 });
+      if (res.ok) return await res.json();
+    } catch {
+      return null;
+    }
+    return null;
+  },
+
   async getDashboard(userId: string) {
     try {
       const res = await fetchWithTimeout(`${API_BASE}/analytics/dashboard/${userId}?min_hours_ago=1&max_hours_ago=10`);

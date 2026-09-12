@@ -55,6 +55,18 @@ def download_app_apk():
     raise HTTPException(status_code=404, detail="APK build in progress or not found")
 
 
+@app.get("/api/app/version")
+def get_app_version():
+    """Return latest release manifest for in-app OTA update checking."""
+    return {
+        "version": "2.1.0",
+        "build_number": 210,
+        "release_notes": "Live OTA bundle sync & multi-user data isolation.",
+        "apk_url": "/PhysioTwin.apk",
+        "min_required_version": "1.0.0"
+    }
+
+
 @app.on_event("startup")
 def startup_seed_catalog():
     """Auto-seed native exercises and food database on startup if empty."""

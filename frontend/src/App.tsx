@@ -41,6 +41,7 @@ import VitalsPage from "./VitalsPage";
 import MentalReadinessPage from "./MentalReadinessPage";
 import WikiPage from "./WikiPage";
 import AchievementsPage from "./AchievementsPage";
+import ProfilePage from "./ProfilePage";
 import ExerciseLibrary from "./ExerciseLibrary";
 import WorkoutLogger from "./WorkoutLogger";
 import LoginPage from "./LoginPage";
@@ -161,6 +162,7 @@ function AppContent() {
           <Route path="/readiness"><ProtectedRoute component={MentalReadinessPage} /></Route>
           <Route path="/wiki"><ProtectedRoute component={WikiPage} /></Route>
           <Route path="/achievements"><ProtectedRoute component={AchievementsPage} /></Route>
+          <Route path="/profile"><ProtectedRoute component={ProfilePage} /></Route>
 
           {/* Admin login — public, no auth required */}
           <Route path="/admin/login" component={AdminLoginPage} />

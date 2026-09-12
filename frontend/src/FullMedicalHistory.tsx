@@ -27,7 +27,7 @@ export default function FullMedicalHistory() {
     notes: "Patient reported strain 2 months ago during heavy workout"
   });
 
-  const userId = user?.uid || "test-user";
+  const userId = user?.uid || "";
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -36,98 +36,19 @@ export default function FullMedicalHistory() {
       setData(res);
     } catch (err) {
       console.error("Error fetching medical history", err);
-      // Fallback demo structure
+      // Clean zero baseline for new accounts
       setData({
         user_id: userId,
         summary: {
-          total_ocr_records: 4,
-          total_workouts_this_week: 5,
-          forearm_acute_sessions: 3,
-          total_scans: 6,
-          active_reinjury_alerts: 1
+          total_ocr_records: 0,
+          total_workouts_this_week: 0,
+          forearm_acute_sessions: 0,
+          total_scans: 0,
+          active_reinjury_alerts: 0
         },
-        injury_records: [
-          {
-            id: "inj-forearm-1",
-            zone: "left_forearm",
-            side: "left",
-            injury_name: "Left Forearm Flexor Tendonitis / Sprain",
-            severity: "moderate",
-            months_ago: 2.0,
-            notes: "Extracted from OCR Clinical Scan: 'Patient reported left forearm flexor strain 2 months ago during heavy loading.'",
-            status: "vulnerable"
-          }
-        ],
-        cross_domain_alerts: [
-          {
-            id: "alert-forearm-reinjury",
-            type: "CRITICAL_REINJURY_RISK",
-            severity: "critical",
-            zone: "left_forearm",
-            title: "⚠️ Critical Forearm Re-Injury & Overload Alert",
-            subtitle: "High Tissue Vulnerability Detected (ACWR 2.00)",
-            description: "Historical OCR report logged a Left Forearm Flexor Strain 2 months ago. Acute workout log indicates 3 forearm training sessions this week. Acute tissue workload exceeds recovery capacity for previously injured tendons.",
-            ocr_reference: "Clinical OCR Scan (2 mos ago): Left Forearm Flexor Strain / Tendonitis",
-            workout_reference: "Workout Strain Log (This Week): 3 forearm training sessions logged",
-            recommendation: "Reduce forearm isolation volume by 50% for 7 days; integrate eccentric wrist extensor mobility and apply thermal therapy.",
-            acwr: 2.00,
-            timestamp: new Date().toISOString()
-          }
-        ],
-        timeline: [
-          {
-            id: "item-1",
-            pillar: "workout",
-            pillar_name: "Workout & Strain",
-            date: new Date().toISOString(),
-            date_label: "Today",
-            title: "Forearm & Biceps Hypertrophy Session",
-            zone: "left_forearm",
-            severity: "info",
-            details: "3 sets Reverse Wrist Curls (15kg) • 3 sets Farmer Carries. Total Volume: 1,450 kg",
-            badge: "Workout Strain Log",
-            source: "workout_logger"
-          },
-          {
-            id: "item-2",
-            pillar: "workout",
-            pillar_name: "Workout & Strain",
-            date: new Date(Date.now() - 86400000 * 2).toISOString(),
-            date_label: "2 days ago",
-            title: "Heavy Pull & Grip Endurance",
-            zone: "left_forearm",
-            severity: "info",
-            details: "4 sets Deadlifts • 3 sets Wrist Roller. High grip demand recorded.",
-            badge: "Workout Strain Log",
-            source: "workout_logger"
-          },
-          {
-            id: "item-3",
-            pillar: "ocr",
-            pillar_name: "OCR Medical Report",
-            date: new Date(Date.now() - 86400000 * 60).toISOString(),
-            date_label: "2 months ago",
-            title: "Orthopedic Clinical Summary — Forearm Sprain",
-            zone: "left_forearm",
-            severity: "moderate",
-            details: "Diagnosis: Left Forearm Flexor Tendonitis. Recommendation: Rest 4 weeks, progressive load.",
-            badge: "OCR Medical Record",
-            source: "ocr_extracted"
-          },
-          {
-            id: "item-4",
-            pillar: "biomechanics",
-            pillar_name: "Biomechanics & Posture Scan",
-            date: new Date(Date.now() - 86400000 * 5).toISOString(),
-            date_label: "5 days ago",
-            title: "Standing Posture Scan — Shoulder & Arm Asymmetry",
-            zone: "left_shoulder",
-            severity: "medium",
-            details: "ROM: 172° | Symmetry: 84% | Left arm compensatory elevation during descent.",
-            badge: "Vision Mocap",
-            source: "vision_mocap"
-          }
-        ]
+        injury_records: [],
+        cross_domain_alerts: [],
+        timeline: []
       });
     } finally {
       setLoading(false);

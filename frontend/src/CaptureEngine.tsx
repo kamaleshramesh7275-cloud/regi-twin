@@ -243,8 +243,16 @@ function CaptureEngineContent() {
   // ── Helper to start camera ──────────────────────────────────────────────────
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-      if (videoRef.current) {
+      let stream: MediaStream | null = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } } 
+        });
+      } catch {
+        // Fallback simple video constraint
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+      if (videoRef.current && stream) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play().catch(() => {});
       }
