@@ -156,6 +156,15 @@ export function MobileMoreDrawer({ isOpen, onClose }: MobileMoreDrawerProps) {
             </div>
             <div className="grid grid-cols-1 gap-2">
               <DrawerItem
+                icon={<Brain className="w-4 h-4 text-emerald-400" />}
+                label="What-If Simulator"
+                desc="Predictive training & recovery counterfactual sandbox"
+                href="/simulator"
+                active={location === "/simulator"}
+                tag="New"
+                onClick={onClose}
+              />
+              <DrawerItem
                 icon={<Apple className="w-4 h-4" />}
                 label="Nutrition & Recovery"
                 desc="Macro balance, circadian rest & hydration"

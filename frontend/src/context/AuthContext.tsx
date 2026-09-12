@@ -10,6 +10,7 @@ import {
   sendPasswordResetEmail,
   sendEmailVerification,
   getIdTokenResult,
+  getAdditionalUserInfo,
 } from "firebase/auth";
 import type { User, IdTokenResult } from "firebase/auth";
 import { auth, googleProvider } from "../lib/firebase";
@@ -41,7 +42,7 @@ interface AuthContextType {
   idToken: string | null;
   googleFitToken: string | null;
   loading: boolean;
-  loginWithGoogle: () => Promise<void>;
+  loginWithGoogle: () => Promise<{ user: User; isNewUser: boolean }>;
   connectGoogleFit: () => Promise<string | null>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   registerWithEmail: (email: string, password: string) => Promise<void>;
@@ -102,18 +103,44 @@ const MOCK_ADMIN_USER = {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const hasAdminSession = () => localStorage.getItem("physiotwin_admin_code_session") === "admin123";
 
+  // Check persisted active user session in localStorage
+  const getPersistedSessionUser = (): User | null => {
+    try {
+      const raw = localStorage.getItem("physiotwin_active_session");
+      if (!raw) return null;
+      const s = JSON.parse(raw);
+      return {
+        uid: s.uid,
+        email: s.email,
+        displayName: s.displayName,
+        emailVerified: true,
+        getIdToken: async () => s.idToken || "persisted-token",
+        getIdTokenResult: async () => ({
+          token: s.idToken || "persisted-token",
+          claims: { role: s.role || "client" },
+        }),
+      } as unknown as User;
+    } catch {
+      return null;
+    }
+  };
+
   const [user, setUser] = useState<User | null>(() => {
     if (DEV_BYPASS) return DEV_MOCK_USER;
     if (hasAdminSession()) return MOCK_ADMIN_USER;
-    return getLocalAthleteUser();
+    return getPersistedSessionUser() || getLocalAthleteUser();
   });
   const [role, setRole] = useState<UserRole>(() => {
     if (DEV_BYPASS || hasAdminSession()) return "superadmin";
+    const p = getPersistedSessionUser();
+    if (p) return "client";
     return "client";
   });
   const [idToken, setIdToken] = useState<string | null>(() => {
     if (DEV_BYPASS) return "dev-bypass-token";
     if (hasAdminSession()) return "admin-code-token";
+    const p = localStorage.getItem("physiotwin_active_session");
+    if (p) return "persisted-token";
     if (getLocalAthleteUser()) return "athlete-token";
     return null;
   });
@@ -174,6 +201,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (firebaseUser) {
         setUser(firebaseUser);
+        localStorage.setItem("physiotwin_active_session", JSON.stringify({
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          role: "client"
+        }));
         await resolveRole(firebaseUser);
       } else {
         const localAthlete = getLocalAthleteUser();
@@ -254,9 +287,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return null;
   };
 
-  // ── Google sign-in ─────────────────────────────────────────────────────────
+  // ── Google sign-in (Accounts created strictly via Google OAuth) ─────────────
   const loginWithGoogle = async () => {
-    await signInWithPopup(auth, googleProvider);
+    const result = await signInWithPopup(auth, googleProvider);
+    const additionalInfo = getAdditionalUserInfo(result);
+    return {
+      user: result.user,
+      isNewUser: !!additionalInfo?.isNewUser
+    };
   };
 
   // ── Email sign-in ──────────────────────────────────────────────────────────
@@ -282,6 +320,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Sign out ───────────────────────────────────────────────────────────────
   const logout = async () => {
     localStorage.removeItem("physiotwin_admin_code_session");
+    localStorage.removeItem("physiotwin_active_session");
     if (!DEV_BYPASS) {
       try {
         await signOut(auth);

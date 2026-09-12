@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend
@@ -89,20 +89,14 @@ export default function Dashboard() {
         setExternalData(extRes);
         setInjuryRisk(riskRes);
       } catch (e) {
-        // fallback mock
-        setData({ mobility: 85, stability: 55, quality: 92, cardio: 78, recovery: 88, reserve: 55, confidence: 'Low' });
+        // Real zero baseline for new accounts
+        setData({ mobility: 0, stability: 0, quality: 0, cardio: 0, recovery: 0, reserve: 0, confidence: 'New Account' });
         setExternalData([]);
         setInjuryRisk({
-          risk_score: 28,
-          risk_level: "Low",
-          recommendation: "Training load is well-managed. Proceed with your planned program.",
-          contributing_factors: [
-            { factor: "Workload Spike (ACWR)", contribution: 8.5, value: "1.05x" },
-            { factor: "Subjective Pain", contribution: 5.0, value: "2.0/10" },
-            { factor: "Bilateral Asymmetry", contribution: 4.5, value: "85%" },
-            { factor: "Movement Fear (TSK)", contribution: 4.5, value: "22/44" },
-            { factor: "Sleep Deficit", contribution: 0.0, value: "7.5h" }
-          ]
+          risk_score: 0,
+          risk_level: "Optimal",
+          recommendation: "No active movement strain logged. Complete a Live Vision posture capture to generate your baseline.",
+          contributing_factors: []
         });
       }
       setLoading(false);
@@ -528,12 +522,22 @@ export default function Dashboard() {
           )}
 
           {rightRailTab === 'simulate' && (
-            <div className="h-full min-h-[400px]">
-              <SimulatorPanel 
-                currentReserve={displayData.reserve} 
-                currentRecovery={displayData.recovery} 
-                onSimulate={setSimulationOverride}
-              />
+            <div className="h-full min-h-[300px] bg-slate-900/60 border border-slate-800 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <Brain className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white mb-1">What-If Counterfactual Simulator</h3>
+                <p className="text-xs text-slate-400 leading-relaxed max-w-xs">
+                  The simulator has been upgraded into a dedicated full-page predictive sandbox.
+                </p>
+              </div>
+              <Link 
+                href="/simulator"
+                className="py-2.5 px-5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs uppercase tracking-wider rounded-lg transition-all"
+              >
+                Launch Simulator &rarr;
+              </Link>
             </div>
           )}
 

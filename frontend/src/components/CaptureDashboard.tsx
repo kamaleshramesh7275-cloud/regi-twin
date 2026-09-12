@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Activity, Clock, AlertTriangle, History } from 'lucide-react';
 import { api } from '../api';
+import { captureHistoryStore } from '../lib/captureHistoryStore';
 import { SessionDataReplay } from './SessionDataReplay';
 
 export function CaptureDashboard({ userId }: { userId: string }) {
@@ -65,46 +66,62 @@ export function CaptureDashboard({ userId }: { userId: string }) {
       </div>
 
       {loading ? (
-        <div className="text-slate-400 text-sm animate-pulse">Loading captures...</div>
-      ) : captures.length === 0 ? (
-        <div className="text-slate-500 text-sm italic">No captures found. Complete a session first.</div>
+        <div className="text-slate-400 text-sm animate-pulse">Loading capture history...</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {captures.map((cap) => (
-            <div 
-              key={cap.id} 
-              onClick={() => handleSelectSession(cap.id)}
-              className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden cursor-pointer hover:border-blue-500/50 transition-colors group relative"
-            >
-              {/* Thumbnail Placeholder */}
-              <div className="h-32 bg-slate-950 relative flex items-center justify-center border-b border-slate-800">
-                <Play className="w-10 h-10 text-slate-700 group-hover:text-blue-500 transition-colors" />
-                
-                {/* Simulated Duration Tag */}
-                <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm text-white text-xs font-mono px-2 py-0.5 rounded flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  00:15
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {captureHistoryStore.getHistory().map((cap) => (
+              <div 
+                key={cap.id} 
+                className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 hover:border-slate-700 transition-colors"
+              >
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-white">{cap.exerciseType}</h3>
+                    <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                      {new Date(cap.timestamp).toLocaleString(undefined, {
+                        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                      })} &middot; {cap.durationSec}s session
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                    Symmetry {cap.bilateralSymmetryPercent}%
+                  </span>
                 </div>
 
-                {/* Simulated Anomaly Tag */}
-                {cap.stability !== null && cap.stability < 0.7 && (
-                  <div className="absolute top-2 left-2 bg-red-500/20 border border-red-500/50 text-red-400 text-xs font-bold px-2 py-0.5 rounded flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    ANOMALY
+                <div className="grid grid-cols-3 gap-2 text-center text-xs font-mono">
+                  <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                    <div className="text-[9px] text-slate-500 uppercase">Valgus Angle</div>
+                    <div className="font-bold text-white mt-0.5">{cap.peakValgusAngle}°</div>
                   </div>
-                )}
-              </div>
-              
-              <div className="p-4">
-                <div className="text-white font-medium capitalize">{cap.task_type.replace('-', ' ')}</div>
-                <div className="text-slate-400 text-xs mt-1">
-                  {new Date(cap.timestamp).toLocaleString(undefined, {
-                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                  })}
+                  <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                    <div className="text-[9px] text-slate-500 uppercase">Peak Force</div>
+                    <div className="font-bold text-emerald-400 mt-0.5">{cap.grfPeakBW}x BW</div>
+                  </div>
+                  <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                    <div className="text-[9px] text-slate-500 uppercase">Form Decay</div>
+                    <div className="font-bold text-amber-400 mt-0.5">Rep {cap.formDecayBreakdownRep}</div>
+                  </div>
+                </div>
+
+                <div className="text-xs text-slate-300 bg-slate-950 p-3 rounded-lg border border-slate-800/80 leading-relaxed">
+                  <span className="text-emerald-400 font-bold">AI Clinical Insight: </span>
+                  {cap.llmSummary}
+                </div>
+
+                <div className="space-y-1 pt-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-500">Prescribed Drills:</span>
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {cap.recommendedDrills.map((drill, idx) => (
+                      <span key={idx} className="text-[10px] font-medium bg-slate-800 text-slate-300 px-2 py-0.5 rounded">
+                        {drill}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>

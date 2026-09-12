@@ -55,7 +55,7 @@ function readinessLabel(score: number | null): string {
 
 export default function VitalsPage() {
   const { user } = useAuth();
-  const userId = user?.uid || "test-user";
+  const userId = user?.uid || "";
 
   const [vitals, setVitals] = useState<any>(null);
   const [hrvChartData, setHrvChartData] = useState<any[]>([]);

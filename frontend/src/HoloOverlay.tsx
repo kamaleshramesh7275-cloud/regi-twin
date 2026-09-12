@@ -15,26 +15,26 @@ export type ZoneRisk = Partial<Record<ZoneId, number>>;
 
 // Precise polygon mapping calibrated over anatomical figure (100x100 grid)
 const REGIONS: Record<ZoneId, string> = {
-  head: "42,2 58,2 58,13 42,13",
-  neck: "44,14 56,14 56,18 44,18",
-  chest: "36,19 64,19 62,33 38,33",
-  lumbar: "37,34 63,34 63,45 37,45",
-  left_shoulder: "63,18 78,20 76,29 63,28",
-  right_shoulder: "37,18 22,20 24,29 37,28",
-  left_arm: "74,29 83,44 76,46 66,30",
-  right_arm: "26,29 17,44 24,46 34,30",
-  left_forearm: "81,45 88,61 82,63 75,47",
-  right_forearm: "19,45 12,61 18,63 25,47",
-  left_hip: "51,46 65,46 66,57 51,57",
-  right_hip: "35,46 49,46 49,57 34,57",
-  left_thigh: "51,58 66,58 61,73 51,73",
-  right_thigh: "34,58 49,58 49,73 39,73",
-  left_knee: "52,74 63,74 61,82 52,82",
-  right_knee: "37,74 48,74 48,82 39,82",
-  left_shin: "52,83 62,83 60,94 51,94",
-  right_shin: "38,83 48,83 49,94 40,94",
-  left_ankle: "51,95 61,95 62,99 50,99",
-  right_ankle: "39,95 49,95 50,99 38,99"
+  head: "44,3 56,3 56,12 44,12",
+  neck: "46,13 54,13 54,17 46,17",
+  chest: "42,18 58,18 57,32 43,32",
+  lumbar: "43,33 57,33 57,44 43,44",
+  left_shoulder: "59,18 67,19 65,27 59,26",
+  right_shoulder: "41,18 33,19 35,27 41,26",
+  left_arm: "63,28 70,43 66,45 59,29",
+  right_arm: "37,28 30,43 34,45 41,29",
+  left_forearm: "69,44 75,59 70,61 65,46",
+  right_forearm: "31,44 25,59 30,61 35,46",
+  left_hip: "51,46 62,46 62,57 51,57",
+  right_hip: "38,46 49,46 49,57 38,57",
+  left_thigh: "51,58 62,58 59,73 51,73",
+  right_thigh: "38,58 49,58 49,73 41,73",
+  left_knee: "52,74 61,74 59,82 52,82",
+  right_knee: "39,74 48,74 48,82 40,82",
+  left_shin: "52,83 60,83 59,94 51,94",
+  right_shin: "40,83 48,83 49,94 41,94",
+  left_ankle: "51,95 59,95 60,99 50,99",
+  right_ankle: "41,95 49,95 50,99 40,99"
 };
 
 export interface HoloOverlayProps {
@@ -58,10 +58,10 @@ export default function HoloOverlay({ riskData = {}, selectedZone, onZoneClick }
   const [hovered, setHovered] = useState<ZoneId | null>(null);
 
   return (
-    <div className="absolute inset-0 z-0 bg-[#020a14] overflow-hidden flex items-center justify-center pointer-events-none p-4">
+    <div className="absolute inset-0 z-0 bg-[#020a14] overflow-hidden flex items-center justify-center pointer-events-none p-4 pt-20 pb-8">
       
       {/* Locked aspect ratio wrapper so image and SVG scale identically */}
-      <div className="relative w-full max-w-[50vh] md:max-w-2xl aspect-[1/1.65] pointer-events-auto flex items-center justify-center">
+      <div className="relative w-full max-w-[45vh] md:max-w-xl aspect-[1/1.65] pointer-events-auto flex items-center justify-center">
         
         {/* Background anatomical image */}
         <img 

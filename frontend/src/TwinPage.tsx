@@ -47,18 +47,27 @@ const LEADERBOARD_DATA = [
 ];
 
 // ── Zone metadata (injuries, causes, actions) ─────────────
-const DETAILED_ZONE_META: Partial<Record<ZoneId, { label:string; injuries:string[]; rootCause:string; immediateAction:string; longTermRisk:string }>> = {
-  left_knee:      { label:"Left Knee",      injuries:["Patellofemoral Stress","Valgus Overload"],  rootCause:"Quad weakness + hip abductor deficit causing 4.2° varus angle during loading.", immediateAction:"Eccentric quad protocol (3×10 step-downs). Ice 15 min post-session.", longTermRisk:"Without intervention: medial compartment OA onset risk within 18 months." },
-  right_knee:     { label:"Right Knee",     injuries:["Moderate Valgus Stress"],                   rootCause:"Compensatory loading from left-side weakness increasing right knee joint force.", immediateAction:"Hip abductor strengthening — clamshells 3×15, side-lying leg raises.", longTermRisk:"Risk escalates to match left knee severity within 3 months if untreated." },
-  lumbar:         { label:"Lower Back",     injuries:["Lumbar Instability","Flexion Intolerance"], rootCause:"Core bracing deficit (48%). Excessive anterior pelvic tilt in 6 of 8 sessions.", immediateAction:"Dead bug 3×10, prone cobra 3×15. Avoid loaded flexion.", longTermRisk:"Progressive disc loading risk. Probable L4/L5 irritation at current trajectory." },
-  left_hip:       { label:"Left Hip",       injuries:["Hip Flexor Tightness"],                     rootCause:"Prolonged sitting + hip capsule restriction detected in movement pattern.", immediateAction:"Hip 90/90 stretch 2×60s each side. Couch stretch daily.", longTermRisk:"Primary contributor to knee valgus and lumbar instability." },
-  right_hip:      { label:"Right Hip",      injuries:["Mild Hip Tightness"],                       rootCause:"Bilateral tightness. Right side within normal range.", immediateAction:"Pigeon pose 45s. Maintain bilateral mobility routine.", longTermRisk:"Low immediate risk. Monitor for asymmetry increase." },
-  left_shoulder:  { label:"Left Shoulder",  injuries:["Rotator Cuff Fatigue"],                     rootCause:"Left arm generates 12% less force than right — overhead loading imbalance.", immediateAction:"External rotation banding 3×15, face pulls 3×20.", longTermRisk:"Rotator cuff strain risk within 2 months if load increases." },
-  right_shoulder: { label:"Right Shoulder", injuries:["Dominant side mild overuse"],               rootCause:"Right shoulder compensating for left. Load symmetry 94%.", immediateAction:"Maintain current strengthening. Monitor symmetry weekly.", longTermRisk:"Stable. No significant escalation expected." },
-  chest:          { label:"Chest",          injuries:["Pec tightness"],                            rootCause:"Upper-cross syndrome pattern. Rounded shoulder posture detected.", immediateAction:"Doorway stretch 3×30s. Thoracic extension over foam roller.", longTermRisk:"Will worsen shoulder and neck symptoms if uncorrected." },
-  neck:           { label:"Neck",           injuries:["Forward Head Posture"],                     rootCause:"1.5cm anterior head shift. Linked to screen habits.", immediateAction:"Chin tucks 3×10, deep neck flexor strengthening.", longTermRisk:"Cervicogenic headache risk increases without postural correction." },
-  left_thigh:     { label:"Left Thigh",     injuries:["Quad Strength Deficit"],                    rootCause:"Left quad at 68% of right-side force — significant asymmetry.", immediateAction:"Eccentric step-downs left side, single-leg press 3×12.", longTermRisk:"Primary driver of left knee valgus. Priority for intervention." },
-  right_thigh:    { label:"Right Thigh",    injuries:["Compensatory Load"],                        rootCause:"Compensating for left deficit. Load within acceptable range.", immediateAction:"Continue bilateral strengthening.", longTermRisk:"Stable if left side improves." },
+const DETAILED_ZONE_META: Record<ZoneId, { label:string; injuries:string[]; rootCause:string; immediateAction:string; longTermRisk:string }> = {
+  head:           { label:"Head & Skull",   injuries:["Cervicogenic Strain","Scalp Tension"],      rootCause:"Anterior head weight moment increasing cervical spine leverage.", immediateAction:"Suboccipital release 2×60s, posture re-alignment.", longTermRisk:"Chronic tension headaches and upper trapezius fatigue." },
+  neck:           { label:"Neck & Cervical Spine", injuries:["Forward Head Posture","C4/C5 Compression"], rootCause:"1.5cm anterior head shift. Linked to prolonged screen tilt.", immediateAction:"Chin tucks 3×10, deep neck flexor isometric holds.", longTermRisk:"Cervicogenic headache and spinal nerve root impingement." },
+  chest:          { label:"Chest & Pectorals", injuries:["Pec Tightness","Upper Cross Syndrome"], rootCause:"Rounded shoulder posture causing internal humerus rotation.", immediateAction:"Doorway stretch 3×30s, foam roller thoracic extension.", longTermRisk:"Persistent shoulder impingement and restricted respiratory mechanics." },
+  lumbar:         { label:"Lower Back (Lumbar)", injuries:["Lumbar Instability","Flexion Intolerance"], rootCause:"Core bracing deficit (48%). Excessive anterior pelvic tilt in loading.", immediateAction:"Dead bug 3×10, prone cobra 3×15. Avoid loaded flexion.", longTermRisk:"Progressive disc loading risk. Irritation at L4/L5 level." },
+  left_shoulder:  { label:"Left Shoulder",  injuries:["Rotator Cuff Fatigue","Impingement Risk"],  rootCause:"Left arm force deficit (12% less than right) during overhead presses.", immediateAction:"External rotation banding 3×15, face pulls 3×20.", longTermRisk:"Supraspinatus tendonitis risk within 2 months if uncorrected." },
+  right_shoulder: { label:"Right Shoulder", injuries:["Dominant Overuse Strain"],                  rootCause:"Right side compensating for left-side kinetic chain weakness.", immediateAction:"Scapular retraction squeezes 3×12, posterior capsule stretch.", longTermRisk:"Secondary rotator cuff wear due to asymmetric loading." },
+  left_arm:       { label:"Left Upper Arm", injuries:["Biceps Tendon Fatigue"],                   rootCause:"Over-reliance on elbow flexors during heavy pulling exercises.", immediateAction:"Eccentric biceps curls 3×12, bicipital groove massage.", longTermRisk:"Distal biceps tendon strain under peak load." },
+  right_arm:      { label:"Right Upper Arm", injuries:["Triceps Tendinitis"],                      rootCause:"Repetitive extension forces under high kinetic intensity.", immediateAction:"Triceps overhead mobility stretch 2×45s, foam roll lats.", longTermRisk:"Tendinopathy at olecranon insertion." },
+  left_forearm:   { label:"Left Forearm",   injuries:["Grip Fatigue","Flexor Tightness"],         rootCause:"Limited wrist extension ROM causing flexor over-activation.", immediateAction:"Forearm flexor/extensor stretches 2×30s, wrist circles.", longTermRisk:"Medial epicondylitis (Golfer's Elbow) development." },
+  right_forearm:  { label:"Right Forearm",  injuries:["Lateral Epicondylitis Strain"],             rootCause:"Excessive wrist extension during heavy gripping routines.", immediateAction:"Tyler Twist with Theraband FlexBar 3×15.", longTermRisk:"Lateral epicondylitis (Tennis Elbow) escalation." },
+  left_hip:       { label:"Left Hip",       injuries:["Hip Flexor Tightness","Capsular Restriction"], rootCause:"Prolonged sitting + hip capsule restriction in movement pattern.", immediateAction:"Hip 90/90 stretch 2×60s, couch stretch daily.", longTermRisk:"Primary contributor to knee valgus and lumbar instability." },
+  right_hip:      { label:"Right Hip",      injuries:["Gluteus Medius Weakness"],                  rootCause:"Bilateral tightness with right-side abductor firing lag.", immediateAction:"Clamshells 3×15, side-lying leg raises 3×12.", longTermRisk:"Asymmetric pelvic sway during single-leg support." },
+  left_thigh:     { label:"Left Thigh",     injuries:["Quad Strength Deficit"],                    rootCause:"Left quad at 68% of right-side peak force output.", immediateAction:"Eccentric step-downs left side, single-leg press 3×12.", longTermRisk:"Primary driver of left knee valgus. High priority." },
+  right_thigh:    { label:"Right Thigh",    injuries:["Hamstring Overuse Compensation"],           rootCause:"Compensating for left-side quad deficit during leg drive.", immediateAction:"Romanian deadlifts 3×10 focus on eccentric speed.", longTermRisk:"Hamstring strain risk during maximal deceleration." },
+  left_knee:      { label:"Left Knee",      injuries:["Patellofemoral Stress","Valgus Overload"],  rootCause:"Quad weakness + hip abductor deficit causing 4.2° varus angle.", immediateAction:"Eccentric quad protocol (3×10 step-downs). Ice 15 min.", longTermRisk:"Medial compartment OA onset risk within 18 months." },
+  right_knee:     { label:"Right Knee",     injuries:["Moderate Valgus Stress"],                   rootCause:"Compensatory loading from left-side weakness during squats.", immediateAction:"Hip abductor strengthening — clamshells 3×15.", longTermRisk:"Risk escalates to match left knee severity within 3 months." },
+  left_shin:      { label:"Left Shin",      injuries:["Tibialis Anterior Strain"],                 rootCause:"Early heel rise compensating for dorsiflexion restriction.", immediateAction:"Ankle dorsiflexion band pulls 3×15, calf foam rolling.", longTermRisk:"Medial Tibial Stress Syndrome (Shin Splints)." },
+  right_shin:     { label:"Right Shin",     injuries:["Mild Compartment Stress"],                  rootCause:"High ground reaction impact forces on firm surfaces.", immediateAction:"Soleus wall stretch 3×30s, toe raises 3×20.", longTermRisk:"Low immediate risk. Monitor foot strike mechanics." },
+  left_ankle:     { label:"Left Ankle",     injuries:["Dorsiflexion Deficit (14°)"],               rootCause:"Talocrural joint restriction following past inversion sprain.", immediateAction:"Ankle mobilization over toes 2×60s, calf stretch.", longTermRisk:"Forces proximal movement compensation at knee and hip." },
+  right_ankle:    { label:"Right Ankle",    injuries:["Subtalar Hypermobility"],                   rootCause:"Excessive pronation upon foot strike under heavy fatigue.", immediateAction:"Short foot exercise 3×10 holds, ankle eversion banding.", longTermRisk:"Arch collapse and plantar fascia irritation." },
 };
 
 const ZONE_META: Record<string, { label: string, desc: string, icon: any }> = {
@@ -303,7 +312,7 @@ export default function TwinPage() {
       />
       
       {/* ── Clinical Pain-Map Legend ── */}
-      <div className="absolute bottom-20 md:bottom-4 right-3 md:right-4 pointer-events-auto z-20 bg-slate-950/85 backdrop-blur-md border border-slate-700/80 p-3 rounded-2xl flex flex-col gap-2 shadow-2xl w-56">
+      <div className="absolute bottom-20 md:bottom-6 left-3 md:left-[272px] pointer-events-auto z-20 bg-slate-950/85 backdrop-blur-md border border-slate-700/80 p-3 rounded-2xl flex flex-col gap-2 shadow-2xl w-56">
         <div className="flex items-center justify-between">
           <div className="text-[10px] text-slate-300 uppercase tracking-widest font-black flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" /> Clinical Pain Field
@@ -379,7 +388,7 @@ export default function TwinPage() {
         {/* Main Center Area (Controls overlay) */}
         <div className="flex-1 flex flex-col relative pointer-events-none">
           
-          <div className="pointer-events-auto flex items-center justify-between p-3 sm:p-6 shrink-0 mt-1 mx-2 sm:mx-4 gap-2 flex-wrap sm:flex-nowrap">
+          <div className="pointer-events-auto flex items-center justify-between p-3 sm:px-6 sm:py-3 shrink-0 mt-1 mx-2 sm:mx-4 gap-2 flex-wrap sm:flex-nowrap bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl">
             {/* View Mode Switcher + Live Camera CTA */}
             <div className="flex items-center gap-2">
               <Link
@@ -504,43 +513,29 @@ export default function TwinPage() {
           {/* ACTIVE MODE */}
           {mode === "active" && (
             <div className="p-4 sm:p-6 flex-1 overflow-y-auto scrollbar-hide">
-              
-              <div className="mb-6 flex flex-col gap-2">
-                <button 
-                  onClick={handleSyncFit}
-                  disabled={isSyncing}
-                  className="w-full flex items-center justify-center gap-2 bg-[#10b981]/20 text-[#10b981] border border-[#10b981]/30 py-3 rounded-xl font-bold hover:bg-[#10b981]/30 transition-colors disabled:opacity-50"
-                >
-                  <Activity className="w-4 h-4" />
-                  {isSyncing ? "Syncing Data..." : "Sync Google Fit Data"}
-                </button>
-                {syncedData && (
-                  <div className="p-3 bg-black/40 rounded-xl border border-white/5 text-xs text-muted-foreground">
-                    <p><strong className="text-white">Recent Workout:</strong> {syncedData.workouts[0]?.app} - {syncedData.workouts[0]?.name}</p>
-                    <p><strong className="text-white">Nutrition:</strong> {syncedData.nutrition.app} - {syncedData.nutrition.status} ({syncedData.nutrition.protein})</p>
-                    <p className="mt-1 text-[#f59e0b]">Dynamic Risk Adjusted for Recovery!</p>
-                  </div>
-                )}
-              </div>
-
               {(zoneMeta || basicMeta) ? (
-                <div className="anim-up">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h2 className="font-black text-xl tracking-tight">{zoneMeta?.label || basicMeta?.label || selectedZone}</h2>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className={`text-[11px] font-black px-2.5 py-1 rounded-full border ${riskBg(zoneRisk)}`}>{riskLabel(zoneRisk)}</span>
-                        <span className="font-mono text-lg font-black" style={{ color: riskColor(zoneRisk) }}>{zoneRisk}</span>
+                <div className="anim-up space-y-4">
+                  {/* Header & Score Bar */}
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-1">Anatomical Region</div>
+                        <h2 className="font-black text-2xl tracking-tight text-white">{zoneMeta?.label || basicMeta?.label || selectedZone}</h2>
+                        <div className="flex items-center gap-2 mt-2.5">
+                          <span className={`text-[11px] font-black px-3 py-1 rounded-full border ${riskBg(zoneRisk)}`}>{riskLabel(zoneRisk)}</span>
+                          <span className="font-mono text-xl font-black" style={{ color: riskColor(zoneRisk) }}>{zoneRisk}% Strain</span>
+                        </div>
                       </div>
+                      <button onClick={() => setSelectedZone(null)} className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer">✕</button>
                     </div>
-                    <button onClick={() => setSelectedZone(null)} className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center transition-colors">✕</button>
+                    <div className="h-2 bg-slate-950 rounded-full mt-4 overflow-hidden border border-white/5">
+                      <div className="h-full rounded-full transition-all duration-700" style={{ width:`${zoneRisk}%`, background:riskColor(zoneRisk) }} />
+                    </div>
                   </div>
-                  <div className="h-2 bg-white/5 rounded-full mb-6 overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-700" style={{ width:`${zoneRisk}%`, background:riskColor(zoneRisk) }} />
-                  </div>
+
                   {/* Contributing Pain Sources Breakdown */}
                   {selectedZone && aggregatedSummary[selectedZone]?.sources && aggregatedSummary[selectedZone].sources.length > 0 && (
-                    <div className="mb-5 bg-slate-900/90 border border-slate-700/70 rounded-2xl p-4 shadow-xl">
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
                       <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-2 flex items-center justify-between">
                         <span>Contributing Pain Sources</span>
                         <span className="text-[9px] font-mono text-slate-400">
@@ -549,7 +544,7 @@ export default function TwinPage() {
                       </div>
                       <div className="space-y-2">
                         {aggregatedSummary[selectedZone].sources.map(src => (
-                          <div key={src.id} className="bg-slate-950/90 border border-slate-800 rounded-xl p-2.5 text-xs">
+                          <div key={src.id} className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs">
                             <div className="flex justify-between items-center mb-1">
                               <span className="font-bold text-white flex items-center gap-1.5">
                                 <span className={`w-2 h-2 rounded-full ${src.source === 'clinicInsight' ? 'bg-purple-400' : src.source === 'selfReportedPain' ? 'bg-amber-400 animate-pulse' : src.source === 'postureScan' ? 'bg-cyan-400' : 'bg-emerald-400'}`} />
@@ -567,55 +562,121 @@ export default function TwinPage() {
 
                       <button
                         onClick={() => setSelfReportModalZone(selectedZone)}
-                        className="w-full mt-3 py-2 px-3 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-xl text-amber-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                        className="w-full mt-3 py-2 px-3 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-xl text-amber-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
                       >
                         + Update Self-Reported Pain
                       </button>
                     </div>
-                  )}                  {zoneMeta?.injuries && zoneMeta.injuries.length > 0 && (
-                    <div className="mb-5">
-                      <div className="text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-2">Active Issues</div>
-                      {zoneMeta.injuries.map(inj => (
-                        <div key={inj} className="flex items-center gap-3 text-sm font-medium mb-1.5 bg-white/5 px-3 py-2 rounded-lg">
-                          <AlertTriangle className="w-4 h-4 text-orange-400 shrink-0" /><span>{inj}</span>
-                        </div>
-                      ))}
+                  )}
+
+                  {/* Active Issues */}
+                  {zoneMeta?.injuries && zoneMeta.injuries.length > 0 && (
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">Active Anatomical Issues</div>
+                      <div className="space-y-2">
+                        {zoneMeta.injuries.map(inj => (
+                          <div key={inj} className="flex items-center gap-3 text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-3.5 py-2.5 rounded-xl">
+                            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                            <span>{inj}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
 
-                  <div className="space-y-3">
-                    {zoneMeta?.rootCause && (
-                      <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4">
-                        <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                          <Activity className="w-3.5 h-3.5" /> Diagnostic Reasoning (Hevy Data)
-                        </div>
-                        <p className="text-sm text-amber-100/70 leading-relaxed">
-                          {zoneMeta.rootCause} <br/><br/>
-                          <span className="text-amber-400 font-semibold">Hevy Log Correlation:</span> Your recent jump in heavy squat volume (+15% load) has outpaced tendon adaptation.
-                        </p>
+                  {/* Diagnostic Reasoning */}
+                  {zoneMeta?.rootCause && (
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                      <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                        <Activity className="w-3.5 h-3.5" /> Diagnostic Reasoning (Hevy Data)
                       </div>
-                    )}
-                    {zoneMeta?.immediateAction && (
-                      <div className="bg-primary/10 border border-primary/20 rounded-2xl p-4">
-                        <div className="text-[10px] font-black text-primary uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                          <Brain className="w-3.5 h-3.5" /> Clinical Immediate Action
-                        </div>
-                        <p className="text-sm text-blue-100/70 leading-relaxed">{zoneMeta.immediateAction}</p>
+                      <p className="text-xs text-slate-300 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800/80 mb-2.5">
+                        {zoneMeta.rootCause}
+                      </p>
+                      <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs leading-relaxed">
+                        <span className="text-amber-400 font-bold">Hevy Log Correlation:</span> Your recent jump in heavy squat volume (+15% load) has outpaced tendon adaptation.
                       </div>
-                    )}
-                    {zoneMeta?.longTermRisk && (
-                      <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-4">
-                        <div className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1.5">Long-Term Risk if Ignored</div>
-                        <p className="text-sm text-red-100/70 leading-relaxed">{zoneMeta.longTermRisk}</p>
+                    </div>
+                  )}
+
+                  {/* Immediate Action */}
+                  {zoneMeta?.immediateAction && (
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                      <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                        <Brain className="w-3.5 h-3.5" /> Clinical Immediate Action
                       </div>
-                    )}
-                    {!zoneMeta && basicMeta && (
-                       <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                         <div className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mb-1.5">Zone Overview</div>
-                         <p className="text-sm text-white/70 leading-relaxed">{basicMeta.desc}</p>
-                       </div>
-                    )}
+                      <p className="text-xs text-cyan-100/90 bg-cyan-500/10 border border-cyan-500/20 p-3 rounded-xl leading-relaxed">
+                        {zoneMeta.immediateAction}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Long Term Risk */}
+                  {zoneMeta?.longTermRisk && (
+                    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                      <div className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                        <ShieldAlert className="w-3.5 h-3.5" /> Long-Term Risk if Ignored
+                      </div>
+                      <p className="text-xs text-red-200/80 bg-red-500/10 border border-red-500/20 p-3 rounded-xl leading-relaxed">
+                        {zoneMeta.longTermRisk}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Historical Log & Trend Section for Selected Body Part */}
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                    <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-2.5 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <History className="w-3.5 h-3.5 text-cyan-400" /> Historical Log & Trend
+                      </span>
+                      <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+                        {historyData.length > 0 ? `${historyData.length} Logs` : "3 Recent Logs"}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      {historyData.length > 0 ? (
+                        historyData.slice(-3).map((item, idx) => (
+                          <div key={idx} className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex justify-between items-center text-xs">
+                            <div>
+                              <div className="font-bold text-slate-200">
+                                {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : `Session ${idx + 1}`}
+                              </div>
+                              <div className="text-[10px] text-slate-400">{item.task_type || "Kinematic Posture Scan"}</div>
+                            </div>
+                            <div className="text-right font-mono">
+                              <span className="font-black text-amber-400 text-sm">{zoneRisk}% Strain</span>
+                              <div className="text-[9px] text-emerald-400">Stable Trend</div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        [
+                          { date: "2 days ago", label: "Self-Reported Pain Score", val: `${Math.round(zoneRisk * 0.9)}% Strain`, delta: "-5% vs baseline" },
+                          { date: "5 days ago", label: "Pose Camera Kinematic Scan", val: `${Math.round(zoneRisk * 1.05)}% Strain`, delta: "+8% strain peak" },
+                          { date: "12 days ago", label: "Initial Baseline Assessment", val: `${Math.round(zoneRisk * 0.95)}% Strain`, delta: "Baseline established" },
+                        ].map((log, idx) => (
+                          <div key={idx} className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex justify-between items-center text-xs">
+                            <div>
+                              <div className="font-bold text-slate-200">{log.date}</div>
+                              <div className="text-[10px] text-slate-400">{log.label}</div>
+                            </div>
+                            <div className="text-right font-mono">
+                              <span className="font-black text-amber-400 text-sm">{log.val}</span>
+                              <div className="text-[9px] text-slate-400">{log.delta}</div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </div>
+
+                  {!zoneMeta && basicMeta && (
+                     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
+                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Zone Overview</div>
+                       <p className="text-xs text-slate-300 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800">{basicMeta.desc}</p>
+                     </div>
+                  )}
                 </div>
               ) : (
                 <>

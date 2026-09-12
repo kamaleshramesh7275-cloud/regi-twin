@@ -66,6 +66,7 @@ export function Sidebar() {
   const navItemsList = [
     { label: "Dashboard", href: "/dashboard", section: "Core", icon: <Activity className="w-4 h-4" /> },
     { label: "3D Digital Twin", href: "/twin", section: "Core", icon: <User className="w-4 h-4" /> },
+    { label: "What-If Simulator", href: "/simulator", section: "Core", icon: <Brain className="w-4 h-4 text-emerald-400" />, tag: "New" },
     { label: "Live Vision Mocap", href: "/capture", section: "Core", icon: <Camera className="w-4 h-4 text-cyan-400" /> },
     
     { label: "Nutrition & Recovery", href: "/nutrition-recovery", section: "Health & Training", icon: <Apple className="w-4 h-4" /> },
@@ -154,6 +155,7 @@ export function Sidebar() {
               <NavSection title="Core" />
               <NavItem icon={<Activity className="w-4 h-4" />} label="Dashboard" href="/dashboard" active={location === '/dashboard'} />
               <NavItem icon={<User className="w-4 h-4" />} label="3D Digital Twin" href="/twin" active={location === '/twin'} />
+              <NavItem icon={<Brain className="w-4 h-4 text-emerald-400" />} label="What-If Simulator" href="/simulator" active={location === '/simulator'} tag="New" />
               <NavItem icon={<Camera className="w-4 h-4 text-cyan-400" />} label="Live Vision Mocap" href="/capture" active={location === '/capture'} />
 
               <NavSection title="Health & Training" />

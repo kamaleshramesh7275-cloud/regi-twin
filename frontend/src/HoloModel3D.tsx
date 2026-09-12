@@ -52,15 +52,15 @@ const HEAT_ZONES: ZoneId[] = [
 ];
 
 const HEAT_RADII: Record<ZoneId, number> = {
-  head: 0.22,  neck: 0.20,  chest: 0.32,  lumbar: 0.35,
-  left_shoulder: 0.26,  right_shoulder: 0.26,
+  head: 0.22,  neck: 0.16,  chest: 0.32,  lumbar: 0.30,
+  left_shoulder: 0.22,  right_shoulder: 0.22,
   left_arm: 0.22,       right_arm: 0.22,
-  left_forearm: 0.20,   right_forearm: 0.20,
-  left_hip: 0.30,       right_hip: 0.30,
-  left_thigh: 0.32,     right_thigh: 0.32,
-  left_knee: 0.25,      right_knee: 0.25,
-  left_shin: 0.24,      right_shin: 0.24,
-  left_ankle: 0.20,     right_ankle: 0.20,
+  left_forearm: 0.18,   right_forearm: 0.18,
+  left_hip: 0.25,       right_hip: 0.25,
+  left_thigh: 0.28,     right_thigh: 0.28,
+  left_knee: 0.20,      right_knee: 0.20,
+  left_shin: 0.22,      right_shin: 0.22,
+  left_ankle: 0.16,     right_ankle: 0.16,
 };
 
 // Skin preset configurations
@@ -77,10 +77,15 @@ function InfoCard({ zoneId, risk, position, onLogPainClick }: { zoneId: ZoneId, 
   const label = zoneId.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   const riskText = risk >= 65 ? "High Pain/Strain" : risk >= 30 ? "Moderate Pain" : risk > 0 ? "Low Strain" : "Untinted Baseline";
   const riskColor = risk >= 65 ? "text-red-400" : risk >= 30 ? "text-orange-400" : risk > 0 ? "text-yellow-400" : "text-emerald-400";
+  const isRightSide = zoneId.startsWith("right_");
 
   return (
-    <Html position={position} center zIndexRange={[100, 0]}>
-      <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="bg-black/90 border border-white/15 rounded-xl p-3 text-xs pointer-events-auto w-52 shadow-2xl backdrop-blur-md">
+    <Html position={position} zIndexRange={[100, 0]}>
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }} 
+        animate={{ opacity: 1, scale: 1 }} 
+        className={`relative bg-black/90 border border-white/15 rounded-xl p-3 text-xs pointer-events-auto w-52 shadow-2xl backdrop-blur-md ${isRightSide ? "-translate-x-full -translate-y-1/2 -ml-4" : "-translate-y-1/2 ml-4"}`}
+      >
         <div className="flex justify-between items-center mb-1">
           <span className="font-extrabold text-white text-xs">{label}</span>
           <span className={`font-mono font-black ${riskColor}`}>{risk}%</span>
@@ -274,26 +279,26 @@ function RealHumanoid3D({
 
     // ── Hardcoded anatomical positions for the static OBJ mesh ─────────────────
     const basePositions: Record<ZoneId, [number, number, number]> = {
-      head:           [0, 1.68, 0.04],
-      neck:           [0, 1.52, 0.02],
-      chest:          [0, 1.38, 0.08],
-      lumbar:         [0, 1.15, 0.06],
-      left_shoulder:  [0.22, 1.42, 0.01],
-      right_shoulder: [-0.22, 1.42, 0.01],
-      left_arm:       [0.27, 1.22, 0],
-      right_arm:      [-0.27, 1.22, 0],
-      left_forearm:   [0.30, 1.05, 0],
-      right_forearm:  [-0.30, 1.05, 0],
-      left_hip:       [0.11, 0.95, 0.02],
-      right_hip:      [-0.11, 0.95, 0.02],
-      left_thigh:     [0.12, 0.75, 0.02],
-      right_thigh:    [-0.12, 0.75, 0.02],
-      left_knee:      [0.12, 0.52, 0.05],
-      right_knee:     [-0.12, 0.52, 0.05],
-      left_shin:      [0.12, 0.30, 0.04],
-      right_shin:     [-0.12, 0.30, 0.04],
-      left_ankle:     [0.11, 0.10, 0.02],
-      right_ankle:    [-0.11, 0.10, 0.02],
+      head:           [0, 1.72, 0.02],
+      neck:           [0, 1.55, 0.02],
+      chest:          [0, 1.36, 0.08],
+      lumbar:         [0, 1.12, 0.05],
+      left_shoulder:  [0.21, 1.42, 0.0],
+      right_shoulder: [-0.21, 1.42, 0.0],
+      left_arm:       [0.28, 1.22, -0.02],
+      right_arm:      [-0.28, 1.22, -0.02],
+      left_forearm:   [0.34, 1.02, -0.03],
+      right_forearm:  [-0.34, 1.02, -0.03],
+      left_hip:       [0.12, 0.95, 0.03],
+      right_hip:      [-0.12, 0.95, 0.03],
+      left_thigh:     [0.12, 0.72, 0.04],
+      right_thigh:    [-0.12, 0.72, 0.04],
+      left_knee:      [0.12, 0.48, 0.06],
+      right_knee:     [-0.12, 0.48, 0.06],
+      left_shin:      [0.11, 0.28, 0.05],
+      right_shin:     [-0.11, 0.28, 0.05],
+      left_ankle:     [0.10, 0.08, 0.03],
+      right_ankle:    [-0.10, 0.08, 0.03],
     };
 
     const positions: Partial<Record<ZoneId, [number, number, number]>> = {};
@@ -357,6 +362,20 @@ function RealHumanoid3D({
           gl_FragColor.rgb = vec3(grey) * 0.6;
         }
 
+        // Procedural Athletic Performance Wear (Compression shorts & Short-Sleeve Athletic T-Shirt)
+        float wy = vWorldPos.y;
+        float wx = abs(vWorldPos.x);
+
+        bool isShorts        = (wy >= 0.46 && wy <= 0.94 && wx < 0.22);
+        bool isTShirtTorso   = (wy > 0.94 && wy <= 1.56 && wx < 0.26);
+        bool isTShirtSleeves = (wy >= 1.12 && wy <= 1.48 && wx >= 0.26 && wx <= 0.36);
+        bool isTShirt        = isTShirtTorso || isTShirtSleeves;
+
+        if (isShorts || isTShirt) {
+          vec3 clothColor = isShorts ? vec3(0.015, 0.02, 0.03) : vec3(0.02, 0.025, 0.035); // Deep obsidian matte black fabric
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, clothColor, 0.95);
+        }
+
         if (uHeatOpacity > 0.001) {
           vec3  heatAccum  = vec3(0.0);
           float heatWeight = 0.0;
@@ -372,11 +391,12 @@ function RealHumanoid3D({
             // Continuous surface falloff calculation
             float factor = pow(1.0 - smoothstep(0.0, r, dist), 1.35);
 
-            if (i == uSelectedZoneIdx) factor *= 1.35;
-
-            // Clinical Pain-Map Color Gradient (Yellow -> Orange -> Deep Red)
+            // Selection highlight rendering (cyan/emerald for selected zone, or gradient based on risk)
             vec3 heatCol = vec3(0.92, 0.70, 0.05); // Yellow base (1-25%)
-            if (risk > 65.0) {
+            if (i == uSelectedZoneIdx) {
+              factor *= 1.85;
+              heatCol = vec3(0.0, 0.85, 0.95); // Cyan/Electric Blue selection glow
+            } else if (risk > 65.0) {
               float t2 = clamp((risk - 65.0) / 35.0, 0.0, 1.0);
               heatCol = mix(vec3(0.95, 0.40, 0.02), vec3(0.85, 0.05, 0.05), t2); // Orange to Deep Crimson Red
             } else if (risk > 25.0) {
@@ -389,9 +409,9 @@ function RealHumanoid3D({
           }
 
           if (heatWeight > 0.001) {
-            float blendAlpha = clamp(heatWeight * uHeatOpacity * 0.88, 0.0, 0.92);
+            float blendAlpha = clamp(heatWeight * uHeatOpacity * 0.92, 0.0, 0.95);
             vec3 targetHeatColor = heatAccum / max(0.01, heatWeight);
-            gl_FragColor.rgb = mix(gl_FragColor.rgb, targetHeatColor, blendAlpha * 0.85) + heatAccum * 0.30;
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, targetHeatColor, blendAlpha * 0.90) + heatAccum * 0.45;
             gl_FragColor.rgb = clamp(gl_FragColor.rgb, 0.0, 1.0);
           }
         }
@@ -421,9 +441,15 @@ function RealHumanoid3D({
     HEAT_ZONES.forEach((zone, idx) => {
       const pos = jointPositions[zone];
       if (pos) u.uHeatCenters.value[idx].set(...pos);
-      u.uHeatRisks.value[idx] = riskData[zone] ?? 0;
+      
+      // Force selection heatmap activation on click even for baseline 0% risk zones
+      const isSel = selectedZone === zone;
+      const rawRisk = riskData[zone] ?? 0;
+      const effectiveRisk = isSel ? Math.max(rawRisk, 50) : rawRisk;
+
+      u.uHeatRisks.value[idx] = effectiveRisk;
       u.uHeatRadii.value[idx] = HEAT_RADII[zone] ?? 0.14;
-      if (selectedZone === zone) selIdx = idx;
+      if (isSel) selIdx = idx;
     });
     u.uSelectedZoneIdx.value = selIdx;
   });
@@ -432,29 +458,32 @@ function RealHumanoid3D({
     <group>
       <primitive object={cloned} />
 
-      {/* Invisible spheres for raycasting clicks and hovers */}
+      {/* Visible joint pin markers and raycast targets for ALL 20 anatomical body parts */}
       {HEAT_ZONES.map((zone) => {
         const pos = jointPositions[zone];
         if (!pos) return null;
-        const risk = riskData[zone];
-        if (risk == null && selectedZone !== zone) return null;
+        const risk = riskData[zone] ?? 0;
+        const isSelected = selectedZone === zone;
+        const hitRadius = zone.includes("chest") || zone.includes("lumbar") ? 0.22 : zone.includes("thigh") ? 0.18 : 0.14;
 
         return (
           <group key={zone} position={pos}>
+            {/* Raycast hit sphere */}
             <mesh 
               visible={false}
               onClick={(e) => { e.stopPropagation(); onZoneClick(zone); }}
               onPointerOver={(e) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
               onPointerOut={() => { document.body.style.cursor = "auto"; }}
             >
-              <sphereGeometry args={[0.08, 8, 8]} />
+              <sphereGeometry args={[hitRadius, 12, 12]} />
               <meshBasicMaterial />
             </mesh>
+
             {selectedZone === zone && (
               <InfoCard 
                 zoneId={zone} 
-                risk={risk || 0} 
-                position={[0, 0, 0]} 
+                risk={risk} 
+                position={[0, 0.08, 0]} 
                 onLogPainClick={onLogPainClick}
               />
             )}
@@ -550,7 +579,7 @@ export default function HoloModel3D(props: HoloModel3DProps) {
             </Suspense>
 
             <OrbitControls 
-              target={[0, 0.85, 0]} 
+              target={[0, 0.72, 0]} 
               enablePan={false} 
               minPolarAngle={Math.PI / 6} 
               maxPolarAngle={Math.PI / 1.6} 

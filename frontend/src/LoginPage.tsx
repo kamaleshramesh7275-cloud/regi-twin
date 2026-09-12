@@ -163,8 +163,12 @@ export default function LoginPage() {
     setIsLoggingIn(true);
     setAuthError("");
     try {
-      await loginWithGoogle();
-      setLocation(getPostLoginDest());
+      const { isNewUser } = await loginWithGoogle();
+      if (isNewUser || isRegister) {
+        setLocation("/onboarding");
+      } else {
+        setLocation(getPostLoginDest());
+      }
     } catch (error) {
       if (!isIgnorableAuthError(error)) {
         setAuthError(mapAuthError(error));
@@ -214,7 +218,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="relative w-full min-h-screen bg-[#020813] text-white font-sans overflow-x-hidden flex flex-col">
+    <div className="relative w-full min-h-screen bg-slate-950 text-slate-100 font-sans overflow-x-hidden flex flex-col justify-between selection:bg-emerald-500 selection:text-white">
       
       {/* Reset Password Modal */}
       {showReset && (
@@ -224,260 +228,213 @@ export default function LoginPage() {
         />
       )}
 
-      {/* Decorative Background */}
-      <div className="fixed inset-0 pointer-events-none opacity-40 z-0">
-        <div className="absolute top-[20%] left-[10%] w-[600px] h-[600px] bg-primary/20 blur-[150px] rounded-full" />
-        <div className="absolute top-[60%] right-[10%] w-[500px] h-[500px] bg-purple-500/10 blur-[150px] rounded-full" />
-      </div>
+      {/* Ambient background lights */}
+      <div className="fixed top-[-20%] left-[-10%] w-[60%] h-[60%] bg-emerald-500/10 rounded-full blur-[150px] pointer-events-none" />
+      <div className="fixed bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-blue-500/10 rounded-full blur-[150px] pointer-events-none" />
 
       {/* Navigation Bar */}
-      <header className="relative z-50 w-full border-b border-white/5 bg-black/50 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.3)]">
-              <Activity className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-xl font-black tracking-tight">PhysioTwin</span>
+      <header className="relative z-30 w-full max-w-7xl mx-auto flex items-center justify-between px-6 py-6">
+        <Link href="/" className="flex items-center gap-3 group">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500 flex items-center justify-center text-slate-950 font-black shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+            <Activity className="w-5 h-5 text-slate-950" />
           </div>
-          <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-white/70">
-            <a href="#features" className="hover:text-white transition-colors">Features</a>
-            <a href="#how-it-works" className="hover:text-white transition-colors">How it Works</a>
-            <a href="#clinical" className="hover:text-white transition-colors">Clinical Validation</a>
-          </nav>
-          <button
-            onClick={() => document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' })}
-            className="text-sm font-bold bg-white/10 hover:bg-white/20 transition-colors px-6 py-2.5 rounded-full"
-          >
-            Sign In
-          </button>
+          <div>
+            <span className="font-extrabold text-lg text-white tracking-tight">PhysioTwin</span>
+          </div>
+        </Link>
+
+        <div className="flex items-center gap-4 text-xs font-semibold">
+          <Link href="/" className="text-slate-400 hover:text-white transition-colors">Back to Overview</Link>
+          <Link href="/admin/login" className="text-emerald-400 hover:text-emerald-300 transition-colors border border-emerald-500/30 px-3 py-1.5 rounded-lg bg-emerald-500/10">Clinician Sign In</Link>
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 relative z-10 w-full max-w-7xl mx-auto px-6">
-        
-        {/* Hero Section */}
-        <section className="min-h-[85vh] flex flex-col lg:flex-row items-center justify-between gap-16 py-12 lg:py-0">
+      {/* Main Split Authentication Section */}
+      <main className="relative z-10 w-full max-w-6xl mx-auto px-6 py-8 md:py-16 flex-1 flex items-center justify-center">
+        <div className="w-full grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           
-          <div className="flex-1 space-y-8 text-center lg:text-left mt-12 lg:mt-0">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-bold uppercase tracking-widest">
-              <ActivitySquare className="w-4 h-4" /> Next-Gen Recovery
-            </div>
-            <h1 className="text-5xl lg:text-7xl font-black tracking-tighter leading-[1.1]">
-              The Digital Twin of <br className="hidden lg:block"/>
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-emerald-300">Your Recovery.</span>
+          {/* Left Column: Brand & Security Guarantees */}
+          <div className="hidden lg:flex flex-col space-y-6 text-left pr-4">
+            <div className="pt-section-label text-emerald-400">BIOMECHANICAL PLATFORM ACCESS</div>
+            <h1 className="text-4xl font-extrabold text-white tracking-tight leading-tight">
+              Access Your Personal <br />
+              Musculoskeletal Digital Twin
             </h1>
-            <p className="text-lg lg:text-xl text-muted-foreground leading-relaxed max-w-2xl mx-auto lg:mx-0">
-              PhysioTwin integrates data from Google Fit, HealthifyMe, and Hevy to build a 3D biomechanical model of your body. Predict injuries, optimize tissue repair, and return to sport faster.
+            <p className="text-sm text-slate-400 leading-relaxed max-w-md">
+              Sign in to view real-time joint kinematic history, acute-to-chronic workload strain calculations, and personalized LLM recovery insights.
             </p>
-            <div className="flex items-center gap-4 justify-center lg:justify-start">
-              <button
-                onClick={() => document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' })}
-                className="bg-primary hover:bg-emerald-400 text-white font-bold px-8 py-4 rounded-xl flex items-center gap-2 transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:shadow-[0_0_40px_rgba(16,185,129,0.5)]"
-              >
-                Start Free Trial <ArrowRight className="w-5 h-5" />
-              </button>
+
+            <div className="space-y-4 pt-4 border-t border-slate-900">
+              <div className="flex items-start gap-3">
+                <Shield className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-slate-300">100% On-Device Pose Kinematics Execution</p>
+              </div>
+              <div className="flex items-start gap-3">
+                <Brain className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-slate-300">LLM Diagnostic Advice &amp; ACWR Fatigue Thresholds</p>
+              </div>
+              <div className="flex items-start gap-3">
+                <Smartphone className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-slate-300">Sync with Google Fit, Garmin &amp; Health Platforms</p>
+              </div>
             </div>
           </div>
 
-          {/* Authentication Card */}
-          <div id="auth-section" className="w-full max-w-md shrink-0">
-            <div className="bg-black/60 backdrop-blur-2xl border border-white/10 p-10 rounded-[2rem] shadow-2xl">
-              <div className="text-center mb-8">
-                <h2 className="text-2xl font-bold">{isRegister ? "Create an Account" : "Welcome Back"}</h2>
-                <p className="text-sm text-muted-foreground mt-2">
-                  {isRegister ? "Join thousands of athletes rebuilding smarter." : "Sync your wearable data to continue."}
-                </p>
+          {/* Right Column: Authentication Form Card */}
+          <div className="w-full max-w-md mx-auto">
+            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 sm:p-8 space-y-6 shadow-2xl backdrop-blur-xl">
+              
+              {/* Header Mode Switcher */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-white">
+                    {isRegister ? "Create Account" : "Welcome Back"}
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {isRegister ? "Start tracking your movement baseline" : "Enter your credentials to continue"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={switchMode}
+                  className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors"
+                >
+                  {isRegister ? "Sign In →" : "Register →"}
+                </button>
               </div>
 
-              {/* Global auth error */}
+              {/* Global Auth Error */}
               {authError && (
                 <div
                   role="alert"
-                  id="auth-error-message"
-                  className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-xl mb-6 flex items-start gap-2"
+                  className="bg-red-500/10 border border-red-500/30 text-red-400 text-xs p-3 rounded-lg flex items-start gap-2"
                 >
                   <Shield className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{authError}</span>
                 </div>
               )}
 
-              <form onSubmit={handleEmailSubmit} className="flex flex-col gap-4 mb-6" noValidate>
-                {/* Email field */}
+              {/* Email / Password Form */}
+              <form onSubmit={handleEmailSubmit} className="space-y-4" noValidate>
                 <div>
+                  <label className="pt-section-label block mb-1.5">Email Address</label>
                   <input
                     id="login-email"
                     type="email"
-                    placeholder="Email Address"
+                    placeholder="name@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     onBlur={() => setEmailTouched(true)}
-                    className={`w-full bg-white/5 border rounded-xl px-4 py-3.5 outline-none focus:border-primary transition-colors placeholder:text-white/30 ${
-                      emailError ? "border-red-500/60" : "border-white/10"
+                    className={`w-full bg-slate-950 border rounded-lg px-3.5 py-2.5 text-xs text-white outline-none focus:border-slate-700 transition-colors placeholder:text-slate-600 ${
+                      emailError ? "border-red-500/60" : "border-slate-800"
                     }`}
                     autoComplete="email"
-                    aria-describedby={emailError ? "email-error" : undefined}
                   />
                   {emailError && (
-                    <p id="email-error" className="text-red-400 text-xs mt-1.5 ml-1">{emailError}</p>
+                    <p className="text-red-400 text-[11px] mt-1 ml-0.5">{emailError}</p>
                   )}
                 </div>
 
-                {/* Password field */}
                 <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="pt-section-label">Password</label>
+                    {!isRegister && (
+                      <button
+                        type="button"
+                        onClick={() => setShowReset(true)}
+                        className="text-[11px] text-slate-400 hover:text-white transition-colors"
+                      >
+                        Forgot password?
+                      </button>
+                    )}
+                  </div>
                   <div className="relative">
                     <input
                       id="login-password"
                       type={showPassword ? "text" : "password"}
-                      placeholder="Password"
+                      placeholder="••••••••"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       onBlur={() => setPasswordTouched(true)}
-                      className={`w-full bg-white/5 border rounded-xl px-4 py-3.5 pr-12 outline-none focus:border-primary transition-colors placeholder:text-white/30 ${
-                        passwordError ? "border-red-500/60" : "border-white/10"
+                      className={`w-full bg-slate-950 border rounded-lg px-3.5 py-2.5 pr-10 text-xs text-white outline-none focus:border-slate-700 transition-colors placeholder:text-slate-600 ${
+                        passwordError ? "border-red-500/60" : "border-slate-800"
                       }`}
                       autoComplete={isRegister ? "new-password" : "current-password"}
-                      aria-describedby={passwordError ? "password-error" : undefined}
                     />
                     <button
                       type="button"
                       tabIndex={-1}
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/70 transition-colors"
-                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
                     >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     </button>
                   </div>
                   {passwordError && (
-                    <p id="password-error" className="text-red-400 text-xs mt-1.5 ml-1">{passwordError}</p>
+                    <p className="text-red-400 text-[11px] mt-1 ml-0.5">{passwordError}</p>
                   )}
                   {isRegister && <StrengthBar password={password} />}
                 </div>
-
-                {/* Forgot password (sign-in only) */}
-                {!isRegister && (
-                  <div className="text-right -mt-1">
-                    <button
-                      type="button"
-                      onClick={() => setShowReset(true)}
-                      className="text-xs text-white/50 hover:text-primary transition-colors underline underline-offset-2"
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
-                )}
 
                 <button
                   id="auth-submit-button"
                   type="submit"
                   disabled={isLoggingIn}
-                  className="w-full bg-primary text-white font-bold text-lg py-3.5 rounded-xl hover:bg-emerald-400 transition-all shadow-lg disabled:opacity-60 mt-2 flex items-center justify-center gap-2"
+                  className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs py-3 rounded-lg transition-all disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  {isLoggingIn && <Loader2 className="w-5 h-5 animate-spin" />}
+                  {isLoggingIn && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   {isLoggingIn
                     ? "Authenticating..."
                     : isRegister
-                    ? "Create Account"
-                    : "Sign In"}
+                    ? "Create Patient Account"
+                    : "Sign In to Dashboard"}
                 </button>
               </form>
 
-              <div className="flex items-center gap-4 mb-6">
-                <div className="h-px bg-white/10 flex-1" />
-                <span className="text-xs text-muted-foreground uppercase tracking-widest">or</span>
-                <div className="h-px bg-white/10 flex-1" />
+              <div className="flex items-center gap-4">
+                <div className="h-px bg-slate-800 flex-1" />
+                <span className="pt-section-label text-[10px]">OR</span>
+                <div className="h-px bg-slate-800 flex-1" />
               </div>
 
+              {/* Google OAuth Button */}
               <button
                 id="google-login-button"
                 onClick={handleGoogleLogin}
                 type="button"
                 disabled={isLoggingIn}
-                className="w-full flex items-center justify-center gap-3 bg-white text-black font-bold text-lg py-3.5 rounded-xl hover:bg-gray-200 transition-all shadow-xl disabled:opacity-60"
+                className="w-full flex items-center justify-center gap-2.5 bg-slate-950 hover:bg-slate-900 border border-slate-800 text-white font-semibold text-xs py-2.5 rounded-lg transition-all disabled:opacity-60 cursor-pointer"
               >
                 {isLoggingIn ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <img src="https://www.google.com/favicon.ico" alt="Google" className="w-5 h-5" />
+                  <img src="https://www.google.com/favicon.ico" alt="Google" className="w-4 h-4" />
                 )}
                 Continue with Google
               </button>
 
-              <div className="mt-8 text-center">
-                <button
-                  type="button"
-                  onClick={switchMode}
-                  className="text-sm text-muted-foreground hover:text-white transition-colors underline underline-offset-4"
-                >
-                  {isRegister ? "Already have an account? Sign In" : "Need an account? Register"}
-                </button>
+              {/* Direct Clinician Shortcut */}
+              <div className="pt-2 border-t border-slate-800 text-center">
+                <p className="text-[11px] text-slate-500">
+                  Are you a clinician or healthcare administrator?{" "}
+                  <Link href="/admin/login" className="text-emerald-400 hover:underline font-semibold">
+                    Sign in to Clinician Admin →
+                  </Link>
+                </p>
               </div>
+
             </div>
           </div>
-        </section>
 
-        {/* Features Section */}
-        <section id="features" className="py-32">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-5xl font-black tracking-tight mb-4">Enterprise-Grade Clinical Intelligence</h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">We don't just track workouts. We analyze the biomechanical impact of every step you take.</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-white/5 border border-white/10 p-8 rounded-3xl hover:bg-white/10 transition-colors">
-              <div className="w-12 h-12 bg-blue-500/20 text-blue-400 rounded-2xl flex items-center justify-center mb-6">
-                <Smartphone className="w-6 h-6" />
-              </div>
-              <h3 className="text-xl font-bold mb-3">Universal Integration</h3>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                Connects seamlessly with Google Fit, HealthifyMe, Hevy, Oura, and Apple Health. All your data in one master biomechanical brain.
-              </p>
-            </div>
-            
-            <div className="bg-white/5 border border-white/10 p-8 rounded-3xl hover:bg-white/10 transition-colors">
-              <div className="w-12 h-12 bg-primary/20 text-primary rounded-2xl flex items-center justify-center mb-6">
-                <Activity className="w-6 h-6" />
-              </div>
-              <h3 className="text-xl font-bold mb-3">3D Dynamic Risk Modeling</h3>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                Watch your digital twin update in real-time. If your training volume outpaces your recovery, we highlight the exact tendons at risk.
-              </p>
-            </div>
-
-            <div className="bg-white/5 border border-white/10 p-8 rounded-3xl hover:bg-white/10 transition-colors">
-              <div className="w-12 h-12 bg-purple-500/20 text-purple-400 rounded-2xl flex items-center justify-center mb-6">
-                <Brain className="w-6 h-6" />
-              </div>
-              <h3 className="text-xl font-bold mb-3">Diagnostic Reasoning</h3>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                Don't just see numbers. Get deep clinical explanations on why your Force Asymmetry matters and how your protein intake affects collagen synthesis.
-              </p>
-            </div>
-          </div>
-        </section>
-
+        </div>
       </main>
 
       {/* Footer */}
-      <footer className="relative z-10 w-full border-t border-white/5 bg-black/80 backdrop-blur-md py-12 mt-auto">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="flex items-center gap-3">
-            <Activity className="w-5 h-5 text-primary" />
-            <span className="font-bold">PhysioTwin</span>
-          </div>
-          <div className="text-sm text-muted-foreground">
-            © 2026 Pro Caffeinators. All rights reserved.
-          </div>
-          <div className="flex items-center gap-6 text-sm text-muted-foreground">
-            <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
-            <a href="#" className="hover:text-white transition-colors">Contact</a>
-            <Link href="/admin/login" className="text-teal-400 hover:text-teal-300 font-semibold transition-colors">Clinician / Admin sign in →</Link>
-          </div>
-        </div>
+      <footer className="relative z-10 w-full border-t border-slate-900 bg-slate-950 py-6 text-center text-xs text-slate-500">
+        <p>&copy; 2026 PhysioTwin System &middot; Privacy-First Musculoskeletal Diagnostics</p>
       </footer>
 
     </div>
   );
 }
+

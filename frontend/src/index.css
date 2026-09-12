@@ -251,3 +251,21 @@ input[type=range]::-webkit-slider-thumb {
   }
 }
 
+/* ── PhysioTwin Utility Classes ───────────────────────── */
+.pt-section-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.125em;
+  color: #64748b;
+}
+
+.pt-faq-details[open] summary .pt-faq-icon {
+  transform: rotate(45deg);
+}
+
+.pt-faq-icon {
+  transition: transform 0.2s ease;
+}
+
+

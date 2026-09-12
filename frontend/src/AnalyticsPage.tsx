@@ -12,29 +12,10 @@ import {
 import { api } from "./api";
 import { useAuth } from "./context/AuthContext";
 
-// Fallback mock data shown when there are no sessions yet
-const FALLBACK_CAP = [
-  { date: "W1", mobility: 62, stability: 58, recovery: 55, quality: 60 },
-  { date: "W2", mobility: 67, stability: 63, recovery: 60, quality: 65 },
-  { date: "W3", mobility: 73, stability: 70, recovery: 68, quality: 71 },
-  { date: "W4", mobility: 79, stability: 76, recovery: 75, quality: 78 },
-];
-
-const FALLBACK_ROM = [
-  { date: "Oct 01", rom: 82, symmetry: 74, stability: 68 },
-  { date: "Oct 08", rom: 88, symmetry: 79, stability: 73 },
-  { date: "Oct 15", rom: 95, symmetry: 85, stability: 80 },
-  { date: "Oct 22", rom: 101, symmetry: 90, stability: 86 },
-  { date: "Oct 29", rom: 108, symmetry: 94, stability: 91 },
-];
-
-const FALLBACK_ZONES = [
-  { zone: "Knee Flexion", sessions: 8 },
-  { zone: "Hip Stability", sessions: 5 },
-  { zone: "Lumbar Mobility", sessions: 4 },
-  { zone: "Shoulder ROM", sessions: 3 },
-  { zone: "Ankle", sessions: 2 },
-];
+// Authentic user analytics state (empty until sessions exist)
+const FALLBACK_CAP: any[] = [];
+const FALLBACK_ROM: any[] = [];
+const FALLBACK_ZONES: any[] = [];
 
 export default function AnalyticsPage() {
   const { user } = useAuth();
