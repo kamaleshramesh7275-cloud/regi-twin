@@ -235,6 +235,7 @@ function LandingPage() {
 
 import CapturesPage from "./CapturesPage";
 import { HistoryPage, TimelinePage, InsightsPage } from "./DummyPages";
+import FullMedicalHistory from "./FullMedicalHistory";
 import TwinPage from "./TwinPage";
 import LeaderboardPage from "./LeaderboardPage";
 import SettingsPage from "./SettingsPage";
@@ -251,6 +252,7 @@ import AchievementsPage from "./AchievementsPage";
 import ExerciseLibrary from "./ExerciseLibrary";
 import WorkoutLogger from "./WorkoutLogger";
 import LoginPage from "./LoginPage";
+import EntryPage from "./EntryPage";
 import AdminPage from "./AdminPage";
 import ClinicianDashboard from "./ClinicianDashboard";
 import AdminPortalShell from "./admin/AdminPortalShell";
@@ -335,8 +337,9 @@ function AppContent() {
         <div className="min-h-screen bg-background text-foreground">
           <Switch>
           <Route path="/" component={LandingPage} />
+          <Route path="/entry" component={EntryPage} />
           <Route path="/login" component={LoginPage} />
-          <Route path="/register" component={LoginPage} />
+          <Route path="/register" component={Onboarding} />
           <Route path="/onboarding" component={Onboarding} />
           <Route path="/capture" component={CaptureEngine} />
           <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
@@ -344,7 +347,8 @@ function AppContent() {
           
           {/* Protected Routes */}
           <Route path="/twin"><ProtectedRoute component={TwinPage} /></Route>
-          <Route path="/history"><ProtectedRoute component={TimelinePage} /></Route>
+          <Route path="/medical-history"><ProtectedRoute component={FullMedicalHistory} /></Route>
+          <Route path="/history"><ProtectedRoute component={FullMedicalHistory} /></Route>
           <Route path="/projection"><ProtectedRoute component={TwinPage} /></Route>
           <Route path="/leaderboard"><ProtectedRoute component={LeaderboardPage} /></Route>
           <Route path="/nutrition-recovery"><ProtectedRoute component={NutritionRecovery} /></Route>

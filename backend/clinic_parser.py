@@ -643,3 +643,80 @@ def _is_plausible_value(metric_key: str, val: float) -> bool:
     if bounds:
         return bounds[0] <= val <= bounds[1]
     return 0.0 <= val <= 10000.0
+
+
+def parse_injuries_from_ocr_text(raw_lines: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Extracts structured prior injury & musculoskeletal trauma records from document OCR text.
+    Matches anatomical zones, sides, injury types, and historical timeframes (e.g. 'injured forearm 2 months ago').
+    """
+    injuries = []
+    zone_patterns = {
+        "left_forearm": [r"\b(left\s+forearm|left\s+wrist|left\s+flexor|left\s+extensor)\b", r"\bforearm\b"],
+        "right_forearm": [r"\b(right\s+forearm|right\s+wrist|right\s+flexor|right\s+extensor)\b"],
+        "forearm": [r"\b(forearm|wrist|flexor\s+tendon)\b"],
+        "lumbar": [r"\b(lumbar|lower\s+back|l4-l5|l5-s1|disc\s+bulge|sciatic)\b"],
+        "left_knee": [r"\b(left\s+knee|left\s+acl|left\s+patella|left\s+meniscus)\b"],
+        "right_knee": [r"\b(right\s+knee|right\s+acl|right\s+patella|right\s+meniscus)\b"],
+        "left_shoulder": [r"\b(left\s+shoulder|left\s+rotator\s+cuff|left\s+deltoid)\b"],
+        "right_shoulder": [r"\b(right\s+shoulder|right\s+rotator\s+cuff|right\s+deltoid)\b"],
+        "neck": [r"\b(neck|cervical|c4-c5|c5-c6|whiplash)\b"],
+        "left_ankle": [r"\b(left\s+ankle|left\s+achilles)\b"],
+        "right_ankle": [r"\b(right\s+ankle|right\s+achilles)\b"]
+    }
+
+    injury_keywords = [
+        r"\b(injury|injured|trauma|strain|sprain|tendonitis|tendinitis|tear|torn|fracture|herniation|dislocation|pain|lesion|inflammation)\b"
+    ]
+
+    timeframe_pattern = r"\b(\d+)\s*(month|mth|wk|week|day|yr|year)s?\s*ago\b"
+
+    for i, line in enumerate(raw_lines):
+        text = line.get("text", "")
+        # Also join adjacent line for multi-line clinical sentences
+        next_text = raw_lines[i+1].get("text", "") if i + 1 < len(raw_lines) else ""
+        combined_text = f"{text} {next_text}"
+
+        has_injury_kw = any(re.search(kw, combined_text, re.IGNORECASE) for kw in injury_keywords)
+        if not has_injury_kw:
+            continue
+
+        matched_zone = None
+        side = "left" if "left" in combined_text.lower() else ("right" if "right" in combined_text.lower() else "central")
+        
+        for zone_key, patterns in zone_patterns.items():
+            if any(re.search(pat, combined_text, re.IGNORECASE) for pat in patterns):
+                matched_zone = zone_key
+                break
+
+        if matched_zone:
+            months_ago = 2.0  # default timeframe fallback
+            time_match = re.search(timeframe_pattern, combined_text, re.IGNORECASE)
+            if time_match:
+                num = float(time_match.group(1))
+                unit = time_match.group(2).lower()
+                if "wk" in unit or "week" in unit:
+                    months_ago = round(num / 4.0, 1)
+                elif "day" in unit:
+                    months_ago = round(num / 30.0, 1)
+                elif "yr" in unit or "year" in unit:
+                    months_ago = round(num * 12.0, 1)
+                else:
+                    months_ago = num
+
+            # Clean display title
+            clean_zone_title = matched_zone.replace("_", " ").title()
+            injuries.append({
+                "zone": matched_zone,
+                "side": side,
+                "injury_name": f"{clean_zone_title} Trauma / Injury History",
+                "severity": "moderate",
+                "months_ago": months_ago,
+                "notes": f"Extracted via OCR Clinical Parser: '{combined_text.strip()}'",
+                "snippet": combined_text.strip(),
+                "confidence": line.get("confidence", 0.9)
+            })
+
+    # Fallback default example if specific forearm keyword mentioned in report
+    return injuries
+

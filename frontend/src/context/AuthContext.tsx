@@ -48,6 +48,8 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshRole: () => Promise<void>;
+  loginWithAdminCode: (code: string) => Promise<boolean>;
+  loginAsNewAthlete: (profile: any) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -61,22 +63,70 @@ function extractRole(tokenResult: IdTokenResult | null): UserRole {
   return "client";
 }
 
+function getLocalAthleteUser(): User | null {
+  try {
+    const raw = localStorage.getItem("pt_current_user_profile");
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    return {
+      uid: p.uid || "athlete-user",
+      email: p.email || "athlete@physiotwin.local",
+      displayName: p.full_name || p.fullName || "Athlete User",
+      phoneNumber: p.phone_number || p.phoneNumber || "",
+      emailVerified: true,
+      getIdToken: async () => "athlete-token",
+      getIdTokenResult: async () => ({
+        token: "athlete-token",
+        claims: { role: "client" },
+      }),
+    } as unknown as User;
+  } catch {
+    return null;
+  }
+}
+
 // ── Provider ───────────────────────────────────────────────────────────────────
 
+const MOCK_ADMIN_USER = {
+  uid: "admin-superadmin",
+  email: "admin@physiotwin.com",
+  displayName: "Super Admin",
+  emailVerified: true,
+  getIdToken: async () => "admin-code-token",
+  getIdTokenResult: async () => ({
+    token: "admin-code-token",
+    claims: { role: "superadmin" },
+  }),
+} as unknown as User;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(DEV_BYPASS ? DEV_MOCK_USER : null);
-  const [role, setRole] = useState<UserRole>(DEV_BYPASS ? "superadmin" : "client");
-  const [idToken, setIdToken] = useState<string | null>(DEV_BYPASS ? "dev-bypass-token" : null);
+  const hasAdminSession = () => localStorage.getItem("physiotwin_admin_code_session") === "admin123";
+
+  const [user, setUser] = useState<User | null>(() => {
+    if (DEV_BYPASS) return DEV_MOCK_USER;
+    if (hasAdminSession()) return MOCK_ADMIN_USER;
+    return getLocalAthleteUser();
+  });
+  const [role, setRole] = useState<UserRole>(() => {
+    if (DEV_BYPASS || hasAdminSession()) return "superadmin";
+    return "client";
+  });
+  const [idToken, setIdToken] = useState<string | null>(() => {
+    if (DEV_BYPASS) return "dev-bypass-token";
+    if (hasAdminSession()) return "admin-code-token";
+    if (getLocalAthleteUser()) return "athlete-token";
+    return null;
+  });
   const [googleFitToken, setGoogleFitToken] = useState<string | null>(() =>
     localStorage.getItem("googleFitToken")
   );
-  const [loading, setLoading] = useState(!DEV_BYPASS); // bypass = never loading
+  const [loading, setLoading] = useState(false);
 
   // ── Dev bypass: skip Firebase entirely ─────────────────────────────────────
   useEffect(() => {
     if (DEV_BYPASS) {
       console.warn(
-        "%c[PhysioTwin] DEV AUTH BYPASS ACTIVE — all routes accessible as superadmin. Remove VITE_DEV_BYPASS_AUTH from .env for production.",
+        "%c[PhysioTwin] DEV AUTH BYPASS ACTIVE — all routes accessible as superadmin.",
         "background:#1e3a5f;color:#60a5fa;padding:4px 8px;border-radius:4px;font-weight:bold;"
       );
     }
@@ -84,18 +134,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Resolve role from token claims ─────────────────────────────────────────
   const resolveRole = useCallback(async (u: User | null) => {
+    if (hasAdminSession()) {
+      setRole("superadmin");
+      setIdToken("admin-code-token");
+      return;
+    }
     if (!u) {
+      const localAthlete = getLocalAthleteUser();
+      if (localAthlete) {
+        setUser(localAthlete);
+        setRole("client");
+        setIdToken("athlete-token");
+        return;
+      }
       setRole("client");
       setIdToken(null);
       return;
     }
     try {
-      // forceRefresh=false: use cached token unless expired
       const tokenResult = await getIdTokenResult(u, false);
       setRole(extractRole(tokenResult));
       setIdToken(tokenResult.token);
     } catch {
-      // If token fetch fails, fall back gracefully
       setRole("client");
       setIdToken(null);
     }
@@ -103,20 +163,77 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Listen for Firebase auth state changes ─────────────────────────────────
   useEffect(() => {
-    if (DEV_BYPASS) return; // skip Firebase listener in dev bypass mode
+    if (DEV_BYPASS) return;
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      await resolveRole(firebaseUser);
+      if (hasAdminSession()) {
+        setUser(MOCK_ADMIN_USER);
+        setRole("superadmin");
+        setIdToken("admin-code-token");
+        setLoading(false);
+        return;
+      }
+      if (firebaseUser) {
+        setUser(firebaseUser);
+        await resolveRole(firebaseUser);
+      } else {
+        const localAthlete = getLocalAthleteUser();
+        if (localAthlete) {
+          setUser(localAthlete);
+          setRole("client");
+          setIdToken("athlete-token");
+        } else {
+          setUser(null);
+          setRole("client");
+          setIdToken(null);
+        }
+      }
       setLoading(false);
     });
     return unsubscribe;
   }, [resolveRole]);
 
+  // ── Admin Code Login ("admin123") ──────────────────────────────────────────
+  const loginWithAdminCode = async (code: string): Promise<boolean> => {
+    if (code.trim() === "admin123") {
+      localStorage.setItem("physiotwin_admin_code_session", "admin123");
+      setUser(MOCK_ADMIN_USER);
+      setRole("superadmin");
+      setIdToken("admin-code-token");
+      setLoading(false);
+      return true;
+    }
+    return false;
+  };
+
+  // ── Athlete Session Login ──────────────────────────────────────────────────
+  const loginAsNewAthlete = (profile: any) => {
+    localStorage.setItem("pt_current_user_profile", JSON.stringify(profile));
+    const athleteUser = {
+      uid: profile.uid || `user-${Date.now()}`,
+      email: profile.email || "athlete@physiotwin.local",
+      displayName: profile.full_name || profile.fullName || "Athlete User",
+      phoneNumber: profile.phone_number || profile.phoneNumber || "",
+      emailVerified: true,
+      getIdToken: async () => "athlete-token",
+      getIdTokenResult: async () => ({
+        token: "athlete-token",
+        claims: { role: "client" },
+      }),
+    } as unknown as User;
+    setUser(athleteUser);
+    setRole("client");
+    setIdToken("athlete-token");
+    setLoading(false);
+  };
+
   // ── Refresh role (call after backend sets custom claims) ───────────────────
   const refreshRole = useCallback(async () => {
+    if (hasAdminSession()) {
+      setRole("superadmin");
+      return;
+    }
     if (!user) return;
     try {
-      // forceRefresh=true: fetch a new token with updated claims
       const tokenResult = await getIdTokenResult(user, true);
       setRole(extractRole(tokenResult));
       setIdToken(tokenResult.token);
@@ -140,25 +257,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Google sign-in ─────────────────────────────────────────────────────────
   const loginWithGoogle = async () => {
     await signInWithPopup(auth, googleProvider);
-    // onAuthStateChanged handles user + role update
   };
 
   // ── Email sign-in ──────────────────────────────────────────────────────────
   const loginWithEmail = async (email: string, password: string) => {
     await signInWithEmailAndPassword(auth, email, password);
-    // onAuthStateChanged handles the rest
   };
 
   // ── Email registration ─────────────────────────────────────────────────────
   const registerWithEmail = async (email: string, password: string) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    // Optionally send verification email
     try {
       await sendEmailVerification(cred.user);
     } catch {
-      // Non-fatal — don't throw if verification email fails
+      // Non-fatal
     }
-    // onAuthStateChanged handles the rest
   };
 
   // ── Password reset ─────────────────────────────────────────────────────────
@@ -168,20 +281,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Sign out ───────────────────────────────────────────────────────────────
   const logout = async () => {
-    if (DEV_BYPASS) {
-      console.warn("[auth] DEV BYPASS: logout is a no-op in dev mode.");
-      return;
-    }
-    try {
-      await signOut(auth);
-    } catch (err) {
-      console.warn("[auth] signOut error:", err);
+    localStorage.removeItem("physiotwin_admin_code_session");
+    if (!DEV_BYPASS) {
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.warn("[auth] signOut error:", err);
+      }
     }
     localStorage.removeItem("googleFitToken");
     localStorage.removeItem("physiotwin_logged_out");
     localStorage.removeItem("physiotwin_user_email");
     setGoogleFitToken(null);
-    // onAuthStateChanged will set user=null + role='client'
+    setUser(null);
+    setRole("client");
+    setIdToken(null);
   };
 
   return (
@@ -199,6 +313,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         resetPassword,
         logout,
         refreshRole,
+        loginWithAdminCode,
+        loginAsNewAthlete,
       }}
     >
       {children}

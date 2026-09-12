@@ -497,6 +497,26 @@ class ClinicalPredictionAlert(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
+class InjuryHistoryRecord(Base):
+    """Structured medical injury history extracted from OCR clinical documents or logged manually."""
+    __tablename__ = "injury_history_records"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.user_id"), index=True)
+    report_id = Column(String, ForeignKey("clinical_reports.id"), nullable=True, index=True)
+    zone = Column(String, index=True)  # 'forearm', 'lumbar', 'left_knee', 'right_shoulder', etc.
+    side = Column(String, default="left")  # 'left' | 'right' | 'bilateral' | 'central'
+    injury_name = Column(String)  # e.g. "Forearm Flexor Tendonitis / Sprain"
+    severity = Column(String, default="moderate")  # 'mild' | 'moderate' | 'severe' | 'critical'
+    occurred_at = Column(DateTime, default=datetime.datetime.utcnow)
+    months_ago = Column(Float, default=2.0)
+    notes = Column(Text, nullable=True)
+    source = Column(String, default="ocr_extracted")  # 'ocr_extracted' | 'manual_user' | 'clinician_note'
+    status = Column(String, default="vulnerable")  # 'vulnerable' | 'recovering' | 'resolved'
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
+
 # ==============================================================================
 # ROLE MODEL: USER ROLES & CLINICIAN ASSIGNMENTS
 # ==============================================================================

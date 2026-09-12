@@ -109,8 +109,8 @@ function CaptureEngineContent() {
   const currentUserId = user?.uid || auth.currentUser?.uid || "demo_user";
 
   // Mode & stage
-  const [mode, setMode] = useState<Mode>("static-image");
-  const [stage, setStage] = useState<Stage>("upload-image");
+  const [mode, setMode] = useState<Mode>("standing-posture");
+  const [stage, setStage] = useState<Stage>("landing");
   const [countdown, setCountdown] = useState(3);
   const [audioCoaching, setAudioCoaching] = useState(true);
   const [uploadedImageSrc, setUploadedImageSrc] = useState<string | null>(null);
@@ -199,7 +199,7 @@ function CaptureEngineContent() {
               modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task",
               delegate: "GPU",
             },
-            runningMode: "IMAGE",
+            runningMode: "VIDEO",
             numPoses: 1,
             minPoseDetectionConfidence: 0.7,
             minPosePresenceConfidence: 0.7,
@@ -211,7 +211,7 @@ function CaptureEngineContent() {
               modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/1/pose_landmarker_heavy.task",
               delegate: "CPU",
             },
-            runningMode: "IMAGE",
+            runningMode: "VIDEO",
             numPoses: 1,
             minPoseDetectionConfidence: 0.7,
             minPosePresenceConfidence: 0.7,
@@ -240,6 +240,22 @@ function CaptureEngineContent() {
     return () => clearInterval(id);
   }, [stage]);
 
+  // ── Helper to start camera ──────────────────────────────────────────────────
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(() => {});
+      }
+      return stream;
+    } catch (err) {
+      console.error("Camera access error:", err);
+      setModelError(true);
+      return null;
+    }
+  };
+
   // ── Begin recording ──────────────────────────────────────────────────────
   const beginRecording = async () => {
     setReps(0);
@@ -252,45 +268,48 @@ function CaptureEngineContent() {
     gaitRef.current = { totalSteps: 0, maxHipDrop: 0.0, leftHipDropSum: 0, rightHipDropSum: 0, frames: 0 };
     setLiveCadence(0);
     setLiveHipDrop(0);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-      videoRef.current!.srcObject = stream;
-      videoRef.current!.play();
 
-      if (mode === "sit-to-stand") {
-        timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-      } else if (mode === "gait-analysis") {
-        let left = 15; // 15 seconds for gait check
-        setPostureTimeLeft(left);
-        timerRef.current = setInterval(() => {
-          left--;
-          setPostureTimeLeft(left);
-          setElapsed(e => {
-            const next = e + 1;
-            if (next > 0) {
-              const calculatedCadence = Math.round((gaitRef.current.totalSteps / next) * 60);
-              setLiveCadence(calculatedCadence || 80);
-            }
-            return next;
-          });
-          if (left <= 0) stopAndProcess();
-        }, 1000);
-      } else {
-        // Standing posture: count down from POSTURE_DURATION, auto-stop
-        let left = POSTURE_DURATION;
-        timerRef.current = setInterval(() => {
-          left--;
-          setPostureTimeLeft(left);
-          setElapsed(e => e + 1);
-          if (left <= 0) stopAndProcess();
-        }, 1000);
-      }
-      setStage("recording");
-    } catch (err) {
-      console.error("Camera error", err);
-      setStage("setup");
+    if (videoRef.current && !videoRef.current.srcObject) {
+      await startCamera();
     }
+
+    if (mode === "sit-to-stand") {
+      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+    } else if (mode === "gait-analysis") {
+      let left = 15; // 15 seconds for gait check
+      setPostureTimeLeft(left);
+      timerRef.current = setInterval(() => {
+        left--;
+        setPostureTimeLeft(left);
+        setElapsed(e => {
+          const next = e + 1;
+          if (next > 0) {
+            const calculatedCadence = Math.round((gaitRef.current.totalSteps / next) * 60);
+            setLiveCadence(calculatedCadence || 80);
+          }
+          return next;
+        });
+        if (left <= 0) stopAndProcess();
+      }, 1000);
+    } else {
+      // Standing posture: count down from POSTURE_DURATION, auto-stop
+      let left = POSTURE_DURATION;
+      timerRef.current = setInterval(() => {
+        left--;
+        setPostureTimeLeft(left);
+        setElapsed(e => e + 1);
+        if (left <= 0) stopAndProcess();
+      }, 1000);
+    }
+    setStage("recording");
   };
+
+  // ── Camera Preview Initialization ─────────────────────────────────────────
+  useEffect(() => {
+    if ((stage === "setup" || stage === "countdown" || stage === "recording") && videoRef.current && !videoRef.current.srcObject) {
+      startCamera();
+    }
+  }, [stage]);
 
   // ── Render loop (works for both modes) ───────────────────────────────────
   useEffect(() => {
@@ -304,7 +323,7 @@ function CaptureEngineContent() {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       if (!video || !canvas) return;
-      if (video.currentTime !== lastVideoTime) {
+      if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
         lastVideoTime = video.currentTime;
         if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; }
         const ctx = canvas.getContext("2d");
@@ -1426,9 +1445,12 @@ function CaptureEngineContent() {
           </div>
 
           <button
-            onClick={() => setStage("countdown")}
+            onClick={async () => {
+              setStage("countdown");
+              await startCamera();
+            }}
             disabled={modelError}
-            className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(14,165,233,0.35)] hover:shadow-[0_0_35px_rgba(14,165,233,0.55)] transition-all"
+            className="btn-primary w-full py-4 text-base flex items-center justify-center gap-2 shadow-[0_0_25px_rgba(14,165,233,0.35)] hover:shadow-[0_0_35px_rgba(14,165,233,0.55)] transition-all cursor-pointer"
           >
             {modelError ? "AI Model Failed — Reload Page"
               : !modelReady ? <><Loader2 className="w-4 h-4 animate-spin" />Loading AI Model…</>
@@ -1445,64 +1467,59 @@ function CaptureEngineContent() {
     );
   }
 
-  // ── Stage 2: Countdown ───────────────────────────────────────────────────
-  if (stage === "countdown") {
-    return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center gap-8">
-        <div className="text-white/50 text-sm uppercase tracking-widest font-bold">
-          {mode === "standing-posture" ? "Get into your natural standing position" : "Get into position"}
-        </div>
-        <div
-          key={countdown}
-          className="text-[160px] font-black font-mono-numbers text-white leading-none"
-          style={{
-            textShadow: "0 0 40px rgba(34,211,238,0.8), 0 0 80px rgba(34,211,238,0.4)",
-            animation: "countdownPop 1s ease-out forwards",
-          }}
-        >
-          {countdown}
-        </div>
-        <div className="text-white/40 text-sm">
-          {mode === "standing-posture"
-            ? "Relax your shoulders and stand naturally"
-            : "Recording begins when the timer hits zero"}
-        </div>
-        <style>{`
-          @keyframes countdownPop {
-            0% { transform: scale(1.4); opacity: 0; }
-            30% { opacity: 1; transform: scale(1); }
-            80% { transform: scale(1); opacity: 1; }
-            100% { transform: scale(0.85); opacity: 0.3; }
-          }
-        `}</style>
-      </div>
-    );
-  }
-
-  // ── Stage 3: Recording ───────────────────────────────────────────────────
-  if (stage === "recording") {
+  // ── Stage 2 & 3: Live Video Feed (Countdown & Recording) ──────────────────
+  if (stage === "countdown" || stage === "recording") {
     const isSts = mode === "sit-to-stand";
     const posturePercent = (postureTimeLeft / POSTURE_DURATION) * 100;
 
     return (
-      <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <div className="min-h-screen bg-background text-foreground flex flex-col relative overflow-hidden">
         {/* Top bar */}
         <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-background/95 backdrop-blur-md z-20">
           <div className="flex items-center gap-3">
-            <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
-            <span className="text-sm font-bold uppercase tracking-widest text-red-400">
-              {mode === "standing-posture" ? "Posture Scan" : "Recording"}
+            <div className={`w-2.5 h-2.5 rounded-full ${stage === 'countdown' ? 'bg-amber-400' : 'bg-red-500'} animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]`} />
+            <span className={`text-sm font-bold uppercase tracking-widest ${stage === 'countdown' ? 'text-amber-400' : 'text-red-400'}`}>
+              {stage === "countdown" ? "Camera Active — Preparing" : mode === "standing-posture" ? "Posture Scan" : "Recording"}
             </span>
           </div>
           <span className="font-mono-numbers text-xl font-black text-primary">{formatTime(elapsed)}</span>
         </header>
 
-        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-          {/* Camera feed */}
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden relative">
+          {/* Live Camera feed & Canvas */}
           <div className="relative flex-1 bg-black min-h-[50vh] md:min-h-0">
-            <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.6 }} playsInline muted />
+            <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.8 }} playsInline muted />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover z-10" />
 
+            {/* Countdown Animated Overlay over Live Video */}
+            {stage === "countdown" && (
+              <div className="absolute inset-0 z-30 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center gap-6 p-4">
+                <div className="text-white/90 text-sm font-extrabold uppercase tracking-widest bg-slate-900/80 px-4 py-1.5 rounded-full border border-white/20 shadow-lg">
+                  {mode === "standing-posture" ? "Get into your natural standing position" : "Get into position"}
+                </div>
+                <div
+                  key={countdown}
+                  className="text-[140px] sm:text-[180px] font-black font-mono-numbers text-cyan-400 leading-none select-none"
+                  style={{
+                    textShadow: "0 0 40px rgba(34,211,238,0.9), 0 0 80px rgba(34,211,238,0.5)",
+                    animation: "countdownPop 1s ease-out forwards",
+                  }}
+                >
+                  {countdown}
+                </div>
+                <div className="text-xs font-bold text-emerald-400 bg-slate-950/80 border border-emerald-500/30 px-3 py-1.5 rounded-xl shadow-md">
+                  ✓ Camera Active & Video Stream Live
+                </div>
+                <style>{`
+                  @keyframes countdownPop {
+                    0% { transform: scale(1.4); opacity: 0; }
+                    30% { opacity: 1; transform: scale(1); }
+                    80% { transform: scale(1); opacity: 1; }
+                    100% { transform: scale(0.85); opacity: 0.3; }
+                  }
+                `}</style>
+              </div>
+            )}
             {/* Legend */}
             <div className="absolute top-4 left-4 z-20 flex flex-col gap-2">
               <div className="flex items-center gap-2 glass px-3 py-1.5 rounded-lg">

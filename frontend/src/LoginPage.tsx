@@ -141,7 +141,7 @@ export default function LoginPage() {
   const getPostLoginDest = () => {
     if (role === 'superadmin') return '/admin';
     if (role === 'clinician') return '/clinician';
-    return '/twin';
+    return '/dashboard';
   };
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRegister, setIsRegister] = useState(false);
@@ -194,8 +194,13 @@ export default function LoginPage() {
         await loginWithEmail(email.trim(), password);
       }
       setLocation(getPostLoginDest());
-    } catch (error) {
-      setAuthError(mapAuthError(error));
+    } catch (error: any) {
+      const code = error?.code || "";
+      if (code === "auth/user-not-found" || code === "auth/invalid-credential") {
+        setAuthError("Account not found. Please register as a new user first.");
+      } else {
+        setAuthError(mapAuthError(error));
+      }
     } finally {
       setIsLoggingIn(false);
     }

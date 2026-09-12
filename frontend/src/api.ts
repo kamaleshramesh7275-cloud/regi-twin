@@ -262,6 +262,44 @@ export const api = {
     return res.json();
   },
 
+  /** Save/update comprehensive user baseline profile */
+  async saveUserProfile(userId: string, profile: any) {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/users/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: userId,
+          email: profile.email || `${userId}@physiotwin.local`,
+          age: profile.age,
+          sex: profile.biologicalSex || profile.biological_sex,
+          height: profile.heightCm || profile.height_cm,
+          weight: profile.weightKg || profile.weight_kg,
+          mode: profile.twinMode || profile.twin_mode,
+          goals: profile.goals || [],
+          consent: profile.consent ?? true
+        })
+      });
+      if (res.ok) return res.json();
+    } catch (err) {
+      console.warn("Backend saveUserProfile fallback:", err);
+    }
+    return profile;
+  },
+
+  /** Get user profile details from backend or local cache fallback */
+  async getUserProfile(userId: string) {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/users/${userId}`);
+      if (res.ok) return res.json();
+    } catch (err) {
+      console.warn("Backend getUserProfile fallback to cache:", err);
+    }
+    const cached = localStorage.getItem(`pt_user_seed_${userId}`);
+    if (cached) return JSON.parse(cached);
+    return null;
+  },
+
   /** Fetch professional clinical case notes */
   async getCaseNotes(userId: string) {
     const res = await fetchWithTimeout(`${API_BASE}/clinic/casenotes/${userId}`);
@@ -765,7 +803,24 @@ export const api = {
     if (!res.ok) throw new Error("Failed to seed demo clinical data");
     return res.json();
   },
+
+  async getMedicalHistory(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/api/medical-history/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch full medical history");
+    return res.json();
+  },
+
+  async saveInjuryRecord(userId: string, payload: any) {
+    const res = await fetchWithTimeout(`${API_BASE}/api/medical-history/injury-record`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user_id: userId, ...payload }),
+    });
+    if (!res.ok) throw new Error("Failed to save injury record");
+    return res.json();
+  },
 };
+
 
 
 

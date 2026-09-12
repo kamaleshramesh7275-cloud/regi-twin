@@ -13,28 +13,28 @@ export type ZoneId =
 
 export type ZoneRisk = Partial<Record<ZoneId, number>>;
 
-// Precise polygon mapping over a centralized anatomical figure (100x100 grid)
+// Precise polygon mapping calibrated over anatomical figure (100x100 grid)
 const REGIONS: Record<ZoneId, string> = {
-  head: "43,4 57,4 59,14 41,14",
-  neck: "45,15 55,15 57,19 43,19",
-  chest: "35,20 65,20 63,33 37,33",
-  lumbar: "38,34 62,34 63,45 37,45",
-  left_shoulder: "66,20 75,23 74,31 64,28",
-  right_shoulder: "34,20 25,23 26,31 36,28",
-  left_arm: "73,32 79,46 72,48 65,34",
-  right_arm: "27,32 21,46 28,48 35,34",
-  left_forearm: "80,47 84,62 77,63 72,49",
-  right_forearm: "20,47 16,62 23,63 28,49",
-  left_hip: "51,46 64,46 66,54 51,57",
-  right_hip: "49,46 36,46 34,54 49,57",
-  left_thigh: "52,58 65,55 58,73 50,73",
-  right_thigh: "48,58 35,55 42,73 50,73",
-  left_knee: "50,74 58,74 56,80 49,80",
-  right_knee: "50,74 42,74 44,80 51,80",
-  left_shin: "49,81 55,81 53,94 48,94",
-  right_shin: "51,81 45,81 47,94 52,94",
-  left_ankle: "47,95 53,95 55,98 46,98",
-  right_ankle: "53,95 47,95 45,98 54,98"
+  head: "42,2 58,2 58,13 42,13",
+  neck: "44,14 56,14 56,18 44,18",
+  chest: "36,19 64,19 62,33 38,33",
+  lumbar: "37,34 63,34 63,45 37,45",
+  left_shoulder: "63,18 78,20 76,29 63,28",
+  right_shoulder: "37,18 22,20 24,29 37,28",
+  left_arm: "74,29 83,44 76,46 66,30",
+  right_arm: "26,29 17,44 24,46 34,30",
+  left_forearm: "81,45 88,61 82,63 75,47",
+  right_forearm: "19,45 12,61 18,63 25,47",
+  left_hip: "51,46 65,46 66,57 51,57",
+  right_hip: "35,46 49,46 49,57 34,57",
+  left_thigh: "51,58 66,58 61,73 51,73",
+  right_thigh: "34,58 49,58 49,73 39,73",
+  left_knee: "52,74 63,74 61,82 52,82",
+  right_knee: "37,74 48,74 48,82 39,82",
+  left_shin: "52,83 62,83 60,94 51,94",
+  right_shin: "38,83 48,83 49,94 40,94",
+  left_ankle: "51,95 61,95 62,99 50,99",
+  right_ankle: "39,95 49,95 50,99 38,99"
 };
 
 export interface HoloOverlayProps {
@@ -58,12 +58,12 @@ export default function HoloOverlay({ riskData = {}, selectedZone, onZoneClick }
   const [hovered, setHovered] = useState<ZoneId | null>(null);
 
   return (
-    <div className="absolute inset-0 z-0 bg-[#020a14] overflow-hidden flex items-center justify-center pointer-events-none">
+    <div className="absolute inset-0 z-0 bg-[#020a14] overflow-hidden flex items-center justify-center pointer-events-none p-4">
       
-      {/* Container aspect ratio set to match a typical standing body proportion */}
-      <div className="relative w-full max-w-[60vh] md:max-w-3xl aspect-[1/1.6] pointer-events-auto">
+      {/* Locked aspect ratio wrapper so image and SVG scale identically */}
+      <div className="relative w-full max-w-[50vh] md:max-w-2xl aspect-[1/1.65] pointer-events-auto flex items-center justify-center">
         
-        {/* The high-fidelity background image */}
+        {/* Background anatomical image */}
         <img 
           src="/holographic_body.png" 
           alt="Sci-Fi Anatomy Overlay" 
@@ -71,10 +71,10 @@ export default function HoloOverlay({ riskData = {}, selectedZone, onZoneClick }
           style={{ mixBlendMode: 'screen', filter: 'contrast(1.2) brightness(1.1)' }}
         />
         
-        {/* The interactive SVG overlay layer */}
+        {/* Interactive SVG layer mapped 1-to-1 to viewBox 100x100 */}
         <svg 
           viewBox="0 0 100 100" 
-          preserveAspectRatio="none" 
+          preserveAspectRatio="xMidYMid meet" 
           className="absolute inset-0 w-full h-full"
         >
           <defs>
@@ -112,16 +112,16 @@ export default function HoloOverlay({ riskData = {}, selectedZone, onZoneClick }
             let filter: string | undefined = undefined;
             
             if (risk >= 70) {
-              fill = "#ef4444"; // red
-              fillOpacity = 0.55;
+              fill = "#b91c1c"; // deep dark crimson red
+              fillOpacity = 0.75;
               filter = "url(#glow-red)";
             } else if (risk >= 55) {
-              fill = "#f59e0b"; // orange
-              fillOpacity = 0.4;
+              fill = "#c2410c"; // dark burnt orange
+              fillOpacity = 0.65;
               filter = "url(#glow-orange)";
             } else if (risk >= 35) {
-              fill = "#10b981"; // green
-              fillOpacity = 0.1;
+              fill = "#047857"; // dark emerald
+              fillOpacity = 0.35;
             }
             
             // Interaction boosts

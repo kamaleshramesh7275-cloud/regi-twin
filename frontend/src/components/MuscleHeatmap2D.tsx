@@ -8,19 +8,15 @@ interface MuscleHeatmap2DProps {
 export function MuscleHeatmap2D({ stressLevels = {}, className = "" }: MuscleHeatmap2DProps) {
   // Helper to map 0-100 to a color (blue -> yellow -> red)
   const getStressColor = (level: number | undefined) => {
-    if (level === undefined) return "#1e293b"; // default slate-800
+    if (level === undefined) return "#0f172a"; // default dark slate
     
-    // Very basic gradient logic:
-    // 0 = blue (0,0,255)
-    // 50 = yellow (255,255,0)
-    // 100 = red (255,0,0)
     const normalized = Math.max(0, Math.min(100, level));
-    if (normalized < 50) {
-      const g = Math.round((normalized / 50) * 255);
-      return `rgb(0, ${g}, 255)`;
+    if (normalized < 30) {
+      return "#047857"; // Dark Emerald
+    } else if (normalized < 60) {
+      return "#c2410c"; // Dark Burnt Orange
     } else {
-      const g = Math.round((1 - (normalized - 50) / 50) * 255);
-      return `rgb(255, ${g}, 0)`;
+      return "#b91c1c"; // Deep Dark Crimson Red
     }
   };
 

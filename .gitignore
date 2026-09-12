@@ -29,3 +29,7 @@ npm-debug.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Android build outputs & binaries
+*.apk
+*.aab

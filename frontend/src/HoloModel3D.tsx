@@ -10,6 +10,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAvatar } from "./AvatarContext";
 import { Link } from "wouter";
 import type { GroupedRegionalInsight } from "./context/ClinicInsightsContext";
+import { REGION_BOUNDS_3D } from "./lib/regionBounds";
+import { MeshCalloutBox } from "./components/MeshCalloutBox";
 
 export type ZoneId =
   | "head" | "neck" | "chest" | "lumbar"
@@ -30,6 +32,7 @@ export interface HoloModel3DProps {
   confidenceData?: ZoneConfidence;
   selectedZone: ZoneId | null;
   onZoneClick: (zone: ZoneId) => void;
+  onLogPainClick?: (zone: ZoneId) => void;
   viewMode?: "scan" | "3d";
   onViewModeChange?: (mode: "scan" | "3d") => void;
   /** Confirmed clinic insights grouped by anatomical zone */
@@ -49,15 +52,15 @@ const HEAT_ZONES: ZoneId[] = [
 ];
 
 const HEAT_RADII: Record<ZoneId, number> = {
-  head: 0.12,  neck: 0.08,  chest: 0.18,  lumbar: 0.16,
-  left_shoulder: 0.12,  right_shoulder: 0.12,
-  left_arm: 0.10,       right_arm: 0.10,
-  left_forearm: 0.09,   right_forearm: 0.09,
-  left_hip: 0.14,       right_hip: 0.14,
-  left_thigh: 0.14,     right_thigh: 0.14,
-  left_knee: 0.12,      right_knee: 0.12,
-  left_shin: 0.11,      right_shin: 0.11,
-  left_ankle: 0.08,     right_ankle: 0.08,
+  head: 0.22,  neck: 0.20,  chest: 0.32,  lumbar: 0.35,
+  left_shoulder: 0.26,  right_shoulder: 0.26,
+  left_arm: 0.22,       right_arm: 0.22,
+  left_forearm: 0.20,   right_forearm: 0.20,
+  left_hip: 0.30,       right_hip: 0.30,
+  left_thigh: 0.32,     right_thigh: 0.32,
+  left_knee: 0.25,      right_knee: 0.25,
+  left_shin: 0.24,      right_shin: 0.24,
+  left_ankle: 0.20,     right_ankle: 0.20,
 };
 
 // Skin preset configurations
@@ -70,25 +73,30 @@ const SKIN_PRESETS: Record<SkinPreset, { label: string; baseHex: string; roughne
   thermal: { label: "Thermal Imaging", baseHex: "#1a1a1a", roughness: 0.80, metalness: 0.0, opacity: 1.0, emissiveHex: "#000000", emissiveIntensity: 0.0 },
 };
 
-function InfoCard({ zoneId, risk, confidence, position }: { zoneId: ZoneId, risk: number, confidence: string, position: [number, number, number] }) {
-  const isHighRisk = risk > 60;
+function InfoCard({ zoneId, risk, position, onLogPainClick }: { zoneId: ZoneId, risk: number, position: [number, number, number], onLogPainClick?: (zone: ZoneId) => void }) {
   const label = zoneId.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const riskText = risk >= 65 ? "High Pain/Strain" : risk >= 30 ? "Moderate Pain" : risk > 0 ? "Low Strain" : "Untinted Baseline";
+  const riskColor = risk >= 65 ? "text-red-400" : risk >= 30 ? "text-orange-400" : risk > 0 ? "text-yellow-400" : "text-emerald-400";
 
   return (
     <Html position={position} center zIndexRange={[100, 0]}>
-      <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="bg-black/90 border border-white/15 rounded-xl px-3 py-2 text-xs pointer-events-none w-48 shadow-xl">
+      <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className="bg-black/90 border border-white/15 rounded-xl p-3 text-xs pointer-events-auto w-52 shadow-2xl backdrop-blur-md">
         <div className="flex justify-between items-center mb-1">
-          <span className="font-bold text-white">{label}</span>
-          <span className="font-mono font-black text-white">{risk}%</span>
+          <span className="font-extrabold text-white text-xs">{label}</span>
+          <span className={`font-mono font-black ${riskColor}`}>{risk}%</span>
         </div>
-        <div className="flex justify-between text-[10px] text-gray-400">
-          <span>Confidence</span>
-          <span className={confidence === "high" ? "text-emerald-400" : confidence === "medium" ? "text-amber-400" : "text-gray-500"}>{confidence}</span>
+        <div className="flex justify-between text-[10px] text-gray-400 mb-2">
+          <span>Field Severity</span>
+          <span className={`font-semibold ${riskColor}`}>{riskText}</span>
         </div>
-        {isHighRisk && (
-          <div className="mt-1.5 pt-1.5 border-t border-red-500/25 text-[10px] text-red-400 flex items-center gap-1">
-            <AlertTriangle className="w-3 h-3 shrink-0" /> Elevated strain detected
-          </div>
+        
+        {onLogPainClick && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onLogPainClick(zoneId); }}
+            className="w-full mt-1.5 py-1.5 px-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-amber-300 font-bold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer"
+          >
+            <Flame className="w-3 h-3 text-amber-400" /> + Log Self-Reported Pain
+          </button>
         )}
       </motion.div>
     </Html>
@@ -231,7 +239,7 @@ function ClinicInsightMarker({
 
 // ── Realistic Human 3D Model ─────────────────────────────────────────────
 function RealHumanoid3D({
-  riskData, confidenceData, selectedZone, onZoneClick,
+  riskData, confidenceData, selectedZone, onZoneClick, onLogPainClick,
   heatMapEnabled = true, preset = "ecorche",
   regionalInsights = [],
 }: HoloModel3DProps & { heatMapEnabled?: boolean; preset?: SkinPreset }) {
@@ -270,22 +278,22 @@ function RealHumanoid3D({
       neck:           [0, 1.52, 0.02],
       chest:          [0, 1.38, 0.08],
       lumbar:         [0, 1.15, 0.06],
-      left_shoulder:  [0.16, 1.45, 0],
-      right_shoulder: [-0.16, 1.45, 0],
-      left_arm:       [0.22, 1.25, 0],
-      right_arm:      [-0.22, 1.25, 0],
-      left_forearm:   [0.28, 1.05, 0],
-      right_forearm:  [-0.28, 1.05, 0],
-      left_hip:       [0.10, 0.95, 0.02],
-      right_hip:      [-0.10, 0.95, 0.02],
-      left_thigh:     [0.11, 0.75, 0.02],
-      right_thigh:    [-0.11, 0.75, 0.02],
+      left_shoulder:  [0.22, 1.42, 0.01],
+      right_shoulder: [-0.22, 1.42, 0.01],
+      left_arm:       [0.27, 1.22, 0],
+      right_arm:      [-0.27, 1.22, 0],
+      left_forearm:   [0.30, 1.05, 0],
+      right_forearm:  [-0.30, 1.05, 0],
+      left_hip:       [0.11, 0.95, 0.02],
+      right_hip:      [-0.11, 0.95, 0.02],
+      left_thigh:     [0.12, 0.75, 0.02],
+      right_thigh:    [-0.12, 0.75, 0.02],
       left_knee:      [0.12, 0.52, 0.05],
       right_knee:     [-0.12, 0.52, 0.05],
       left_shin:      [0.12, 0.30, 0.04],
       right_shin:     [-0.12, 0.30, 0.04],
-      left_ankle:     [0.12, 0.10, 0.02],
-      right_ankle:    [-0.12, 0.10, 0.02],
+      left_ankle:     [0.11, 0.10, 0.02],
+      right_ankle:    [-0.11, 0.10, 0.02],
     };
 
     const positions: Partial<Record<ZoneId, [number, number, number]>> = {};
@@ -355,33 +363,35 @@ function RealHumanoid3D({
 
           for (int i = 0; i < 20; i++) {
             float risk = uHeatRisks[i];
+            if (risk <= 0.001) continue; // Untinted baseline when zero risk/heat
 
             float r    = uHeatRadii[i];
             float dist = distance(vWorldPos, uHeatCenters[i]);
             if (dist >= r) continue;
 
-            float factor = pow(1.0 - smoothstep(0.0, r, dist), 1.8);
+            // Continuous surface falloff calculation
+            float factor = pow(1.0 - smoothstep(0.0, r, dist), 1.35);
 
-            // Pulse on high-risk zones
-            if (risk > 60.0) factor *= 0.80 + 0.20 * sin(uTime * 4.2);
-            if (i == uSelectedZoneIdx) factor *= 1.6;
+            if (i == uSelectedZoneIdx) factor *= 1.35;
 
-            vec3 heatCol = vec3(0.06, 0.73, 0.51); // Green base for healthy (0-30%)
-            if (risk > 60.0) {
-              float t2 = clamp((risk - 60.0) / 40.0, 0.0, 1.0);
-              heatCol = mix(vec3(0.96, 0.62, 0.07), vec3(0.95, 0.15, 0.15), t2); // Yellow to Red
-            } else if (risk > 30.0) {
-              float t2 = clamp((risk - 30.0) / 30.0, 0.0, 1.0);
-              heatCol = mix(vec3(0.06, 0.73, 0.51), vec3(0.96, 0.62, 0.07), t2); // Green to Yellow
+            // Clinical Pain-Map Color Gradient (Yellow -> Orange -> Deep Red)
+            vec3 heatCol = vec3(0.92, 0.70, 0.05); // Yellow base (1-25%)
+            if (risk > 65.0) {
+              float t2 = clamp((risk - 65.0) / 35.0, 0.0, 1.0);
+              heatCol = mix(vec3(0.95, 0.40, 0.02), vec3(0.85, 0.05, 0.05), t2); // Orange to Deep Crimson Red
+            } else if (risk > 25.0) {
+              float t2 = clamp((risk - 25.0) / 40.0, 0.0, 1.0);
+              heatCol = mix(vec3(0.92, 0.70, 0.05), vec3(0.95, 0.40, 0.02), t2); // Yellow to Orange
             }
 
-            heatAccum  += heatCol * factor;
-            heatWeight  = max(heatWeight, factor);
+            heatAccum  += heatCol * (risk / 100.0) * factor;
+            heatWeight  = max(heatWeight, factor * (risk / 100.0));
           }
 
           if (heatWeight > 0.001) {
-            float blendAlpha = clamp(heatWeight * uHeatOpacity * 0.65, 0.0, 0.70);
-            gl_FragColor.rgb += heatAccum * blendAlpha * 1.4;
+            float blendAlpha = clamp(heatWeight * uHeatOpacity * 0.88, 0.0, 0.92);
+            vec3 targetHeatColor = heatAccum / max(0.01, heatWeight);
+            gl_FragColor.rgb = mix(gl_FragColor.rgb, targetHeatColor, blendAlpha * 0.85) + heatAccum * 0.30;
             gl_FragColor.rgb = clamp(gl_FragColor.rgb, 0.0, 1.0);
           }
         }
@@ -444,8 +454,8 @@ function RealHumanoid3D({
               <InfoCard 
                 zoneId={zone} 
                 risk={risk || 0} 
-                confidence={confidenceData?.[zone] || "medium"} 
                 position={[0, 0, 0]} 
+                onLogPainClick={onLogPainClick}
               />
             )}
           </group>

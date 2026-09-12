@@ -15,6 +15,8 @@ import { fetchGoogleHealthData } from "./lib/googleHealthApi";
 import { api } from "./api";
 import { useClinicInsights } from "./context/ClinicInsightsContext";
 import { SystemicInsightsPanel } from "./components/SystemicInsightsPanel";
+import { collectAllHeatSources, aggregateHeatSources, type HeatSource, type RegionHeatSummary } from "./lib/heatMapEngine";
+import { SelfReportPainModal } from "./components/SelfReportPainModal";
 
 // ── Zone risk colour helpers ───────────────────────────────
 function riskLabel(r: number) { return r < 35 ? "Healthy" : r < 55 ? "Watch" : r < 70 ? "Elevated" : "Critical"; }
@@ -122,6 +124,26 @@ export default function TwinPage() {
   const [historyData, setHistoryData] = useState<any[]>([]);
   const [projections, setProjections] = useState<ProjectionFrame[]>([]);
 
+  const [scanIngestSummary, setScanIngestSummary] = useState<string | null>(null);
+  const [selfReportModalZone, setSelfReportModalZone] = useState<ZoneId | null>(null);
+  const [selfReportTrigger, setSelfReportTrigger] = useState(0);
+
+  // Collect and aggregate all continuous heat sources
+  const lastSessionObj = JSON.parse(sessionStorage.getItem("lastSession") || "null");
+  const activeHeatSources = collectAllHeatSources({
+    regionalInsights,
+    userProfile: { painZone: localStorage.getItem("pt_user_pain_zone"), painLevel: localStorage.getItem("pt_user_pain_level") },
+    lastSession: lastSessionObj,
+  });
+
+  const aggregatedSummary = aggregateHeatSources(activeHeatSources);
+
+  // Map aggregated heat field severity percentages to dynamic risk map
+  const aggregatedRiskMap: ZoneRisk = { ...liveRisk };
+  for (const [zKey, summary] of Object.entries(aggregatedSummary)) {
+    aggregatedRiskMap[zKey as ZoneId] = summary.riskPercentage;
+  }
+
   // Fetch Dashboard, History, and Projections from real API
   useEffect(() => {
     const loadData = async () => {
@@ -132,9 +154,58 @@ export default function TwinPage() {
           api.getSessionHistory(uid).catch(e => { console.error(e); return []; }),
           api.getDynamicProjections(uid).catch(e => { console.error(e); return []; }),
         ]);
-        if (dash.zone_risks) {
-          setLiveRisk(dash.zone_risks);
-          const highest = Object.entries(dash.zone_risks)
+
+        let initialRisk: ZoneRisk = dash.zone_risks || {};
+
+        // Ingest recent local posture scan if available in sessionStorage
+        const rawLastSession = sessionStorage.getItem("lastSession");
+        if (rawLastSession) {
+          try {
+            const ls = JSON.parse(rawLastSession);
+            const ingested: ZoneRisk = { ...initialRisk };
+            const summaryParts: string[] = [];
+
+            if (ls.postureScore !== undefined) {
+              summaryParts.push(`Posture Score: ${ls.postureScore}/100`);
+            }
+            if (ls.shoulderTilt !== undefined) {
+              const shoulderRisk = Math.min(100, Math.round(35 + (ls.shoulderTilt || 0) * 8.5));
+              ingested.left_shoulder = shoulderRisk;
+              ingested.right_shoulder = Math.max(25, shoulderRisk - 5);
+              summaryParts.push(`Shoulder Tilt: ${ls.shoulderTilt.toFixed(1)}°`);
+            }
+            if (ls.hipTilt !== undefined) {
+              const hipRisk = Math.min(100, Math.round(30 + (ls.hipTilt || 0) * 9.5));
+              ingested.left_hip = hipRisk;
+              ingested.right_hip = Math.max(20, hipRisk - 5);
+              ingested.lumbar = Math.min(100, Math.round(35 + (ls.hipTilt || 0) * 11));
+              summaryParts.push(`Hip Tilt: ${ls.hipTilt.toFixed(1)}°`);
+            }
+            if (ls.headForward !== undefined) {
+              ingested.neck = Math.min(100, Math.round(40 + (ls.headForward || 0) * 11.5));
+              summaryParts.push(`Head Shift: ${ls.headForward.toFixed(1)}cm`);
+            }
+            if (ls.rom !== undefined) {
+              if (ls.rom < 85 || (ls.symmetry && ls.symmetry < 0.90)) {
+                ingested.left_knee = Math.min(100, Math.round(75 + (1 - (ls.symmetry || 0.95)) * 100));
+                ingested.right_knee = Math.min(100, Math.round(60 + (1 - (ls.symmetry || 0.95)) * 80));
+                ingested.left_thigh = Math.min(100, Math.round(65 + (1 - (ls.symmetry || 0.95)) * 90));
+              }
+              summaryParts.push(`Knee ROM: ${Math.round(ls.rom)}°`);
+            }
+
+            initialRisk = ingested;
+            if (summaryParts.length > 0) {
+              setScanIngestSummary(summaryParts.join(" · "));
+            }
+          } catch (e) {
+            console.error("Failed parsing lastSession from sessionStorage", e);
+          }
+        }
+
+        if (initialRisk) {
+          setLiveRisk(initialRisk);
+          const highest = Object.entries(initialRisk)
             .filter(([_, v]) => typeof v === "number" && (v as number) > 0)
             .sort((a, b) => (b[1] as number) - (a[1] as number))[0];
           if (highest && highest[0]) {
@@ -145,14 +216,12 @@ export default function TwinPage() {
           setLiveConfidence(dash.zone_confidence);
         }
         
-        // Mock user details since we don't have a direct /user profile fetch in dashboard
-        // Normally this would come from GET /users/{user_id}
-        if (!userSex) setUserSex("Male"); // Defaulting to Male if not explicitly set
-        setUserHeight(178); // 178 cm
-        setUserWeight(75); // 75 kg
+        if (!userSex) setUserSex("Male");
+        setUserHeight(178);
+        setUserWeight(75);
 
         if (hist && hist.length > 0) {
-          setHistoryData(hist.reverse()); // Chronological
+          setHistoryData(hist.reverse());
           setHistCursor(hist.length - 1);
         }
         if (proj && proj.length > 0) {
@@ -163,7 +232,7 @@ export default function TwinPage() {
       }
     };
     loadData();
-  }, [user]);
+  }, [user, selfReportTrigger]);
 
   const [dynamicRisk, setDynamicRisk] = useState<ZoneRisk | null>(null);
 
@@ -190,7 +259,7 @@ export default function TwinPage() {
   const currentHistoryItem = historyData.length > 0 ? historyData[histCursor] : null;
 
   const displayRisk: ZoneRisk =
-    mode === "active"     ? (dynamicRisk || liveRisk) :
+    mode === "active"     ? (dynamicRisk || (Object.keys(aggregatedSummary).length > 0 ? aggregatedRiskMap : liveRisk)) :
     mode === "history"    ? (currentHistoryItem ? { ...liveRisk, left_knee: currentHistoryItem.rom < 85 ? 80 : 40 } : liveRisk) :
     activeProjections.length > 0
       ? (showTreatment ? activeProjections[projIdx].withTreatment : activeProjections[projIdx].zones)
@@ -227,26 +296,38 @@ export default function TwinPage() {
           setSelectedZone(prev => prev === id ? null : id);
           setMobileDrawerOpen(true);
         }}
+        onLogPainClick={(id) => setSelfReportModalZone(id)}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         regionalInsights={regionalInsights}
       />
       
-      {/* Legend (Positioned above mobile bottom bar) */}
-      <div className="absolute bottom-20 md:bottom-4 right-3 md:right-4 pointer-events-none z-10 bg-black/70 backdrop-blur-md border border-white/10 p-2.5 md:p-3 rounded-xl flex flex-col gap-1.5 md:gap-2 shadow-2xl">
-        <div className="text-[9px] md:text-[10px] text-white/70 uppercase tracking-widest font-bold">Strain Level</div>
-        <div className="flex items-center gap-1.5 text-[10px] md:text-[11px] text-gray-300">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
-          <span>Low (0-30)</span>
+      {/* ── Clinical Pain-Map Legend ── */}
+      <div className="absolute bottom-20 md:bottom-4 right-3 md:right-4 pointer-events-auto z-20 bg-slate-950/85 backdrop-blur-md border border-slate-700/80 p-3 rounded-2xl flex flex-col gap-2 shadow-2xl w-56">
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] text-slate-300 uppercase tracking-widest font-black flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" /> Clinical Pain Field
+          </div>
+          <span className="text-[9px] font-mono font-bold text-cyan-400">
+            {Object.keys(aggregatedSummary).length} Regions
+          </span>
         </div>
-        <div className="flex items-center gap-1.5 text-[10px] md:text-[11px] text-gray-300">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#f59e0b] shadow-[0_0_8px_rgba(245,158,11,0.6)]" />
-          <span>Moderate (31-60)</span>
+
+        {/* Continuous Color Gradient Bar (Yellow -> Orange -> Red) */}
+        <div className="h-2.5 w-full rounded-full bg-gradient-to-r from-yellow-400 via-orange-500 to-red-600 shadow-inner border border-white/10" />
+
+        <div className="flex justify-between text-[9px] font-bold text-slate-300">
+          <span className="text-yellow-400">Low (1-30%)</span>
+          <span className="text-orange-400">Mid (30-65%)</span>
+          <span className="text-red-400">High (65-100%)</span>
         </div>
-        <div className="flex items-center gap-1.5 text-[10px] md:text-[11px] text-gray-300">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] shadow-[0_0_8px_rgba(239,68,68,0.6)] animate-pulse" />
-          <span>High (61-100)</span>
-        </div>
+
+        <button
+          onClick={() => setSelfReportModalZone(selectedZone || "lumbar")}
+          className="mt-1 w-full py-1.5 px-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-xl text-amber-300 text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+        >
+          + Log Patient Pain Score
+        </button>
       </div>
 
       <Sidebar />
@@ -299,8 +380,17 @@ export default function TwinPage() {
         <div className="flex-1 flex flex-col relative pointer-events-none">
           
           <div className="pointer-events-auto flex items-center justify-between p-3 sm:p-6 shrink-0 mt-1 mx-2 sm:mx-4 gap-2 flex-wrap sm:flex-nowrap">
-            {/* View Mode Switcher */}
-            <div className="flex gap-2">
+            {/* View Mode Switcher + Live Camera CTA */}
+            <div className="flex items-center gap-2">
+              <Link
+                href="/capture"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 border border-emerald-400/50 transition-all cursor-pointer"
+              >
+                <Camera className="w-4 h-4" />
+                <span className="hidden sm:inline">Start Live Camera Scan</span>
+                <span className="sm:hidden">Camera Scan</span>
+              </Link>
+
               <div className="bg-black/70 backdrop-blur-xl border border-white/10 p-1 rounded-2xl flex items-center gap-1 shadow-2xl">
                 <button
                   onClick={() => setViewMode("scan")}
@@ -331,8 +421,10 @@ export default function TwinPage() {
                 <div className="p-3.5 rounded-2xl bg-emerald-500/20 backdrop-blur-xl border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-3 shadow-2xl animate-in fade-in slide-in-from-top-3 max-w-md">
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                   <div className="leading-snug">
-                    <div>Kinematic Assessment Complete!</div>
-                    <div className="text-[11px] font-normal text-emerald-200/80">Digital Twin updated with your live joint angles.</div>
+                    <div>Posture Scan Ingested into Digital Twin!</div>
+                    <div className="text-[11px] font-normal text-emerald-200/80">
+                      {scanIngestSummary || "Digital Twin updated with your live joint angles and posture alignment scan."}
+                    </div>
                   </div>
                   <button 
                     onClick={() => setShowCaptureToast(false)} 
@@ -446,8 +538,41 @@ export default function TwinPage() {
                   <div className="h-2 bg-white/5 rounded-full mb-6 overflow-hidden">
                     <div className="h-full rounded-full transition-all duration-700" style={{ width:`${zoneRisk}%`, background:riskColor(zoneRisk) }} />
                   </div>
-                  
-                  {zoneMeta?.injuries && zoneMeta.injuries.length > 0 && (
+                  {/* Contributing Pain Sources Breakdown */}
+                  {selectedZone && aggregatedSummary[selectedZone]?.sources && aggregatedSummary[selectedZone].sources.length > 0 && (
+                    <div className="mb-5 bg-slate-900/90 border border-slate-700/70 rounded-2xl p-4 shadow-xl">
+                      <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-2 flex items-center justify-between">
+                        <span>Contributing Pain Sources</span>
+                        <span className="text-[9px] font-mono text-slate-400">
+                          {aggregatedSummary[selectedZone].sources.length} active
+                        </span>
+                      </div>
+                      <div className="space-y-2">
+                        {aggregatedSummary[selectedZone].sources.map(src => (
+                          <div key={src.id} className="bg-slate-950/90 border border-slate-800 rounded-xl p-2.5 text-xs">
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="font-bold text-white flex items-center gap-1.5">
+                                <span className={`w-2 h-2 rounded-full ${src.source === 'clinicInsight' ? 'bg-purple-400' : src.source === 'selfReportedPain' ? 'bg-amber-400 animate-pulse' : src.source === 'postureScan' ? 'bg-cyan-400' : 'bg-emerald-400'}`} />
+                                {src.label}
+                              </span>
+                              <span className="font-mono font-black text-amber-400">
+                                {Math.round(src.intensity * 100)}%
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-300 leading-snug">{src.detail}</div>
+                            <div className="text-[9px] text-slate-500 mt-1 font-mono">{src.timestamp}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={() => setSelfReportModalZone(selectedZone)}
+                        className="w-full mt-3 py-2 px-3 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-xl text-amber-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                      >
+                        + Update Self-Reported Pain
+                      </button>
+                    </div>
+                  )}                  {zoneMeta?.injuries && zoneMeta.injuries.length > 0 && (
                     <div className="mb-5">
                       <div className="text-[11px] font-black text-muted-foreground uppercase tracking-widest mb-2">Active Issues</div>
                       {zoneMeta.injuries.map(inj => (
@@ -609,6 +734,15 @@ export default function TwinPage() {
           {/* Footer navigation removed as requested */}
         </aside>
       </div>
+
+      {/* ── Self-Reported Pain Modal ── */}
+      {selfReportModalZone && (
+        <SelfReportPainModal
+          zone={selfReportModalZone}
+          onClose={() => setSelfReportModalZone(null)}
+          onSaved={() => setSelfReportTrigger(prev => prev + 1)}
+        />
+      )}
     </div>
   );
 }
