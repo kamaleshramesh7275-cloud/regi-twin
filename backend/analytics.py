@@ -111,9 +111,12 @@ def compute_capability_profile(user_id: str, db: Session):
         stabs = [s.stability for s in recent_sessions if s.stability is not None]
         syms = [s.symmetry for s in recent_sessions if s.symmetry is not None]
         
-        if roms: mobility = statistics.mean(roms)
-        if stabs: stability = statistics.mean(stabs) * 100
-        if syms: quality = statistics.mean(syms) * 100
+        if roms:
+            mean_rom = statistics.mean(roms)
+            # Normalize ROM in degrees (e.g. 140-180 deg) to 0-100 scale
+            mobility = min(100.0, round((mean_rom / 140.0) * 100.0, 1) if mean_rom > 100 else mean_rom)
+        if stabs: stability = min(100.0, round(statistics.mean(stabs) * 100, 1))
+        if syms: quality = min(100.0, round(statistics.mean(syms) * 100, 1))
         
         # Trend data from chronological sessions
         for i, s in enumerate(sessions[-30:]):

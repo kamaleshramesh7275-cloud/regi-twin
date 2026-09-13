@@ -78,19 +78,56 @@ export default function Dashboard() {
 
   useEffect(() => {
     async function loadData() {
+      if (!user?.uid) {
+        setData({ 
+          mobility: 0, 
+          stability: 0, 
+          quality: 0, 
+          cardio: 0, 
+          recovery: 0, 
+          reserve: 0, 
+          acwr: 1.0,
+          acwr_risk: "Sweet Spot",
+          confidence: 'New Account',
+          trend_data: [],
+          zone_risks: {}
+        });
+        setExternalData([]);
+        setInjuryRisk({
+          risk_score: 0,
+          risk_level: "Optimal",
+          recommendation: "No active movement strain logged. Complete a Live Vision posture capture to generate your baseline.",
+          contributing_factors: []
+        });
+        setLoading(false);
+        return;
+      }
+
       try {
-        const uid = user?.uid || "test-user";
+        const uid = user.uid;
         const [dashRes, extRes, riskRes] = await Promise.all([
           api.getDashboard(uid),
           api.getExternalApps(uid),
           api.getInjuryRisk(uid).catch(() => null)
         ]);
         setData(dashRes);
-        setExternalData(extRes);
+        setExternalData(extRes || []);
         setInjuryRisk(riskRes);
       } catch (e) {
         // Real zero baseline for new accounts
-        setData({ mobility: 0, stability: 0, quality: 0, cardio: 0, recovery: 0, reserve: 0, confidence: 'New Account' });
+        setData({ 
+          mobility: 0, 
+          stability: 0, 
+          quality: 0, 
+          cardio: 0, 
+          recovery: 0, 
+          reserve: 0, 
+          acwr: 1.0,
+          acwr_risk: "Sweet Spot",
+          confidence: 'New Account',
+          trend_data: [],
+          zone_risks: {}
+        });
         setExternalData([]);
         setInjuryRisk({
           risk_score: 0,
@@ -102,7 +139,7 @@ export default function Dashboard() {
       setLoading(false);
     }
     loadData();
-  }, []);
+  }, [user]);
 
   if (loading || !data) {
     return (

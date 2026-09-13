@@ -243,6 +243,15 @@ export const api = {
     return res.json();
   },
 
+  /** Wipe mock/past sessions and reset user twin data to clean zero baseline */
+  async resetUserBaseline(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/user/reset-baseline/${userId}`, {
+      method: "POST"
+    });
+    if (!res.ok) throw new Error("Failed to reset baseline");
+    return res.json();
+  },
+
   /** Log dynamic daily pain intensity */
   async logPain(userId: string, data: { zone: string, score: number }) {
     const res = await fetchWithTimeout(`${API_BASE}/pain/log/${userId}`, {

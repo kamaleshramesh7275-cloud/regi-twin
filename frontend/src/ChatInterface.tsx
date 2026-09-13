@@ -1,40 +1,50 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, User, Brain, Loader2 } from "lucide-react";
 import { api } from "./api";
-import { auth } from "./firebase";
+import { useAuth } from "./context/AuthContext";
 
 interface Message {
   role: "user" | "twin";
   content: string;
 }
 
+const DEFAULT_WELCOME: Message = {
+  role: "twin",
+  content: "Hello! I'm your PhysioTwin. How can I help you today? You can ask me about your latest stats or ask for advice."
+};
+
 export default function ChatInterface() {
-  const [messages, setMessages] = useState<Message[]>([
-    { role: "twin", content: "Hello! I'm your PhysioTwin. How can I help you today? You can ask me about your latest stats or ask for advice." }
-  ]);
+  const { user } = useAuth();
+  const [messages, setMessages] = useState<Message[]>([DEFAULT_WELCOME]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
   const [fetchingHistory, setFetchingHistory] = useState(true);
 
-  const fetchHistory = async () => {
-    try {
-      const uid = auth.currentUser?.uid || "test-user";
-      const history = await api.getChatHistory(uid);
-      if (history && history.length > 0) {
-        setMessages(history);
-      }
-    } catch (e) {
-      console.error("Failed to load chat history", e);
-    } finally {
-      setFetchingHistory(false);
-    }
-  };
-
   useEffect(() => {
+    async function fetchHistory() {
+      if (!user?.uid) {
+        setMessages([DEFAULT_WELCOME]);
+        setFetchingHistory(false);
+        return;
+      }
+
+      try {
+        const history = await api.getChatHistory(user.uid);
+        if (history && history.length > 0) {
+          setMessages(history);
+        } else {
+          setMessages([DEFAULT_WELCOME]);
+        }
+      } catch (e) {
+        setMessages([DEFAULT_WELCOME]);
+      } finally {
+        setFetchingHistory(false);
+      }
+    }
+
     fetchHistory();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -42,15 +52,14 @@ export default function ChatInterface() {
 
   const handleClear = async () => {
     if (!window.confirm("Are you sure you want to clear your chat history?")) return;
-    try {
-      const uid = auth.currentUser?.uid || "test-user";
-      await api.clearChatHistory(uid);
-      setMessages([
-        { role: "twin", content: "Hello! I'm your PhysioTwin. How can I help you today? You can ask me about your latest stats or ask for advice." }
-      ]);
-    } catch (e) {
-      console.error("Failed to clear chat history", e);
+    if (user?.uid) {
+      try {
+        await api.clearChatHistory(user.uid);
+      } catch (e) {
+        console.error("Failed to clear chat history", e);
+      }
     }
+    setMessages([DEFAULT_WELCOME]);
   };
 
   const handleSend = async () => {
@@ -63,8 +72,7 @@ export default function ChatInterface() {
     setLoading(true);
 
     try {
-      const uid = auth.currentUser?.uid || "test-user";
-      // Convert to API format
+      const uid = user?.uid || "anonymous";
       const apiMessages = newMessages.map(m => ({
         role: m.role === "twin" ? "assistant" : "user",
         content: m.content

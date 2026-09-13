@@ -1448,10 +1448,13 @@ def get_dashboard(user_id: str, db: Session = Depends(get_db), min_hours_ago: Op
         except Exception:
             pass
             
-    acute_avg = sum(acute_loads) / 7.0 if acute_loads else 100.0
-    chronic_avg = sum(chronic_loads) / 28.0 if chronic_loads else 100.0
-    acwr = round(acute_avg / (chronic_avg or 1.0), 2)
-    acwr = max(0.0, min(3.0, acwr))
+    if acute_loads and chronic_loads:
+        acute_avg = sum(acute_loads) / 7.0
+        chronic_avg = sum(chronic_loads) / 28.0
+        acwr = round(acute_avg / (chronic_avg or 1.0), 2)
+        acwr = max(0.0, min(3.0, acwr))
+    else:
+        acwr = 1.0
     
     if acwr > 1.5:
         acwr_risk = "Danger Zone"
@@ -4225,6 +4228,20 @@ def admin_update_settings(
     return {"message": "Settings updated.", "settings": _admin_settings_store}
 
 
+@app.post("/api/user/reset-baseline/{user_id}")
+def reset_user_baseline(user_id: str, db: Session = Depends(get_db)):
+    """Wipe past sessions/mock data for a user to start completely fresh with zero baseline."""
+    db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).delete()
+    db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).delete()
+    db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).delete()
+    db.query(models.PainLog).filter(models.PainLog.user_id == user_id).delete()
+    db.query(models.WearableSession).filter(models.WearableSession.user_id == user_id).delete()
+    db.query(models.TwinNote).filter(models.TwinNote.user_id == user_id).delete()
+    db.query(models.ChangePoint).filter(models.ChangePoint.user_id == user_id).delete()
+    db.commit()
+    return {"status": "success", "message": f"Reset baseline for user {user_id}."}
+
+
 # ── Clinician: Get assigned clients summary ────────────────────────────────────
 
 @app.get("/api/clinician/clients")
@@ -4654,7 +4671,9 @@ def create_injury_record(payload: Dict[str, Any], db: Session = Depends(get_db))
 
 # ── Serve Built Frontend SPA Static Files (Production Render Deployment) ─────
 possible_dists = [
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "spa")),
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "dist")),
     os.path.abspath(os.path.join(os.path.dirname(__file__), "dist")),
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dist")),
 ]

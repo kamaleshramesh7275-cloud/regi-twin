@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="100%" height="100%">
+  <defs>
+    <!-- Radial backdrop gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#1E293B" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="1"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Circular Avatar Frame -->
+  <circle cx="80" cy="80" r="76" fill="url(#bgGrad)" stroke="#334155" stroke-width="2.5"/>
+  <circle cx="80" cy="80" r="72" fill="none" stroke="#8B5CF6" stroke-opacity="0.25" stroke-dasharray="3 3"/>
+
+  <!-- Anatomical Figure Silhouette -->
+  <g transform="translate(80, 80) scale(0.85)" stroke-linecap="round" stroke-linejoin="round">
+    
+    <!-- Head -->
+    <circle cx="0" cy="-56" r="11" fill="#334155" stroke="#94A3B8" stroke-width="1.5"/>
+    <path d="M -5 -50 Q 0 -45 5 -50" stroke="#64748B" stroke-width="1" fill="none"/>
+
+    <!-- Neck & Traps -->
+    <path d="M -9 -46 L -16 -38 L 16 -38 L 9 -46 Z" fill="#1E293B" stroke="#64748B" stroke-width="1.5"/>
+
+    <!-- Shoulders (Deltoids) -->
+    <!-- Left Deltoid -->
+    <ellipse cx="-23" cy="-33" rx="7" ry="6" fill="none" fill-opacity="0.85" stroke="#64748B" stroke-width="1.5"/>
+    <!-- Right Deltoid -->
+    <ellipse cx="23" cy="-33" rx="7" ry="6" fill="none" fill-opacity="0.85" stroke="#64748B" stroke-width="1.5"/>
+
+    <!-- Torso / Chest / Back Base -->
+    <!-- Pectorals (Chest) -->
+    <path d="M -16 -34 C -16 -22 -3 -20 0 -22 C 3 -20 16 -22 16 -34 Z" 
+          fill="none" fill-opacity="0.85" stroke="#64748B" stroke-width="1.5"/>
+    
+    <!-- Ribcage & Core / Abs -->
+    <rect x="-10" y="-18" width="20" height="24" rx="4" 
+          fill="none" fill-opacity="0.85" stroke="#64748B" stroke-width="1.5"/>
+    <!-- Abdominals grid lines -->
+    <line x1="0" y1="-18" x2="0" y2="6" stroke="#475569" stroke-width="1"/>
+    <line x1="-8" y1="-10" x2="8" y2="-10" stroke="#475569" stroke-width="1"/>
+    <line x1="-8" y1="-2" x2="8" y2="-2" stroke="#475569" stroke-width="1"/>
+
+    <!-- Upper Arms (Biceps & Triceps) -->
+    <!-- Left Upper Arm -->
+    <path d="M -26 -28 C -31 -18 -29 -10 -24 -2" 
+          fill="none" stroke="#64748B" stroke-width="1.5"/>
+    <ellipse cx="-26" cy="-14" rx="4.5" ry="7" 
+             fill="none" fill-opacity="0.9" stroke="#64748B" stroke-width="1.5"/>
+    
+    <!-- Right Upper Arm -->
+    <path d="M 26 -28 C 31 -18 29 -10 24 -2" 
+          fill="none" stroke="#64748B" stroke-width="1.5"/>
+    <ellipse cx="26" cy="-14" rx="4.5" ry="7" 
+             fill="none" fill-opacity="0.9" stroke="#64748B" stroke-width="1.5"/>
+
+    <!-- Forearms & Hands -->
+    <!-- Left Forearm -->
+    <line x1="-24" y1="-2" x2="-22" y2="16" stroke="#94A3B8" stroke-width="3"/>
+    <circle cx="-22" cy="18" r="3.5" fill="#CBD5E1"/>
+    <!-- Right Forearm -->
+    <line x1="24" y1="-2" x2="22" y2="16" stroke="#94A3B8" stroke-width="3"/>
+    <circle cx="22" cy="18" r="3.5" fill="#CBD5E1"/>
+
+    <!-- Equipment Accent (Dumbbell/Barbell if applicable) -->
+    <line x1="-34" y1="18" x2="-10" y2="18" stroke="#8B5CF6" stroke-width="3"/>
+    <rect x="-36" y="14" width="4" height="8" rx="1" fill="#7C3AED"/>
+    <line x1="10" y1="18" x2="34" y2="18" stroke="#8B5CF6" stroke-width="3"/>
+    <rect x="32" y="14" width="4" height="8" rx="1" fill="#7C3AED"/>
+
+    <!-- Pelvis / Hips -->
+    <path d="M -13 6 L 13 6 L 8 18 L -8 18 Z" fill="#1E293B" stroke="#64748B" stroke-width="1.5"/>
+
+    <!-- Upper Legs (Quads & Hamstrings) -->
+    <!-- Left Thigh -->
+    <ellipse cx="-12" cy="32" rx="7" ry="12" 
+             fill="none" fill-opacity="0.85" stroke="#64748B" stroke-width="1.5"/>
+    <!-- Right Thigh -->
+    <ellipse cx="12" cy="32" rx="7" ry="12" 
+             fill="none" fill-opacity="0.85" stroke="#64748B" stroke-width="1.5"/>
+
+    <!-- Knees -->
+    <circle cx="-12" cy="46" r="3" fill="#64748B"/>
+    <circle cx="12" cy="46" r="3" fill="#64748B"/>
+
+    <!-- Lower Legs (Calves & Shins) -->
+    <line x1="-12" y1="48" x2="-12" y2="64" stroke="#64748B" stroke-width="1.5"/>
+    <line x1="12" y1="48" x2="12" y2="64" stroke="#64748B" stroke-width="1.5"/>
+    <!-- Feet -->
+    <path d="M -15 64 L -8 64 L -6 68 L -17 68 Z" fill="#475569"/>
+    <path d="M 8 64 L 15 64 L 17 68 L 6 68 Z" fill="#475569"/>
+  </g>
+
+  <!-- Muscle Badge at bottom -->
+  <rect x="35" y="132" width="90" height="18" rx="9" fill="#0B111E" stroke="#8B5CF6" stroke-width="1" stroke-opacity="0.5"/>
+  <text x="80" y="144" fill="#8B5CF6" font-family="system-ui, -apple-system, sans-serif" font-size="8.5" font-weight="800" text-anchor="middle" letter-spacing="0.8">
+    BACK
+  </text>
+</svg>
