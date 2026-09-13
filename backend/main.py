@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 import os
 import shutil
@@ -30,6 +30,7 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
 if ENVIRONMENT == "production":
     allowed_origins = [
+        "https://regi-twin.onrender.com",
         "https://physiotwin.onrender.com",
         "http://localhost:5137",
         "http://localhost:3000",
@@ -4689,12 +4690,37 @@ if frontend_dist:
         if full_path.startswith("api/") or full_path in ["docs", "redoc", "openapi.json"]:
             raise HTTPException(status_code=404, detail="Not Found")
         
-        file_path = os.path.join(frontend_dist, full_path)
-        if full_path == "sw.js" or full_path.startswith("workbox-"):
-            return FileResponse(
-                file_path,
-                headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
+        if full_path == "sw.js":
+            kill_sw_script = (
+                "// Self-destroying service worker to purge legacy PWA cache\n"
+                "self.addEventListener('install', (e) => self.skipWaiting());\n"
+                "self.addEventListener('activate', (e) => {\n"
+                "  self.clients.claim();\n"
+                "  e.waitUntil(\n"
+                "    caches.keys().then((keys) => Promise.all(keys.map((k) => caches.delete(k))))\n"
+                "      .then(() => self.registration.unregister())\n"
+                "      .then(() => self.clients.matchAll({ type: 'window' }))\n"
+                "      .then((clients) => clients.forEach((c) => {\n"
+                "        if (c.url && 'navigate' in c) { c.navigate(c.url); }\n"
+                "      }))\n"
+                "  );\n"
+                "});\n"
             )
+            return Response(
+                content=kill_sw_script,
+                media_type="application/javascript",
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                    "CDN-Cache-Control": "no-store",
+                }
+            )
+
+        if full_path.startswith("workbox-"):
+            raise HTTPException(status_code=404, detail="Workbox removed")
+
+        file_path = os.path.join(frontend_dist, full_path)
 
         if os.path.isfile(file_path) and not full_path.endswith(".html"):
             headers = {"Cache-Control": "public, max-age=31536000, immutable"} if "assets/" in full_path else {}
@@ -4708,7 +4734,9 @@ if frontend_dist:
                     "Cache-Control": "no-cache, no-store, must-revalidate",
                     "Pragma": "no-cache",
                     "Expires": "0",
+                    "CDN-Cache-Control": "no-store",
                 }
             )
         raise HTTPException(status_code=404, detail="Frontend build not found")
+
 
