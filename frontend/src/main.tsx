@@ -4,12 +4,23 @@ import { registerSW } from 'virtual:pwa-register'
 import './index.css'
 import App from './App.tsx'
 
-// Register Service Worker immediately for instant standalone PWA support
-registerSW({ immediate: true })
+// Auto-activate new Service Worker immediately and reload when updated
+const updateSW = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    updateSW(true);
+  }
+});
 
-// Purge any legacy api-read-cache holding old mock sessions
+// Purge legacy precache and api caches holding old mock sessions
 if (typeof window !== 'undefined' && 'caches' in window) {
-  caches.delete('api-read-cache').catch(() => {});
+  caches.keys().then(keys => {
+    keys.forEach(k => {
+      if (k.includes('workbox-precache') || k.includes('api-read-cache')) {
+        caches.delete(k).catch(() => {});
+      }
+    });
+  }).catch(() => {});
 }
 
 createRoot(document.getElementById('root')!).render(
