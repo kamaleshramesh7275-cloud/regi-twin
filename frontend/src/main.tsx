@@ -7,6 +7,11 @@ import App from './App.tsx'
 // Register Service Worker immediately for instant standalone PWA support
 registerSW({ immediate: true })
 
+// Purge any legacy api-read-cache holding old mock sessions
+if (typeof window !== 'undefined' && 'caches' in window) {
+  caches.delete('api-read-cache').catch(() => {});
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

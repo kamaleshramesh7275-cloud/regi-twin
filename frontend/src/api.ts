@@ -41,7 +41,10 @@ export const api = {
 
   async getDashboard(userId: string) {
     try {
-      const res = await fetchWithTimeout(`${API_BASE}/analytics/dashboard/${userId}?min_hours_ago=1&max_hours_ago=10`);
+      const res = await fetchWithTimeout(`${API_BASE}/analytics/dashboard/${userId}?min_hours_ago=1&max_hours_ago=10&_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+      });
       if (res.ok) {
         const data = await res.json();
         offlineStorage.setCache(`dashboard_${userId}`, data).catch(() => {});
@@ -50,9 +53,10 @@ export const api = {
     } catch (err) {
       console.warn("Network request for dashboard failed, attempting offline cache lookup:", err);
     }
-    const cached = await offlineStorage.getCache(`dashboard_${userId}`);
-    if (cached) return cached;
-    throw new Error("Failed to fetch dashboard and no offline cache available");
+    const cached: any = await offlineStorage.getCache(`dashboard_${userId}`);
+    // If cached data contains old mock artifacts (e.g. mobility 180 or acwr 3.0 from legacy seed), ignore it
+    if (cached && (cached.mobility ?? 0) <= 100 && cached.acwr !== 3) return cached;
+    throw new Error("Failed to fetch dashboard and no valid offline cache available");
   },
   
   async getWeeklyLetter(userId: string) {

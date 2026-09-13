@@ -4689,7 +4689,12 @@ if frontend_dist:
         if full_path.startswith("api/") or full_path in ["docs", "redoc", "openapi.json"]:
             raise HTTPException(status_code=404, detail="Not Found")
         
-        file_path = os.path.join(frontend_dist, full_path)
+        if full_path in ["sw.js", "workbox-63c18b4d.js"]:
+            return FileResponse(
+                file_path,
+                headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
+            )
+
         if os.path.isfile(file_path) and not full_path.endswith(".html"):
             headers = {"Cache-Control": "public, max-age=31536000, immutable"} if "assets/" in full_path else {}
             return FileResponse(file_path, headers=headers)

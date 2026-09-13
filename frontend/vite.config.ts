@@ -149,10 +149,10 @@ export default defineConfig({
             }
           },
           {
-            urlPattern: /\/exercises|\/foods\/search|\/analytics\/dashboard|\/clinic\/metrics\/trends/i,
+            urlPattern: /\/exercises|\/foods\/search/i,
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'api-read-cache',
+              cacheName: 'api-static-catalog-cache',
               networkTimeoutSeconds: 4,
               expiration: {
                 maxEntries: 150,

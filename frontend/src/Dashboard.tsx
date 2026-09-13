@@ -195,7 +195,7 @@ export default function Dashboard() {
             <span className="badge badge-purple text-[10px]">General Human</span>
             <span className="badge badge-cyan text-[10px]">
               <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-              Simulated
+              {displayData.mobility > 0 ? 'Live Twin Active' : 'Live Twin Baseline'}
             </span>
             <button
               onClick={() => setLocation('/capture')}
@@ -236,37 +236,52 @@ export default function Dashboard() {
         {/* Score Cards Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 anim-up-d1">
           {[
-            { key: 'Mobility', val: displayData.mobility, delta: 2.3, color: '#3b82f6', icon: <Dna className="w-5 h-5" />, spark: [{v:75},{v:76},{v:77},{v:78},{v:displayData.mobility}] },
-            { key: 'Stability', val: displayData.stability, delta: -14.5, color: '#f59e0b', icon: <Scale className="w-5 h-5" />, spark: [{v:70},{v:68},{v:65},{v:60},{v:displayData.stability}] },
-            { key: 'Quality', val: displayData.quality, delta: 0.8, color: '#10b981', icon: <Sparkles className="w-5 h-5" />, spark: [{v:85},{v:85},{v:86},{v:86},{v:displayData.quality}] },
-            { key: 'Cardio', val: displayData.cardio, delta: 1.2, color: '#ec4899', icon: <HeartPulse className="w-5 h-5" />, spark: [{v:75},{v:76},{v:76},{v:77},{v:displayData.cardio}] },
-            { key: 'Recovery', val: displayData.recovery, delta: 3.1, color: '#8b5cf6', icon: <Battery className="w-5 h-5" />, spark: [{v:80},{v:82},{v:85},{v:88},{v:displayData.recovery}] },
-          ].map(m => (
-            <button
-              key={m.key}
-              onClick={() => {
-                handleSelectMetric(m.key);
-              }}
-              className={`metric-card pointer-events-auto text-left transition-all overflow-hidden relative glass-panel ${selectedMetric === m.key ? 'border-primary bg-primary/10 shadow-lg' : ''}`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-muted-foreground">{m.icon}</div>
-                <div className={`text-[10px] font-bold font-mono-numbers px-1.5 py-0.5 rounded ${m.delta >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
-                  {m.delta >= 0 ? '↑' : '↓'}{Math.abs(m.delta).toFixed(1)}%
+            { key: 'Mobility', val: displayData.mobility, color: '#3b82f6', icon: <Dna className="w-5 h-5" /> },
+            { key: 'Stability', val: displayData.stability, color: '#f59e0b', icon: <Scale className="w-5 h-5" /> },
+            { key: 'Quality', val: displayData.quality, color: '#10b981', icon: <Sparkles className="w-5 h-5" /> },
+            { key: 'Cardio', val: displayData.cardio, color: '#ec4899', icon: <HeartPulse className="w-5 h-5" /> },
+            { key: 'Recovery', val: displayData.recovery, color: '#8b5cf6', icon: <Battery className="w-5 h-5" /> },
+          ].map(m => {
+            const sparkData = activeTrendData.length > 0 
+              ? activeTrendData.map((d: any) => ({ v: d[m.key.toLowerCase()] ?? m.val }))
+              : [{ v: m.val }, { v: m.val }];
+            const delta = activeTrendData.length >= 2 
+              ? Number((m.val - (activeTrendData[activeTrendData.length - 2][m.key.toLowerCase()] ?? m.val)).toFixed(1))
+              : 0;
+
+            return (
+              <button
+                key={m.key}
+                onClick={() => {
+                  handleSelectMetric(m.key);
+                }}
+                className={`metric-card pointer-events-auto text-left transition-all overflow-hidden relative glass-panel ${selectedMetric === m.key ? 'border-primary bg-primary/10 shadow-lg' : ''}`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-muted-foreground">{m.icon}</div>
+                  {delta !== 0 ? (
+                    <div className={`text-[10px] font-bold font-mono-numbers px-1.5 py-0.5 rounded ${delta >= 0 ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                      {delta >= 0 ? '↑' : '↓'}{Math.abs(delta).toFixed(1)}%
+                    </div>
+                  ) : (
+                    <div className="text-[10px] font-medium font-mono-numbers px-1.5 py-0.5 rounded bg-white/5 text-slate-400">
+                      Baseline
+                    </div>
+                  )}
                 </div>
-              </div>
-              <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">{m.key}</div>
-              <div className="text-2xl font-black font-mono-numbers mt-0.5" style={{ color: m.color }}>{m.val.toFixed(0)}</div>
-              
-              <div className="h-8 w-full mt-3 -mx-2 -mb-2 opacity-60">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={m.spark}>
-                    <Line type="monotone" dataKey="v" stroke={m.color} strokeWidth={2} dot={false} isAnimationActive={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </button>
-          ))}
+                <div className="text-[10px] text-muted-foreground uppercase tracking-widest font-semibold">{m.key}</div>
+                <div className="text-2xl font-black font-mono-numbers mt-0.5" style={{ color: m.color }}>{m.val.toFixed(0)}</div>
+                
+                <div className="h-8 w-full mt-3 -mx-2 -mb-2 opacity-60">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sparkData}>
+                      <Line type="monotone" dataKey="v" stroke={m.color} strokeWidth={2} dot={false} isAnimationActive={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </button>
+            );
+          })}
         </div>
 
         {/* Charts Row */}
@@ -275,52 +290,59 @@ export default function Dashboard() {
           {/* Left Column (Radar + Activity Feed) */}
           <div className="flex flex-col gap-4">
             {/* WHOOP-style Recovery Gauge */}
-            <div className="metric-card glass-panel pointer-events-auto">
-              <div className="flex items-center justify-between mb-4">
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Autonomic Recovery</div>
-                <span className={`badge text-[10px] ${
-                  (data.recovery_score || 78) >= 67 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
-                  (data.recovery_score || 78) >= 34 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
-                  'bg-red-500/20 text-red-400 border-red-500/30'
-                }`}>
-                  {(data.recovery_score || 78) >= 67 ? 'Cleared for Load' : (data.recovery_score || 78) >= 34 ? 'Moderate Strain' : 'Rest / Recover'}
-                </span>
-              </div>
-              <div className="flex items-center gap-6">
-                <div className="relative flex items-center justify-center w-20 h-20 shrink-0">
-                  <svg className="w-full h-full transform -rotate-90">
-                    <circle cx="40" cy="40" r="34" stroke="rgba(255,255,255,0.05)" strokeWidth="6" fill="transparent" />
-                    <circle 
-                      cx="40" cy="40" r="34" 
-                      stroke={(data.recovery_score || 78) >= 67 ? '#10b981' : (data.recovery_score || 78) >= 34 ? '#f59e0b' : '#ef4444'}
-                      strokeWidth="6" fill="transparent" 
-                      strokeDasharray={2 * Math.PI * 34}
-                      strokeDashoffset={2 * Math.PI * 34 * (1 - (data.recovery_score || 78) / 100)}
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                  <div className="absolute font-mono-numbers font-black text-xl">
-                    {data.recovery_score || 78}%
+            {(() => {
+              const recScore = typeof data.recovery_score === 'number' && data.recovery_score > 0
+                ? data.recovery_score
+                : (displayData.recovery > 0 ? displayData.recovery : 0);
+              const recLabel = recScore >= 67 ? 'Cleared for Load' : recScore >= 34 ? 'Moderate Strain' : (recScore > 0 ? 'Rest / Recover' : 'Awaiting Data');
+              const recBadgeColor = recScore >= 67 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : recScore >= 34 ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : (recScore > 0 ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-slate-800 text-slate-400 border-slate-700');
+              const recStroke = recScore >= 67 ? '#10b981' : recScore >= 34 ? '#f59e0b' : (recScore > 0 ? '#ef4444' : '#64748b');
+
+              return (
+                <div className="metric-card glass-panel pointer-events-auto">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">Autonomic Recovery</div>
+                    <span className={`badge text-[10px] ${recBadgeColor}`}>
+                      {recLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <div className="relative flex items-center justify-center w-20 h-20 shrink-0">
+                      <svg className="w-full h-full transform -rotate-90">
+                        <circle cx="40" cy="40" r="34" stroke="rgba(255,255,255,0.05)" strokeWidth="6" fill="transparent" />
+                        <circle 
+                          cx="40" cy="40" r="34" 
+                          stroke={recStroke}
+                          strokeWidth="6" fill="transparent" 
+                          strokeDasharray={2 * Math.PI * 34}
+                          strokeDashoffset={2 * Math.PI * 34 * (1 - (recScore || 1) / 100)}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                      <div className="absolute font-mono-numbers font-black text-xl">
+                        {recScore}%
+                      </div>
+                    </div>
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <div className="font-semibold text-foreground text-sm">Autonomic Readiness</div>
+                      <p className="leading-relaxed">
+                        Dynamic balance score compiled from resting HR, sleep quality, and active HRV baseline.
+                      </p>
+                      {data.acwr !== undefined && data.acwr !== null && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="font-bold text-foreground">ACWR Load:</span> 
+                          <span className={`font-bold font-mono px-1.5 py-0.5 rounded text-[10px] ${
+                            data.acwr_risk === "Danger Zone" ? "bg-red-500/20 text-red-400 border border-red-500/30" :
+                            data.acwr_risk === "Sweet Spot" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" :
+                            "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                          }`}>{data.acwr} ({data.acwr_risk || 'Normal'})</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-1 text-xs text-muted-foreground">
-                  <div className="font-semibold text-foreground text-sm">Autonomic Readiness</div>
-                  <p className="leading-relaxed">
-                    Dynamic balance score compiled from resting HR, sleep quality, and active HRV baseline.
-                  </p>
-                  {data.acwr && (
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="font-bold text-foreground">ACWR Load:</span> 
-                      <span className={`font-bold font-mono px-1.5 py-0.5 rounded text-[10px] ${
-                        data.acwr_risk === "Danger Zone" ? "bg-red-500/20 text-red-400 border border-red-500/30" :
-                        data.acwr_risk === "Sweet Spot" ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" :
-                        "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                      }`}>{data.acwr} ({data.acwr_risk})</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* AI 7-Day Injury Risk Prediction Card */}
             {injuryRisk && (
@@ -436,7 +458,11 @@ export default function Dashboard() {
                 <div className="text-xs font-bold uppercase tracking-widest">Clinical Summary</div>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Your recovery is trending positively, but your <span className="text-foreground font-semibold">Google Fit</span> data shows a low HRV (45ms). Combined with a <span className="text-foreground font-semibold">+15% load spike</span> from yesterday's <span className="text-foreground font-semibold">Hevy</span> workout, your central nervous system is fatigued. <span className="text-emerald-400">Protein intake is optimal</span> for tissue repair. <br/><br/><strong>Recommendation:</strong> Focus on active mobility today. Avoid heavy loads to prevent tendinopathy.
+                {displayData.mobility > 0 || externalData.length > 0 ? (
+                  <>Your movement quality and load recovery are actively tracked across sessions. Continue recording Live Vision captures to enrich longitudinal trend fidelity.</>
+                ) : (
+                  <>Welcome to PhysioTwin. Your digital twin baseline is initialized with zero recorded strain. Complete a <strong className="text-white">Live Vision Posture Capture</strong> or sync fitness data to unlock full predictive biomechanics.</>
+                )}
               </p>
             </div>
           </div>
@@ -510,12 +536,25 @@ export default function Dashboard() {
               <span>Now</span>
             </div>
             <div className="mt-4 grid grid-cols-3 gap-3">
-              {['Jul 1', 'Jul 15', 'Aug 3'].map((d, i) => (
-                <div key={d} className="p-2 rounded-lg bg-white/5 border border-white/10 text-center">
-                  <div className="text-xs text-muted-foreground">{d}</div>
-                  <div className="text-lg font-black font-mono-numbers text-gradient-primary mt-0.5">{[76.2, 80.1, parseFloat(overallScore)][i]}</div>
-                </div>
-              ))}
+              {activeTrendData.length >= 3 ? (
+                activeTrendData.slice(-3).map((d: any, i: number) => (
+                  <div key={i} className="p-2 rounded-lg bg-white/5 border border-white/10 text-center">
+                    <div className="text-xs text-muted-foreground">{d.name || `Session ${i+1}`}</div>
+                    <div className="text-lg font-black font-mono-numbers text-gradient-primary mt-0.5">
+                      {(((d.mobility || 0) + (d.stability || 0) + (d.quality || 0)) / 3).toFixed(1)}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                ['Baseline', 'Session 1', 'Current'].map((label, i) => (
+                  <div key={label} className="p-2 rounded-lg bg-white/5 border border-white/10 text-center">
+                    <div className="text-xs text-muted-foreground">{label}</div>
+                    <div className="text-lg font-black font-mono-numbers text-gradient-primary mt-0.5">
+                      {i === 2 && parseFloat(overallScore) > 0 ? overallScore : '—'}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </div>
