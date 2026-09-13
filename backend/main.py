@@ -4208,7 +4208,7 @@ class AdminSettingsBody(BaseModel):
 
 @app.get("/api/admin/settings")
 def admin_get_settings(
-    caller: dict = Depends(role_auth.require_role("superadmin")),
+    caller: dict = Depends(role_auth.require_any_role(["clinician", "superadmin"])),
 ):
     """Return current platform-level admin settings."""
     return {"settings": _admin_settings_store}
@@ -4217,7 +4217,7 @@ def admin_get_settings(
 @app.post("/api/admin/settings")
 def admin_update_settings(
     body: AdminSettingsBody,
-    caller: dict = Depends(role_auth.require_role("superadmin")),
+    caller: dict = Depends(role_auth.require_any_role(["clinician", "superadmin"])),
 ):
     """Merge (shallow) the submitted settings dict into the current platform settings."""
     global _admin_settings_store
@@ -4653,8 +4653,14 @@ def create_injury_record(payload: Dict[str, Any], db: Session = Depends(get_db))
 
 
 # ── Serve Built Frontend SPA Static Files (Production Render Deployment) ─────
-frontend_dist = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
-if os.path.exists(frontend_dist):
+possible_dists = [
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "dist")),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dist")),
+]
+frontend_dist = next((d for d in possible_dists if os.path.exists(d)), None)
+
+if frontend_dist:
     assets_dir = os.path.join(frontend_dist, "assets")
     if os.path.exists(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
@@ -4665,11 +4671,19 @@ if os.path.exists(frontend_dist):
             raise HTTPException(status_code=404, detail="Not Found")
         
         file_path = os.path.join(frontend_dist, full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
+        if os.path.isfile(file_path) and not full_path.endswith(".html"):
+            headers = {"Cache-Control": "public, max-age=31536000, immutable"} if "assets/" in full_path else {}
+            return FileResponse(file_path, headers=headers)
         
         index_file = os.path.join(frontend_dist, "index.html")
         if os.path.isfile(index_file):
-            return FileResponse(index_file)
+            return FileResponse(
+                index_file,
+                headers={
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                }
+            )
         raise HTTPException(status_code=404, detail="Frontend build not found")
 

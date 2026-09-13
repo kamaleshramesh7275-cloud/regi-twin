@@ -132,21 +132,44 @@ export default function AdminSettings() {
 
   const { data, isLoading, refetch } = useQuery<SettingsData>({
     queryKey: ["admin-settings"],
-    queryFn: () =>
-      apiFetch("/api/admin/settings", idToken).catch(() => DEFAULT_SETTINGS),
-    enabled: !!idToken,
+    queryFn: async () => {
+      try {
+        const res = await apiFetch("/api/admin/settings", idToken);
+        const obj = res?.settings || res || {};
+        return {
+          auto_assign_clinician: obj.auto_assign_clinician ?? DEFAULT_SETTINGS.auto_assign_clinician,
+          default_clinician_uid: obj.default_clinician_uid ?? DEFAULT_SETTINGS.default_clinician_uid,
+          notification_thresholds: {
+            ...DEFAULT_SETTINGS.notification_thresholds,
+            ...(obj.notification_thresholds || {}),
+          },
+          ocr_auto_confirm: obj.ocr_auto_confirm ?? DEFAULT_SETTINGS.ocr_auto_confirm,
+        };
+      } catch {
+        return DEFAULT_SETTINGS;
+      }
+    },
     staleTime: 60_000,
   });
 
   const [local, setLocal] = useState<SettingsData | null>(null);
-  const settings: SettingsData = local ?? data ?? DEFAULT_SETTINGS;
+  const rawSettings = local ?? data ?? DEFAULT_SETTINGS;
+  const settings: SettingsData = {
+    auto_assign_clinician: rawSettings?.auto_assign_clinician ?? DEFAULT_SETTINGS.auto_assign_clinician,
+    default_clinician_uid: rawSettings?.default_clinician_uid ?? DEFAULT_SETTINGS.default_clinician_uid,
+    notification_thresholds: {
+      ...DEFAULT_SETTINGS.notification_thresholds,
+      ...(rawSettings?.notification_thresholds || {}),
+    },
+    ocr_auto_confirm: rawSettings?.ocr_auto_confirm ?? DEFAULT_SETTINGS.ocr_auto_confirm,
+  };
 
   const merge = (patch: Partial<SettingsData>) =>
-    setLocal((prev) => ({ ...(prev ?? data ?? DEFAULT_SETTINGS), ...patch }));
+    setLocal((prev) => ({ ...(prev ?? settings), ...patch }));
 
   const mergeThreshold = (patch: Partial<SettingsData["notification_thresholds"]>) =>
     setLocal((prev) => {
-      const base = prev ?? data ?? DEFAULT_SETTINGS;
+      const base = prev ?? settings;
       return {
         ...base,
         notification_thresholds: { ...base.notification_thresholds, ...patch },
@@ -157,7 +180,7 @@ export default function AdminSettings() {
     mutationFn: () =>
       apiFetch("/api/admin/settings", idToken, {
         method: "POST",
-        body: JSON.stringify(settings),
+        body: JSON.stringify({ settings }),
       }),
     onSuccess: () => {
       setSaveSuccess("Settings saved successfully.");

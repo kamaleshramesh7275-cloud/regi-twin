@@ -59,21 +59,21 @@ const NAV_ITEMS: NavItem[] = [
     id: "users",
     label: "User & Roles",
     icon: <UserCog className="w-4 h-4" />,
-    roles: ["superadmin"],
+    roles: ["clinician", "superadmin"],
     href: "/admin/users",
   },
   {
     id: "system-health",
     label: "System Health",
     icon: <Activity className="w-4 h-4" />,
-    roles: ["superadmin"],
+    roles: ["clinician", "superadmin"],
     href: "/admin/system-health",
   },
   {
     id: "settings",
     label: "Admin Settings",
     icon: <Settings className="w-4 h-4" />,
-    roles: ["superadmin"],
+    roles: ["clinician", "superadmin"],
     href: "/admin/settings",
   },
 ];
@@ -278,20 +278,6 @@ function AdminPageRouter({
   page: string;
   role: string;
 }) {
-  const superadminOnly = ["users", "system-health", "settings"];
-  if (superadminOnly.includes(page) && role !== "superadmin") {
-    // Clinician hit a superadmin-only URL — silently redirect to overview
-    return (
-      <div className="flex flex-col items-center justify-center h-64 gap-4">
-        <AlertCircle className="w-10 h-10 text-amber-400 opacity-60" />
-        <p className="text-white/40 text-sm">You don't have access to this page.</p>
-        <Link href="/admin" className="text-teal-400 text-sm hover:underline">
-          ← Back to Overview
-        </Link>
-      </div>
-    );
-  }
-
   switch (page) {
     case "":
     case "overview":
