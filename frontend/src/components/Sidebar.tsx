@@ -182,6 +182,7 @@ export function Sidebar() {
 
               <NavSection title="System" />
               <NavItem icon={<BookOpen className="w-4 h-4" />} label="Knowledge Wiki" href="/wiki" active={location === '/wiki'} />
+              <NavItem icon={<Shield className="w-4 h-4 text-emerald-400" />} label="Privacy Policy" href="/privacy" active={location === '/privacy'} />
               <NavItem icon={<Settings className="w-4 h-4" />} label="Settings" href="/settings" active={location === '/settings'} />
             </>
           )}

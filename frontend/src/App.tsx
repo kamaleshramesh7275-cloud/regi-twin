@@ -46,6 +46,7 @@ import ExerciseLibrary from "./ExerciseLibrary";
 import WorkoutLogger from "./WorkoutLogger";
 import LoginPage from "./LoginPage";
 import EntryPage from "./EntryPage";
+import PrivacyPolicy from "./PrivacyPolicy";
 import AdminPage from "./AdminPage";
 import ClinicianDashboard from "./ClinicianDashboard";
 import AdminPortalShell from "./admin/AdminPortalShell";
@@ -131,6 +132,7 @@ function AppContent() {
           <Switch>
           <Route path="/" component={EntryPage} />
           <Route path="/entry" component={EntryPage} />
+          <Route path="/privacy" component={PrivacyPolicy} />
           <Route path="/login" component={LoginPage} />
           <Route path="/register" component={Onboarding} />
           <Route path="/onboarding" component={Onboarding} />

@@ -26,13 +26,36 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="PhysioTwin API - Native Workout & Nutrition Engine")
 
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+if ENVIRONMENT == "production":
+    allowed_origins = [
+        "https://physiotwin.onrender.com",
+        "http://localhost:5137",
+        "http://localhost:3000",
+        "capacitor://localhost",
+        "https://localhost",
+    ]
+else:
+    allowed_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    if ENVIRONMENT == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 # Mount local uploads directory for workout photos and meal photos
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
