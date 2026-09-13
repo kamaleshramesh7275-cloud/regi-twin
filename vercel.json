@@ -1,0 +1,115 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm --prefix frontend install && npm --prefix frontend run build",
+  "outputDirectory": "frontend/dist",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://regi-twin.onrender.com/api/:path*"
+    },
+    {
+      "source": "/analytics/:path*",
+      "destination": "https://regi-twin.onrender.com/analytics/:path*"
+    },
+    {
+      "source": "/sessions/:path*",
+      "destination": "https://regi-twin.onrender.com/sessions/:path*"
+    },
+    {
+      "source": "/users/:path*",
+      "destination": "https://regi-twin.onrender.com/users/:path*"
+    },
+    {
+      "source": "/exercises/:path*",
+      "destination": "https://regi-twin.onrender.com/exercises/:path*"
+    },
+    {
+      "source": "/foods/:path*",
+      "destination": "https://regi-twin.onrender.com/foods/:path*"
+    },
+    {
+      "source": "/workouts/:path*",
+      "destination": "https://regi-twin.onrender.com/workouts/:path*"
+    },
+    {
+      "source": "/meals/:path*",
+      "destination": "https://regi-twin.onrender.com/meals/:path*"
+    },
+    {
+      "source": "/nutrition/:path*",
+      "destination": "https://regi-twin.onrender.com/nutrition/:path*"
+    },
+    {
+      "source": "/clinic/:path*",
+      "destination": "https://regi-twin.onrender.com/clinic/:path*"
+    },
+    {
+      "source": "/uploads/:path*",
+      "destination": "https://regi-twin.onrender.com/uploads/:path*"
+    },
+    {
+      "source": "/vitals/:path*",
+      "destination": "https://regi-twin.onrender.com/vitals/:path*"
+    },
+    {
+      "source": "/wearables/:path*",
+      "destination": "https://regi-twin.onrender.com/wearables/:path*"
+    },
+    {
+      "source": "/wearable/:path*",
+      "destination": "https://regi-twin.onrender.com/wearable/:path*"
+    },
+    {
+      "source": "/medications/:path*",
+      "destination": "https://regi-twin.onrender.com/medications/:path*"
+    },
+    {
+      "source": "/meds/:path*",
+      "destination": "https://regi-twin.onrender.com/meds/:path*"
+    },
+    {
+      "source": "/readiness/:path*",
+      "destination": "https://regi-twin.onrender.com/readiness/:path*"
+    },
+    {
+      "source": "/wiki/:path*",
+      "destination": "https://regi-twin.onrender.com/wiki/:path*"
+    },
+    {
+      "source": "/achievements/:path*",
+      "destination": "https://regi-twin.onrender.com/achievements/:path*"
+    },
+    {
+      "source": "/community/:path*",
+      "destination": "https://regi-twin.onrender.com/community/:path*"
+    },
+    {
+      "source": "/leaderboard/:path*",
+      "destination": "https://regi-twin.onrender.com/leaderboard/:path*"
+    },
+    {
+      "source": "/programs/:path*",
+      "destination": "https://regi-twin.onrender.com/programs/:path*"
+    },
+    {
+      "source": "/pain/:path*",
+      "destination": "https://regi-twin.onrender.com/pain/:path*"
+    },
+    {
+      "source": "/health-connect/:path*",
+      "destination": "https://regi-twin.onrender.com/health-connect/:path*"
+    },
+    {
+      "source": "/reports/:path*",
+      "destination": "https://regi-twin.onrender.com/reports/:path*"
+    },
+    {
+      "source": "/captures/:path*",
+      "destination": "https://regi-twin.onrender.com/captures/:path*"
+    },
+    {
+      "source": "/((?!assets/|data/|exercises/|models/|favicon|icons|manifest|apple-touch|maskable|pwa|holographic|model|placeholder).*|.*\\.html)",
+      "destination": "/index.html"
+    }
+  ]
+}
