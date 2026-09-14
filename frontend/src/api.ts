@@ -265,6 +265,46 @@ export const api = {
     return res.json();
   },
 
+  /** Fetch user profile from backend */
+  async getUserProfile(userId: string) {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/users/${userId}`);
+      if (res.ok) return await res.json();
+    } catch {
+      return null;
+    }
+    return null;
+  },
+
+  /** Save/upsert user baseline profile to backend */
+  async saveUserProfile(userId: string, profileData: any) {
+    const payload = {
+      user_id: userId,
+      email: profileData.email || "",
+      age: Number(profileData.age) || 0,
+      sex: profileData.biological_sex || profileData.sex || "Prefer not to say",
+      height: Number(profileData.height_cm || profileData.height) || 0,
+      weight: Number(profileData.weight_kg || profileData.weight) || 0,
+      mode: profileData.twin_mode || profileData.mode || "General Human",
+      goals: Array.isArray(profileData.goals) ? profileData.goals.join(", ") : (profileData.goals || ""),
+      consent: true
+    };
+    const res = await fetchWithTimeout(`${API_BASE}/users/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error("Failed to save profile");
+    return res.json();
+  },
+
+  /** Fetch computed achievement badges from backend */
+  async getAchievements(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/achievements/${userId}`);
+    if (!res.ok) throw new Error("Failed to fetch achievements");
+    return res.json();
+  },
+
   /** Log dynamic daily pain intensity */
   async logPain(userId: string, data: { zone: string, score: number }) {
     const res = await fetchWithTimeout(`${API_BASE}/pain/log/${userId}`, {

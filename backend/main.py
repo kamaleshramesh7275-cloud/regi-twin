@@ -1404,7 +1404,7 @@ def get_session_history(user_id: str, db: Session = Depends(get_db), min_hours_a
 
 @app.delete("/sessions/history/{user_id}")
 def delete_session_history(user_id: str, db: Session = Depends(get_db)):
-    """Delete all markerless vision capture sessions, kinematics, and anomaly events for a user."""
+    """Wipe all capture sessions, kinematics, capability profiles, and derived insights for a user."""
     vision_sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).all()
     session_ids = [s.session_id for s in vision_sessions]
     
@@ -1413,8 +1413,18 @@ def delete_session_history(user_id: str, db: Session = Depends(get_db)):
         db.query(models.AnomalyEvent).filter(models.AnomalyEvent.vision_session_id.in_(session_ids)).delete(synchronize_session=False)
     
     deleted_count = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).delete(synchronize_session=False)
+    
+    # Wipe derived insights and session profiles
+    db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.ChangePoint).filter(models.ChangePoint.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.TwinNote).filter(models.TwinNote.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.PainLog).filter(models.PainLog.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.WearableSession).filter(models.WearableSession.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.KinesiophobiaRecord).filter(models.KinesiophobiaRecord.user_id == user_id).delete(synchronize_session=False)
+
     db.commit()
-    return {"status": "success", "message": "All capture history deleted", "deleted_count": deleted_count}
+    return {"status": "success", "message": "All capture history and derived insights deleted", "deleted_count": deleted_count}
 
 
 @app.get("/analytics/dashboard/{user_id}", response_model=AnalyticsDashboardResponse)
@@ -1729,26 +1739,15 @@ async def analyze_medical_report(user_id: str, file: UploadFile = File(...), db:
 
 @app.get("/analytics/leaderboard")
 def get_leaderboard(db: Session = Depends(get_db)):
-    """Legacy leaderboard endpoint. Falls back to /api/global-leaderboard data."""
+    """Legacy leaderboard endpoint querying real leaderboard entries."""
     entries = db.query(models.LeaderboardEntry).order_by(models.LeaderboardEntry.score.desc()).all()
-    if not entries:
-        seed_data = [
-            models.LeaderboardEntry(username="AlexChen", score=940, rank_change=1),
-            models.LeaderboardEntry(username="SarahJ", score=890, rank_change=0),
-            models.LeaderboardEntry(username="MikeT", score=865, rank_change=-1),
-            models.LeaderboardEntry(username="EmmaW", score=840, rank_change=2),
-            models.LeaderboardEntry(username="ChrisP", score=810, rank_change=0)
-        ]
-        db.bulk_save_objects(seed_data)
-        db.commit()
-        entries = db.query(models.LeaderboardEntry).order_by(models.LeaderboardEntry.score.desc()).all()
     return [{"username": e.username, "score": e.score, "rank_change": e.rank_change, "user_id": e.user_id} for e in entries]
 
 
 @app.get("/api/global-leaderboard")
 def get_global_leaderboard(db: Session = Depends(get_db)):
     """
-    Global leaderboard — all users in the system ranked by their computed health score (0–1000).
+    Global leaderboard — exclusively real registered system users ranked by their computed health score (0–1000).
     """
     users = db.query(models.User).order_by(models.User.created_at.desc()).all()
 
@@ -1790,21 +1789,6 @@ def get_global_leaderboard(db: Session = Depends(get_db)):
             "mode": u.mode or "General Human",
             "has_profile": cap is not None,
         })
-
-    # Benchmark global users if database has fewer than 8 users
-    BENCHMARKS = [
-        {"user_id": "seed-1", "username": "Sarah Connor", "email": "sarah.c@physiotwin.io", "health_score": 945, "mode": "Tactical Athlete", "has_profile": True},
-        {"user_id": "seed-2", "username": "Alex Rivera", "email": "arivera@physiotwin.io", "health_score": 912, "mode": "Elite Sprinter", "has_profile": True},
-        {"user_id": "seed-3", "username": "David Miller", "email": "dmiller@physiotwin.io", "health_score": 885, "mode": "CrossFit Competitor", "has_profile": True},
-        {"user_id": "seed-4", "username": "Elena Rostova", "email": "elena.r@physiotwin.io", "health_score": 860, "mode": "Marathon Runner", "has_profile": True},
-        {"user_id": "seed-5", "username": "Marcus Vance", "email": "mvance@physiotwin.io", "health_score": 825, "mode": "Powerlifter", "has_profile": True},
-        {"user_id": "seed-6", "username": "Priya Sharma", "email": "priya.s@physiotwin.io", "health_score": 790, "mode": "General Human", "has_profile": True},
-        {"user_id": "seed-7", "username": "Kenji Sato", "email": "kenji.s@physiotwin.io", "health_score": 740, "mode": "Rehab Patient", "has_profile": True},
-    ]
-
-    for b in BENCHMARKS:
-        if b["user_id"] not in seen_uids:
-            results.append(b)
 
     # Sort by health_score desc
     results.sort(key=lambda x: (-x["health_score"], x["username"].lower()))

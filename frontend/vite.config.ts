@@ -35,7 +35,7 @@ export default defineConfig({
     react(),
   ],
   server: {
-    port: 5137,
+    port: 5173,
     host: '0.0.0.0',
     cors: true,
     proxy: {

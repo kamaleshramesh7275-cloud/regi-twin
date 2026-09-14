@@ -31,25 +31,31 @@ export default function AchievementsPage() {
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const uid = user?.uid || "";
+  const activeUid = user?.uid || "demo_user";
 
   useEffect(() => {
-    if (!uid) {
-      initFallbackAchievements();
-      setLoading(false);
-      return;
-    }
-    api.getAchievements(uid)
+    let isMounted = true;
+    setLoading(true);
+
+    api.getAchievements(activeUid)
       .then((data) => {
-        if (data && data.length > 0) {
+        if (!isMounted) return;
+        if (data && Array.isArray(data) && data.length > 0) {
           setAchievements(data);
         } else {
           initFallbackAchievements();
         }
       })
-      .catch(() => initFallbackAchievements())
-      .finally(() => setLoading(false));
-  }, [uid]);
+      .catch((err) => {
+        console.warn("Error fetching achievements:", err);
+        if (isMounted) initFallbackAchievements();
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => { isMounted = false; };
+  }, [activeUid]);
 
   const initFallbackAchievements = () => {
     setAchievements([
