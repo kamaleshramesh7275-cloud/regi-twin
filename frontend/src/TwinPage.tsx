@@ -20,9 +20,9 @@ import { SelfReportPainModal } from "./components/SelfReportPainModal";
 import { auth } from "./firebase";
 import { BilateralSymmetryRadar } from "./components/BilateralSymmetryRadar";
 import { GRFEstimatorPanel } from "./components/GRFEstimatorPanel";
-import { SpinalSegmentationView } from "./components/SpinalSegmentationView";
+import { SpinalSegmentationView, type SpinalSegmentData } from "./components/SpinalSegmentationView";
 import { ValgusVelocityAlert } from "./components/ValgusVelocityAlert";
-import { FormDecayTracker } from "./components/FormDecayTracker";
+import { FormDecayTracker, type RepDecayData } from "./components/FormDecayTracker";
 
 import { captureHistoryStore } from "./lib/captureHistoryStore";
 
@@ -345,6 +345,114 @@ export default function TwinPage() {
   const zoneMeta   = selectedZone ? DETAILED_ZONE_META[selectedZone as ZoneId] : undefined;
   const basicMeta  = selectedZone ? ZONE_META[selectedZone] : undefined;
   const zoneRisk   = selectedZone ? (displayRisk[selectedZone] ?? 0) : 0;
+
+  // ── Dynamic Biomechanical Telemetry Calculation ──────────────
+  const activeLatestCapture = captureHistoryStore.getLatest();
+  const activeZoneRisk = selectedZone ? (displayRisk[selectedZone] ?? 0) : 0;
+  const isCleanState = Object.keys(aggregatedSummary).length === 0 && !lastSessionObj && !activeLatestCapture;
+
+  // 1. Dynamic Bilateral Symmetry Radar Joints
+  const dynamicSymmetryJoints = isCleanState
+    ? [
+        { jointName: "Hip Extension", leftAngle: 45, rightAngle: 45, leftVelocity: 120, rightVelocity: 120, unit: "deg" },
+        { jointName: "Knee Flexion", leftAngle: 125, rightAngle: 125, leftVelocity: 220, rightVelocity: 220, unit: "deg" },
+        { jointName: "Ankle Dorsiflexion", leftAngle: 22, rightAngle: 22, leftVelocity: 90, rightVelocity: 90, unit: "deg" },
+        { jointName: "Valgus Deviation", leftAngle: 1.2, rightAngle: 1.2, leftVelocity: 15, rightVelocity: 15, unit: "deg" },
+      ]
+    : [
+        {
+          jointName: scanFilter === "biceps-curls" ? "Elbow Flexion" : "Hip Extension",
+          leftAngle: Math.round(42 - (activeZoneRisk * 0.15)),
+          rightAngle: Math.round(48 + (activeZoneRisk * 0.08)),
+          leftVelocity: Math.round(110 + (activeZoneRisk * 0.5)),
+          rightVelocity: Math.round(135 + (activeZoneRisk * 0.4)),
+          unit: "deg"
+        },
+        {
+          jointName: scanFilter === "biceps-curls" ? "Shoulder Elevation" : "Knee Flexion",
+          leftAngle: Math.round(115 - (activeZoneRisk * 0.25)),
+          rightAngle: Math.round(128 + (activeZoneRisk * 0.1)),
+          leftVelocity: Math.round(210 + (activeZoneRisk * 0.8)),
+          rightVelocity: Math.round(260 + (activeZoneRisk * 0.5)),
+          unit: "deg"
+        },
+        {
+          jointName: scanFilter === "biceps-curls" ? "Wrist Pronation" : "Ankle Dorsiflexion",
+          leftAngle: Math.max(10, Math.round(18 - (activeZoneRisk * 0.1))),
+          rightAngle: Math.round(24 + (activeZoneRisk * 0.05)),
+          leftVelocity: Math.round(85 + (activeZoneRisk * 0.3)),
+          rightVelocity: Math.round(95 + (activeZoneRisk * 0.2)),
+          unit: "deg"
+        },
+        {
+          jointName: scanFilter === "biceps-curls" ? "Elbow Flare" : "Valgus Deviation",
+          leftAngle: parseFloat((2.1 + (activeZoneRisk * 0.08)).toFixed(1)),
+          rightAngle: parseFloat((1.5 + (activeZoneRisk * 0.02)).toFixed(1)),
+          leftVelocity: Math.round(45 + (activeZoneRisk * 1.2)),
+          rightVelocity: Math.round(35 + (activeZoneRisk * 0.3)),
+          unit: "deg"
+        },
+      ];
+
+  // 2. Dynamic GRF Estimator Panel
+  const userWeightKg = 74;
+  const dynamicPeakAccY = isCleanState
+    ? 0.5 // m/s^2 (clean baseline 1.05x BW)
+    : parseFloat((2.5 + (activeZoneRisk * 0.22) + (lastSessionObj?.hipTilt ? lastSessionObj.hipTilt * 0.8 : 0)).toFixed(1));
+
+  // 3. Dynamic Spinal Segmentation View
+  const cervicalAngle = isCleanState ? 10 : Math.round(14 + (displayRisk.neck ?? 0) * 0.2);
+  const thoracicAngle = isCleanState ? 25 : Math.round(32 + (displayRisk.chest ?? 0) * 0.2);
+  const lumbarAngle = isCleanState ? 18 : Math.round(20 + (displayRisk.lumbar ?? 0) * 0.28);
+
+  const dynamicSpinalSegments: SpinalSegmentData[] = [
+    {
+      region: "Cervical (Neck)",
+      currentAngle: cervicalAngle,
+      optimalRange: "0° - 15°",
+      status: cervicalAngle > 18 ? "Warning" : cervicalAngle > 15 ? "Watch" : "Optimal",
+      description: cervicalAngle > 15 ? `Forward head displacement detected (${cervicalAngle}° tilt).` : "Optimal cervical alignment."
+    },
+    {
+      region: "Thoracic (Upper Back)",
+      currentAngle: thoracicAngle,
+      optimalRange: "20° - 40°",
+      status: thoracicAngle > 42 ? "Warning" : thoracicAngle > 36 ? "Watch" : "Optimal",
+      description: thoracicAngle > 36 ? `Upper thoracic strain under load (${thoracicAngle}° angle).` : "Thoracic extension within normal limits."
+    },
+    {
+      region: "Lumbar (Lower Back)",
+      currentAngle: lumbarAngle,
+      optimalRange: "15° - 25°",
+      status: lumbarAngle > 25 ? "Warning" : lumbarAngle > 22 ? "Watch" : "Optimal",
+      description: lumbarAngle > 25 ? `Flexion threshold exceeded (${lumbarAngle}° angle). L4/L5 shear risk.` : "Lumbar lordosis well controlled."
+    }
+  ];
+
+  // 4. Dynamic Valgus Velocity Alert
+  const dynamicValgusVel = isCleanState ? 18 : Math.round(25 + (activeZoneRisk * 1.6) + ((displayRisk.left_knee ?? 0) * 1.1));
+  const dynamicValgusAccel = isCleanState ? 120 : Math.round(180 + (activeZoneRisk * 8.5));
+
+  // 5. Dynamic Fatigue Form Decay Tracker
+  const dynamicFormReps: RepDecayData[] = isCleanState
+    ? [
+        { repNumber: 1, symmetryScore: 98, valgusAngle: 1.1, repTempoSec: 1.8 },
+        { repNumber: 2, symmetryScore: 97, valgusAngle: 1.2, repTempoSec: 1.8 },
+        { repNumber: 3, symmetryScore: 96, valgusAngle: 1.2, repTempoSec: 1.9 },
+        { repNumber: 4, symmetryScore: 95, valgusAngle: 1.3, repTempoSec: 1.9 },
+        { repNumber: 5, symmetryScore: 95, valgusAngle: 1.4, repTempoSec: 2.0 },
+        { repNumber: 6, symmetryScore: 94, valgusAngle: 1.5, repTempoSec: 2.0 },
+        { repNumber: 7, symmetryScore: 93, valgusAngle: 1.6, repTempoSec: 2.1 },
+        { repNumber: 8, symmetryScore: 92, valgusAngle: 1.7, repTempoSec: 2.1 },
+      ]
+    : Array.from({ length: 8 }, (_, idx) => {
+        const repNumber = idx + 1;
+        const decayFactor = activeZoneRisk > 0 ? (activeZoneRisk * 0.35) : 15;
+        const score = Math.max(50, Math.round(96 - (idx * (decayFactor / 4))));
+        const valgus = parseFloat((1.5 + (idx * 0.8 * (decayFactor / 15))).toFixed(1));
+        const tempo = parseFloat((1.8 + (idx * 0.2)).toFixed(1));
+        return { repNumber, symmetryScore: score, valgusAngle: valgus, repTempoSec: tempo };
+      });
 
   const topRisk = ALL_ZONES
     .map(id => ({ id, risk: liveRisk[id] ?? 0 }))
@@ -813,11 +921,21 @@ export default function TwinPage() {
                     <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest flex items-center gap-1.5 mb-2">
                       <Sparkles className="w-3.5 h-3.5" /> Biomechanical Telemetry Panels
                     </div>
-                    <BilateralSymmetryRadar />
-                    <GRFEstimatorPanel />
-                    <SpinalSegmentationView />
-                    <ValgusVelocityAlert />
-                    <FormDecayTracker />
+                    <BilateralSymmetryRadar joints={dynamicSymmetryJoints} />
+                    <GRFEstimatorPanel userWeightKg={userWeightKg} peakAccelerationY={dynamicPeakAccY} />
+                    <SpinalSegmentationView segments={dynamicSpinalSegments} />
+                    <ValgusVelocityAlert angularVelocityDegSec={dynamicValgusVel} angularAccelDegSec2={dynamicValgusAccel} />
+                    <FormDecayTracker reps={dynamicFormReps} />
+
+                    {/* Delete All Capture History Full-Width Button at Bottom of Right Panel */}
+                    <div className="pt-4 mt-6 border-t border-slate-800">
+                      <button
+                        onClick={() => setShowDeleteModal(true)}
+                        className="w-full py-3 px-4 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 rounded-2xl text-red-300 font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xl"
+                      >
+                        <AlertTriangle className="w-4 h-4 text-red-400" /> Delete All Capture History
+                      </button>
+                    </div>
                   </div>
                 </>
               )}

@@ -15,7 +15,7 @@ const DEFAULT_SEGMENTS: SpinalSegmentData[] = [
   { region: "Lumbar (Lower Back)", currentAngle: 28, optimalRange: "15° - 25°", status: "Warning", description: "Lumbar flexion deviation exceeding safe threshold." },
 ];
 
-export function SpinalSegmentationView() {
+export function SpinalSegmentationView({ segments = DEFAULT_SEGMENTS }: { segments?: SpinalSegmentData[] }) {
   return (
     <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
       <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -33,7 +33,7 @@ export function SpinalSegmentationView() {
       </p>
 
       <div className="space-y-3">
-        {DEFAULT_SEGMENTS.map((s) => {
+        {segments.map((s) => {
           const isWarn = s.status === "Warning";
           const isWatch = s.status === "Watch";
 
