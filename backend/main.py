@@ -4941,11 +4941,11 @@ def run_counterfactual_simulation(payload: CounterfactualSimulationRequest, user
 
 # ── Serve Built Frontend SPA Static Files (Production Render Deployment) ─────
 possible_dists = [
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "spa")),
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")),
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "dist")),
     os.path.abspath(os.path.join(os.path.dirname(__file__), "dist")),
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "dist")),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "dist")),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "static", "spa")),
 ]
 frontend_dist = next((d for d in possible_dists if os.path.exists(d)), None)
 
