@@ -60,7 +60,7 @@ export default function Dashboard() {
   const [timelineIndex, setTimelineIndex] = useState(100);
   const [simulationOverride, setSimulationOverride] = useState<{ reserve: number, recovery: number } | null>(null);
   const [rightRailTab, setRightRailTab] = useState<'chat' | 'simulate' | 'inspect'>('chat');
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
 
   // Sync selectedMetric into the global Avatar context
   const handleSelectMetric = (key: string) => {
@@ -139,7 +139,10 @@ export default function Dashboard() {
       setLoading(false);
     }
     loadData();
-  }, [user]);
+
+    window.addEventListener("twin_data_deleted", loadData);
+    return () => window.removeEventListener("twin_data_deleted", loadData);
+  }, [user, location]);
 
   if (loading || !data) {
     return (
@@ -421,7 +424,7 @@ export default function Dashboard() {
                         <div key={i} className="flex flex-col gap-2 border-b border-border pb-3">
                           <div className="flex items-center gap-2">
                             <Dumbbell className="w-4 h-4 text-purple-400" />
-                            <span className="font-semibold text-sm">Hevy App</span>
+                            <span className="font-semibold text-sm">Native Workout Engine</span>
                           </div>
                           <div className="text-xs text-muted-foreground">{w.name} • Load: {w.load}</div>
                           <div className="text-[10px] text-purple-400/80 bg-purple-500/10 px-2 py-1 rounded inline-block w-fit">

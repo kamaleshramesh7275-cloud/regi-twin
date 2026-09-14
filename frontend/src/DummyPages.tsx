@@ -644,56 +644,59 @@ export function TimelinePage() {
 
 export function InsightsPage() {
   const [insights, setInsights] = useState<string | null>(null);
+  const [metrics, setMetrics] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadInsights() {
-      if (isDemoMode()) {
-        setInsights("## Biomechanical Analysis\n\nYour recent kinematic trends show a **steady improvement in right-side symmetry**, particularly during load-bearing transitions.\n\n### Core Findings\n- **Pelvic tracking** has stabilized by 14% over the last 3 sessions.\n- **Knee varus** is still present on the left side during descent. This is contributing to the minor drop in stability metrics.\n\n### Recommended Focus\nContinue eccentric quad control to improve that descent phase and protect the left knee.");
-        setLoading(false);
-        return;
-      }
-      try {
-        const uid = auth.currentUser?.uid || "test-user";
-        const cached = sessionStorage.getItem("lastInsights");
-        if (cached) {
-          setInsights(cached);
-        }
-      } catch (err) {
-        console.error("Error loading insights", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadInsights();
-  }, []);
-
-  const handleGenerate = async () => {
+  const fetchInsights = async () => {
     setLoading(true);
     setError(null);
     try {
-      const uid = auth.currentUser?.uid || "test-user";
+      const uid = auth.currentUser?.uid || "dev-athlete";
       const res = await api.getDeepInsights(uid);
-      setInsights(res.insights);
-      sessionStorage.setItem("lastInsights", res.insights || "");
+      if (res && res.insights) {
+        setInsights(res.insights);
+        sessionStorage.setItem("lastInsights", res.insights);
+      }
+      if (res && res.metrics) {
+        setMetrics(res.metrics);
+        sessionStorage.setItem("lastMetrics", JSON.stringify(res.metrics));
+      }
     } catch (err: any) {
-      setError(err.message || "Failed to generate insights");
+      setError(err.message || "Failed to generate dynamic insights");
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => {
+    async function loadInsights() {
+      const cachedInsights = sessionStorage.getItem("lastInsights");
+      const cachedMetrics = sessionStorage.getItem("lastMetrics");
+      if (cachedInsights) {
+        setInsights(cachedInsights);
+      }
+      if (cachedMetrics) {
+        try { setMetrics(JSON.parse(cachedMetrics)); } catch (e) {}
+      }
+      if (!cachedInsights) {
+        await fetchInsights();
+      }
+    }
+    loadInsights();
+  }, []);
+
   const renderMarkdownText = (text: string) => {
     return text.split('\n').map((line, i) => {
-      if (line.startsWith('###')) return <h3 key={i} className="text-lg font-bold mt-4 mb-2 text-foreground">{line.replace(/###/g, '')}</h3>;
-      if (line.startsWith('##')) return <h2 key={i} className="text-xl font-black mt-6 mb-3 text-foreground">{line.replace(/##/g, '')}</h2>;
+      if (line.startsWith('###')) return <h3 key={i} className="text-lg font-bold mt-5 mb-2 text-foreground">{line.replace(/###/g, '')}</h3>;
+      if (line.startsWith('##')) return <h2 key={i} className="text-xl font-black mt-7 mb-3 text-gradient-primary">{line.replace(/##/g, '')}</h2>;
+      if (line.startsWith('---')) return <hr key={i} className="my-6 border-border/60" />;
       const parts = line.split(/(\*\*.*?\*\*)/g);
       return (
-        <p key={i} className="mb-2 text-muted-foreground leading-relaxed">
+        <p key={i} className="mb-2 text-muted-foreground leading-relaxed text-sm sm:text-base">
           {parts.map((part, j) => {
             if (part.startsWith('**') && part.endsWith('**')) {
-              return <strong key={j} className="text-foreground">{part.slice(2, -2)}</strong>;
+              return <strong key={j} className="text-foreground font-bold">{part.slice(2, -2)}</strong>;
             }
             return part;
           })}
@@ -704,41 +707,151 @@ export function InsightsPage() {
 
   const annotatedImage = sessionStorage.getItem("lastAnnotatedImage");
 
+  // Fallback metric card values if metrics object is loading
+  const displayMetrics = metrics || {
+    bilateral_symmetry: "95.0%",
+    ground_reaction_force_bw: "1.22 BW",
+    "ground_reaction_force_n": "860 N",
+    spine_lumbar_flexion: "11.2° (L4-L5)",
+    spine_thoracolumbar: "14.8°",
+    valgus_velocity: "13.4 °/s",
+    "angular_acceleration": "39.2 °/s²",
+    reps_decay: "6.5% Loss",
+    task_type: "Active Session"
+  };
+
+  const isBicepCurl = displayMetrics.task_type?.toLowerCase().includes("bicep") || displayMetrics.task_type?.toLowerCase().includes("curl");
+  const isSquat = displayMetrics.task_type?.toLowerCase().includes("squat");
+
   return (
-    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-24 md:pb-0">
+    <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-24 md:pb-0 bg-background">
       <Sidebar />
       <main className="flex-1 md:overflow-y-auto p-4 md:p-6 space-y-6 anim-fade relative z-10">
         <header className="flex items-center justify-between pointer-events-auto">
           <div>
             <h1 className="text-2xl font-black flex items-center gap-2">
-              <Brain className="w-6 h-6 text-primary" /> AI Biomechanics Analysis
+              <Brain className="w-6 h-6 text-primary" /> AI Biomechanics & Kinematic Insights
             </h1>
-            <p className="text-muted-foreground text-sm mt-0.5">Deep insights generated from your motion data</p>
+            <p className="text-muted-foreground text-sm mt-0.5">
+              {isBicepCurl ? "💪 Bicep Curls Scan — Arm Kinematics & Elbow Tracking Analysis" : isSquat ? "🏋️ Squats Scan — Knee Kinematics & Valgus Analysis" : "Clinical-grade diagnostic calculations from captured movement sessions"}
+            </p>
           </div>
-          {insights && (
-            <button onClick={handleGenerate} disabled={loading} className="text-xs text-primary border border-primary/30 px-3 py-1.5 rounded-lg hover:bg-primary/10 transition-colors disabled:opacity-50">Regenerate</button>
-          )}
+          <button 
+            onClick={fetchInsights} 
+            disabled={loading} 
+            className="btn-primary text-xs px-4 py-2 flex items-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            {loading ? "Computing Kinematics..." : "Regenerate Insights"}
+          </button>
         </header>
 
+        {error && (
+          <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+            ⚠️ {error}
+          </div>
+        )}
+
+        {/* ── Biomechanical Metrics Dashboard Card Grid ── */}
+        <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* 1. Bilateral Symmetry */}
+          <div className="metric-card p-4 border border-border/80 bg-card rounded-2xl flex flex-col justify-between shadow-md hover:border-emerald-500/40 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                {isBicepCurl ? "Arm Symmetry" : isSquat ? "Knee Symmetry" : "Bilateral Symmetry"}
+              </span>
+              <Sparkles className="w-4 h-4 text-emerald-400" />
+            </div>
+            <div className="text-2xl font-black font-mono-numbers text-emerald-400">{displayMetrics.bilateral_symmetry}</div>
+            <div className="text-[11px] text-muted-foreground mt-1">{isBicepCurl ? "L/R Arm Balance" : isSquat ? "L/R Leg Balance" : "L/R Balance Index"}</div>
+          </div>
+
+          {/* 2. Ground Reaction Force */}
+          <div className="metric-card p-4 border border-border/80 bg-card rounded-2xl flex flex-col justify-between shadow-md hover:border-sky-500/40 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                {isBicepCurl ? "Arm GRF Load" : isSquat ? "Knee GRF Load" : "GRF (Ground Force)"}
+              </span>
+              <Activity className="w-4 h-4 text-sky-400" />
+            </div>
+            <div className="text-2xl font-black font-mono-numbers text-sky-400">{displayMetrics.ground_reaction_force_bw}</div>
+            <div className="text-[11px] text-muted-foreground mt-1">{displayMetrics.ground_reaction_force_n} Peak Load</div>
+          </div>
+
+          {/* 3. Spine Segmental Segmenting */}
+          <div className="metric-card p-4 border border-border/80 bg-card rounded-2xl flex flex-col justify-between shadow-md hover:border-purple-500/40 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                {isBicepCurl ? "Posture & Shoulder" : isSquat ? "L4-L5 Lumbar" : "Spine Flexion"}
+              </span>
+              <Scale className="w-4 h-4 text-purple-400" />
+            </div>
+            <div className="text-xl font-black font-mono-numbers text-purple-400">{displayMetrics.spine_lumbar_flexion}</div>
+            <div className="text-[11px] text-muted-foreground mt-1">{displayMetrics.spine_thoracolumbar} Thoracolumbar</div>
+          </div>
+
+          {/* 4. Valgus Velocity */}
+          <div className="metric-card p-4 border border-border/80 bg-card rounded-2xl flex flex-col justify-between shadow-md hover:border-amber-500/40 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                {isBicepCurl ? "Arm Tracking Rate" : isSquat ? "Knee Valgus Rate" : "Valgus Velocity"}
+              </span>
+              <Zap className="w-4 h-4 text-amber-400" />
+            </div>
+            <div className="text-2xl font-black font-mono-numbers text-amber-400">{displayMetrics.valgus_velocity}</div>
+            <div className="text-[11px] text-muted-foreground mt-1">{isBicepCurl ? "Elbow Flare Rate" : isSquat ? "Knee Cave Rate" : "Joint Drift Rate"}</div>
+          </div>
+
+          {/* 5. Angular Acceleration */}
+          <div className="metric-card p-4 border border-border/80 bg-card rounded-2xl flex flex-col justify-between shadow-md hover:border-pink-500/40 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                {isBicepCurl ? "Biceps Angular Accel" : isSquats ? "Knee Angular Accel" : "Angular Accel"}
+              </span>
+              <TrendingUp className="w-4 h-4 text-pink-400" />
+            </div>
+            <div className="text-2xl font-black font-mono-numbers text-pink-400">{displayMetrics.angular_acceleration}</div>
+            <div className="text-[11px] text-muted-foreground mt-1">Joint Accel Moment</div>
+          </div>
+
+          {/* 6. Reps Fatigue Decay Indicator */}
+          <div className="metric-card p-4 border border-border/80 bg-card rounded-2xl flex flex-col justify-between shadow-md hover:border-blue-500/40 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                {isBicepCurl ? "Arm Rep Fatigue" : isSquat ? "Knee Rep Fatigue" : "Fatigue Decay"}
+              </span>
+              <Clock className="w-4 h-4 text-blue-400" />
+            </div>
+            <div className="text-xl font-black font-mono-numbers text-blue-400">{displayMetrics.reps_decay}</div>
+            <div className="text-[11px] text-muted-foreground mt-1">Velocity Drop Rate</div>
+          </div>
+        </section>
+
+        {/* ── Report Section ── */}
         {!insights && !loading ? (
           <div className="flex flex-col items-center justify-center h-64 gap-4 glass-panel text-center max-w-2xl mx-auto pointer-events-auto">
-            <button onClick={handleGenerate} className="btn-primary mt-2 px-8 py-3">Generate Deep Insights</button>
+            <h3 className="font-bold text-lg">No Dynamic Insights Generated Yet</h3>
+            <p className="text-xs text-muted-foreground max-w-md">Perform a Live Capture scan or click below to synthesize your biomechanical diagnostics report.</p>
+            <button onClick={fetchInsights} className="btn-primary mt-2 px-8 py-3">Generate Deep Insights</button>
           </div>
         ) : loading ? (
-          <div className="flex justify-center p-12"><div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" /></div>
+          <div className="flex flex-col items-center justify-center p-16 gap-3">
+            <div className="w-10 h-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+            <span className="text-xs text-muted-foreground font-bold">Synthesizing Clinical Biomechanical Insights...</span>
+          </div>
         ) : (
-          <div className="space-y-6 max-w-4xl mx-auto">
+          <div className="space-y-6 max-w-5xl mx-auto">
             {annotatedImage && (
-              <div className="mb-6 relative rounded-2xl overflow-hidden border border-border shadow-lg max-w-lg mx-auto">
+              <div className="mb-6 relative rounded-2xl overflow-hidden border border-border shadow-lg max-w-md mx-auto">
                 <img src={annotatedImage} alt="AI Annotated Posture" className="w-full h-auto" />
                 <div className="absolute top-3 right-3 badge badge-cyan shadow-md">
-                  <Brain className="w-3 h-3 mr-1" /> Vision Processed
+                  <Brain className="w-3 h-3 mr-1" /> Vision Annotated
                 </div>
               </div>
             )}
             
-            <div className="glass-panel anim-up-d2 pointer-events-auto">
-              <div className="prose prose-sm md:prose-base">{renderMarkdownText(insights!)}</div>
+            <div className="glass-panel p-6 sm:p-8 anim-up-d2 pointer-events-auto border border-border/80 shadow-xl bg-card/80 backdrop-blur-md">
+              <div className="prose prose-sm md:prose-base dark:prose-invert max-w-none">{renderMarkdownText(insights!)}</div>
             </div>
           </div>
         )}

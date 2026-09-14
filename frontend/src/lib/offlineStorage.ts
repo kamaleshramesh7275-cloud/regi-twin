@@ -126,6 +126,25 @@ export const offlineStorage = {
   },
 
   /**
+   * Delete a cached record by key
+   */
+  async removeCache(key: string): Promise<void> {
+    try {
+      localStorage.removeItem(`pt_cache_${key}`);
+      const db = await getDB();
+      const tx = db.transaction(CACHE_STORE, "readwrite");
+      const store = tx.objectStore(CACHE_STORE);
+      store.delete(key);
+      return new Promise((resolve) => {
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    } catch {
+      localStorage.removeItem(`pt_cache_${key}`);
+    }
+  },
+
+  /**
    * Queue a write action when the device is offline
    */
   async enqueueMutation(type: OfflineMutation["type"], payload: any): Promise<number> {

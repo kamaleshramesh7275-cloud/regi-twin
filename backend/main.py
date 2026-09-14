@@ -15,7 +15,8 @@ import json
 
 from database import engine, get_db, Base
 import models
-from analytics import compute_capability_profile, generate_weekly_letter, generate_deep_insights, chat_with_twin, simulate_activity, compute_injury_risk
+import analytics
+from analytics import compute_capability_profile, generate_weekly_letter, generate_deep_insights, chat_with_twin, simulate_activity, compute_injury_risk, simulate_counterfactual
 import clinic_ocr
 import clinic_parser
 import clinic_predictor
@@ -1404,7 +1405,7 @@ def get_session_history(user_id: str, db: Session = Depends(get_db), min_hours_a
 
 @app.delete("/sessions/history/{user_id}")
 def delete_session_history(user_id: str, db: Session = Depends(get_db)):
-    """Wipe all capture sessions, kinematics, capability profiles, and derived insights for a user."""
+    """Wipe all capture sessions, kinematics, capability profiles, pain logs, workouts, nutrition, and derived twin/dashboard insights for a user."""
     vision_sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).all()
     session_ids = [s.session_id for s in vision_sessions]
     
@@ -1414,7 +1415,7 @@ def delete_session_history(user_id: str, db: Session = Depends(get_db)):
     
     deleted_count = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).delete(synchronize_session=False)
     
-    # Wipe derived insights and session profiles
+    # Wipe derived insights, twin metrics, and dashboard logs
     db.query(models.CapabilityProfile).filter(models.CapabilityProfile.user_id == user_id).delete(synchronize_session=False)
     db.query(models.ChangePoint).filter(models.ChangePoint.user_id == user_id).delete(synchronize_session=False)
     db.query(models.TwinNote).filter(models.TwinNote.user_id == user_id).delete(synchronize_session=False)
@@ -1422,9 +1423,23 @@ def delete_session_history(user_id: str, db: Session = Depends(get_db)):
     db.query(models.WearableSession).filter(models.WearableSession.user_id == user_id).delete(synchronize_session=False)
     db.query(models.ExternalAppSession).filter(models.ExternalAppSession.user_id == user_id).delete(synchronize_session=False)
     db.query(models.KinesiophobiaRecord).filter(models.KinesiophobiaRecord.user_id == user_id).delete(synchronize_session=False)
+    
+    # Wipe user workouts, set logs, and workout exercises
+    user_workouts = db.query(models.Workout).filter(models.Workout.user_id == user_id).all()
+    workout_ids = [w.id for w in user_workouts]
+    if workout_ids:
+        user_exercises = db.query(models.WorkoutExercise).filter(models.WorkoutExercise.workout_id.in_(workout_ids)).all()
+        exercise_ids = [e.id for e in user_exercises]
+        if exercise_ids:
+            db.query(models.SetLog).filter(models.SetLog.workout_exercise_id.in_(exercise_ids)).delete(synchronize_session=False)
+        db.query(models.WorkoutExercise).filter(models.WorkoutExercise.workout_id.in_(workout_ids)).delete(synchronize_session=False)
+        db.query(models.Workout).filter(models.Workout.user_id == user_id).delete(synchronize_session=False)
+
+    db.query(models.NutritionLog).filter(models.NutritionLog.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.LeaderboardEntry).filter(models.LeaderboardEntry.user_id == user_id).delete(synchronize_session=False)
 
     db.commit()
-    return {"status": "success", "message": "All capture history and derived insights deleted", "deleted_count": deleted_count}
+    return {"status": "success", "message": "All capture history, digital twin data, and dashboard logs deleted", "deleted_count": deleted_count}
 
 
 @app.get("/analytics/dashboard/{user_id}", response_model=AnalyticsDashboardResponse)
@@ -1582,8 +1597,10 @@ def get_weekly_letter(user_id: str, db: Session = Depends(get_db)):
 
 @app.post("/analytics/deep-insights/{user_id}")
 def get_deep_insights(user_id: str, db: Session = Depends(get_db)):
-    insights = generate_deep_insights(user_id, db)
-    return {"insights": insights}
+    res = generate_deep_insights(user_id, db)
+    if isinstance(res, dict):
+        return res
+    return {"insights": res}
 
 @app.post("/analytics/chat/{user_id}")
 def api_chat_with_twin(user_id: str, req: ChatRequest, db: Session = Depends(get_db)):
@@ -1737,11 +1754,68 @@ async def analyze_medical_report(user_id: str, file: UploadFile = File(...), db:
     }
 
 
+def compute_user_health_score(u: models.User, db: Session) -> Dict[str, Any]:
+    cap = (
+        db.query(models.CapabilityProfile)
+        .filter(models.CapabilityProfile.user_id == u.user_id)
+        .order_by(models.CapabilityProfile.timestamp.desc())
+        .first()
+    )
+    vision_sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == u.user_id).all()
+    workout_logs = db.query(models.WorkoutLog).filter(models.WorkoutLog.user_id == u.user_id).all()
+    nutrition_logs = db.query(models.NutritionLog).filter(models.NutritionLog.user_id == u.user_id).all()
+
+    # Base baseline score for real user
+    score = 500.0
+
+    # Capability profile bonus (up to +250)
+    if cap:
+        dims = [cap.mobility, cap.stability, cap.movement_quality, cap.cardiovascular_efficiency, cap.recovery, cap.capability_reserve]
+        valid = [d for d in dims if d is not None]
+        if valid:
+            avg_cap = sum(valid) / len(valid)
+            score += (avg_cap / 100.0) * 250.0
+
+    # Symmetry bonus (up to +150)
+    symmetries = [s.symmetry for s in vision_sessions if s.symmetry is not None]
+    if symmetries:
+        avg_sym = sum(symmetries) / len(symmetries)
+        score += (avg_sym / 100.0) * 150.0
+
+    # Vision session volume bonus (up to +60)
+    score += min(60.0, len(vision_sessions) * 15.0)
+
+    # Activity consistency bonus (up to +40)
+    score += min(40.0, (len(workout_logs) + len(nutrition_logs)) * 4.0)
+
+    final_score = int(round(max(100.0, min(1000.0, score))))
+
+    username = u.email.split("@")[0] if u.email and "@" in u.email else (u.user_id[:8] if u.user_id else "User")
+
+    return {
+        "user_id": u.user_id,
+        "username": username,
+        "email": u.email or "",
+        "health_score": final_score,
+        "score": final_score,
+        "mode": u.mode or "General Human",
+        "has_profile": cap is not None,
+        "session_count": len(vision_sessions)
+    }
+
 @app.get("/analytics/leaderboard")
 def get_leaderboard(db: Session = Depends(get_db)):
-    """Legacy leaderboard endpoint querying real leaderboard entries."""
-    entries = db.query(models.LeaderboardEntry).order_by(models.LeaderboardEntry.score.desc()).all()
-    return [{"username": e.username, "score": e.score, "rank_change": e.rank_change, "user_id": e.user_id} for e in entries]
+    """Leaderboard endpoint querying real registered users dynamically."""
+    users = db.query(models.User).filter(
+        ~models.User.user_id.like("seed-%"),
+        ~models.User.email.like("%@physiotwin.io")
+    ).order_by(models.User.created_at.desc()).all()
+    results = [compute_user_health_score(u, db) for u in users]
+    results.sort(key=lambda x: (-x["score"], x["username"].lower()))
+    for i, r in enumerate(results):
+        r["rank"] = i + 1
+        r["rank_change"] = 0
+    return results
 
 
 @app.get("/api/global-leaderboard")
@@ -1749,46 +1823,11 @@ def get_global_leaderboard(db: Session = Depends(get_db)):
     """
     Global leaderboard — exclusively real registered system users ranked by their computed health score (0–1000).
     """
-    users = db.query(models.User).order_by(models.User.created_at.desc()).all()
-
-    results = []
-    seen_uids = set()
-
-    for u in users:
-        seen_uids.add(u.user_id)
-        cap = (
-            db.query(models.CapabilityProfile)
-            .filter(models.CapabilityProfile.user_id == u.user_id)
-            .order_by(models.CapabilityProfile.timestamp.desc())
-            .first()
-        )
-
-        health_score = 0
-        if cap:
-            dims = [cap.mobility, cap.stability, cap.movement_quality,
-                    cap.cardiovascular_efficiency, cap.recovery, cap.capability_reserve]
-            valid = [d for d in dims if d is not None]
-            if valid:
-                health_score = int(round(sum(valid) / len(valid) * 10))
-        
-        # If no profile cap, derive a baseline health score (600–900 range based on user_id hash)
-        if health_score == 0:
-            uid_hash = sum(ord(c) for c in u.user_id)
-            health_score = 650 + (uid_hash % 260)
-
-        username = (
-            u.email.split("@")[0] if u.email and "@" in u.email
-            else u.user_id[:8]
-        )
-
-        results.append({
-            "user_id": u.user_id,
-            "username": username,
-            "email": u.email or "",
-            "health_score": health_score,
-            "mode": u.mode or "General Human",
-            "has_profile": cap is not None,
-        })
+    users = db.query(models.User).filter(
+        ~models.User.user_id.like("seed-%"),
+        ~models.User.email.like("%@physiotwin.io")
+    ).order_by(models.User.created_at.desc()).all()
+    results = [compute_user_health_score(u, db) for u in users]
 
     # Sort by health_score desc
     results.sort(key=lambda x: (-x["health_score"], x["username"].lower()))
@@ -4864,6 +4903,36 @@ def create_injury_record(payload: Dict[str, Any], db: Session = Depends(get_db))
     db.refresh(rec)
     return {"status": "success", "id": rec.id, "record": payload}
 
+# ── Counterfactual What-If Simulation API Endpoint ────────────────────────────
+class CounterfactualSimulationRequest(BaseModel):
+    user_id: Optional[str] = "demo_user"
+    activity_type: Optional[str] = "Squats & Lifts"
+    duration_mins: Optional[int] = 45
+    intensity: Optional[str] = "High"
+    weekly_sessions: Optional[int] = 4
+    sleep_hours: Optional[float] = 7.0
+    protein_g: Optional[int] = 110
+    hydration_l: Optional[float] = 2.5
+    treatment_protocols: Optional[List[str]] = []
+    target_limb: Optional[str] = "full_body"
+
+@app.post("/analytics/simulate")
+@app.post("/analytics/simulate/{user_id}")
+def run_counterfactual_simulation(payload: CounterfactualSimulationRequest, user_id: Optional[str] = None, db: Session = Depends(get_db)):
+    uid = user_id or payload.user_id or "demo_user"
+    return analytics.simulate_counterfactual(
+        user_id=uid,
+        activity_type=payload.activity_type or "Squats & Lifts",
+        duration_mins=payload.duration_mins or 45,
+        intensity=payload.intensity or "High",
+        weekly_sessions=payload.weekly_sessions or 4,
+        sleep_hours=payload.sleep_hours or 7.0,
+        protein_g=payload.protein_g or 110,
+        hydration_l=payload.hydration_l or 2.5,
+        treatment_protocols=payload.treatment_protocols or [],
+        target_limb=payload.target_limb or "full_body",
+        db=db
+    )
 
 # ── Legacy clinic roster: now protected by role check (keeps old admin_key for backward compat)
 

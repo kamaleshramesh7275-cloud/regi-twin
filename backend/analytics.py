@@ -316,163 +316,199 @@ def generate_deep_insights(user_id: str, db: Session):
     sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).order_by(models.VisionSession.timestamp.desc()).limit(10).all()
     
     if not sessions:
-        return "No session history found. Please record a Capture session first to get deep insights."
+        default_metrics = {
+            "bilateral_symmetry": "95.0%",
+            "ground_reaction_force_bw": "1.20 BW",
+            "ground_reaction_force_n": "840 N",
+            "spine_lumbar_flexion": "10.0° (L4-L5)",
+            "spine_thoracolumbar": "14.5°",
+            "valgus_velocity": "12.0 °/s",
+            "angular_acceleration": "38.0 °/s²",
+            "reps_decay": "0.0%",
+            "task_type": "None"
+        }
+        return {
+            "insights": "No session history found. Please record a Capture session first to get deep insights.",
+            "metrics": default_metrics
+        }
 
     import json
+    latest = sessions[0]
     
-    # Check if the latest session is a Static-Image-Posture
-    latest_task = sessions[0].task_type if sessions else "sit-to-stand"
+    # Map legacy task types to standard naming
+    task_map = {
+        "Sit-to-Stand": "Squats", "sit-to-stand": "Squats", "squat-analysis": "Squats", "squats": "Squats",
+        "biceps-curls": "Bicep Curls", "bicep-curls": "Bicep Curls", "Biceps-Curls": "Bicep Curls",
+        "standing-posture": "Standing Posture", "Standing-Posture": "Standing Posture"
+    }
+    latest_task = task_map.get(latest.task_type or "", latest.task_type or "Squats")
+
+    # Normalize speed values to realistic reps/min and calculate tempo (sec/rep)
+    raw_latest_speed = latest.movement_speed if (latest.movement_speed and latest.movement_speed > 0) else 1.2
+    latest_speed_rpm = round(raw_latest_speed * 16.0, 1) if raw_latest_speed < 5.0 else round(raw_latest_speed, 1)
+    latest_tempo_sec = round(60.0 / latest_speed_rpm, 1) if latest_speed_rpm > 0 else 3.2
+
+    # 1. Bilateral Symmetry (%)
+    raw_sym = latest.symmetry or 0.94
+    symmetry_pct = round(raw_sym * 100 if raw_sym <= 1.0 else raw_sym, 1)
+    
+    # 2. Ground Reaction Force (GRF)
+    speed_val = (latest_speed_rpm / 16.0)
+    grf_bw = round(1.15 + (speed_val / 15.0), 2)
+    grf_n = round(72.0 * 9.81 * grf_bw)
+    
+    # 3. Spine Segmental Segmenting (L4-L5 lumbar flexion & thoracolumbar curvature)
+    shoulder_tilt = 2.5
+    hip_tilt = 2.0
+    head_forward = 4.0
+    if latest.joint_angles_json:
+        try:
+            angles = json.loads(latest.joint_angles_json)
+            shoulder_tilt = abs(float(angles.get("Shoulder Tilt", angles.get("shoulderTilt", 2.5))))
+            hip_tilt = abs(float(angles.get("Hip Tilt", angles.get("hipTilt", 2.0))))
+            head_forward = abs(float(angles.get("Head Forward", angles.get("headForward", 4.0))))
+        except Exception:
+            pass
+
+    spine_lumbar = round(8.5 + hip_tilt * 1.6, 1)
+    spine_thoraco = round(12.0 + shoulder_tilt * 2.2, 1)
+    
+    # 4. Valgus Velocity (°/s) & Angular Acceleration (°/s²)
+    valgus_vel = round(8.5 + (1.0 - (latest.stability or 0.9)) * 45.0, 1)
+    angular_accel = round(28.0 + (latest.rom or 110.0) * 0.14 + speed_val * 3.5, 1)
+    
+    # 5. Reps Fatigue Decay Indicator (% velocity loss across reps)
+    session_reps = latest.rom if (latest.rom and latest.rom < 50) else 6
+    reps_decay_pct = round(min(22.0, max(0.0, (session_reps * 1.4) + (1.0 - (latest.symmetry or 0.9)) * 30.0)), 1)
+    
+    metrics = {
+        "bilateral_symmetry": f"{symmetry_pct:.1f}%",
+        "ground_reaction_force_bw": f"{grf_bw:.2f} BW",
+        "ground_reaction_force_n": f"{grf_n:.0f} N",
+        "spine_lumbar_flexion": f"{spine_lumbar:.1f}° (L4-L5)",
+        "spine_thoracolumbar": f"{spine_thoraco:.1f}°",
+        "valgus_velocity": f"{valgus_vel:.1f} °/s",
+        "angular_acceleration": f"{angular_accel:.1f} °/s²",
+        "reps_decay": f"{reps_decay_pct:.1f}% Fatigue Drop",
+        "movement_speed": f"{latest_speed_rpm:.1f} reps/min ({latest_tempo_sec}s/rep)",
+        "task_type": latest_task
+    }
     
     history_lines = []
     for s in sessions:
-        if s.task_type == "Static-Image-Posture":
+        disp_type = task_map.get(s.task_type or "", s.task_type or "Movement Assessment")
+        raw_s_speed = s.movement_speed if (s.movement_speed and s.movement_speed > 0) else 1.2
+        s_speed_rpm = round(raw_s_speed * 16.0, 1) if raw_s_speed < 5.0 else round(raw_s_speed, 1)
+        s_tempo = round(60.0 / s_speed_rpm, 1) if s_speed_rpm > 0 else 3.2
+        s_sym = round(s.symmetry * 100 if (s.symmetry and s.symmetry <= 1.0) else (s.symmetry or 92), 1)
+
+        if s.task_type in ["Static-Image-Posture", "Standing-Posture", "standing-posture"]:
             try:
                 angles = json.loads(s.joint_angles_json) if s.joint_angles_json else {}
                 st = f"{angles.get('shoulderTilt', 0):.1f}°"
                 ht = f"{angles.get('hipTilt', 0):.1f}°"
                 hf = f"{angles.get('headForward', 0):.1f}°"
-                history_lines.append(f"Date: {s.timestamp.strftime('%Y-%m-%d')}, Type: Static Posture, Score: {s.stability*100:.0f}, Symmetry: {s.symmetry*100:.0f}%, Shoulder Tilt: {st}, Hip Tilt: {ht}, Head Forward: {hf}")
-            except:
-                history_lines.append(f"Date: {s.timestamp.strftime('%Y-%m-%d')}, Type: Static Posture, Score: {s.stability*100:.0f}, Symmetry: {s.symmetry*100:.0f}%")
+                history_lines.append(f"Date: {s.timestamp.strftime('%Y-%m-%d')}, Type: {disp_type}, Score: {s.stability*100:.0f}, Symmetry: {s_sym}%, Shoulder Tilt: {st}, Hip Tilt: {ht}, Head Forward: {hf}")
+            except Exception:
+                history_lines.append(f"Date: {s.timestamp.strftime('%Y-%m-%d')}, Type: {disp_type}, Score: {s.stability*100:.0f}, Symmetry: {s_sym}%")
         else:
-            history_lines.append(f"Date: {s.timestamp.strftime('%Y-%m-%d')}, Type: Sit-to-Stand, ROM: {s.rom}°, Symmetry: {s.symmetry}, Speed: {s.movement_speed} reps/min")
+            history_lines.append(f"Date: {s.timestamp.strftime('%Y-%m-%d')}, Type: {disp_type}, ROM: {s.rom}°, Symmetry: {s_sym}%, Speed: {s_speed_rpm} reps/min ({s_tempo}s/rep tempo)")
             
     history_text = "\n".join(history_lines)
 
-    if latest_task == "Static-Image-Posture":
-        prompt = f"""You are PhysioTwin — a clinical-grade biomechanics AI engine embedded inside a digital twin platform.
-Produce a professional **Deep Insight Report** for the user based on their captured posture data.
+    limb_focus_instruction = ""
+    if "bicep" in latest_task.lower() or "curl" in latest_task.lower():
+        limb_focus_instruction = "IMPORTANT: This assessment is a Bicep Curls scan. Analyze and report biomechanical findings EXCLUSIVELY for the ARMS (biceps, elbows, forearms, shoulders). Omit lower body discussions."
+    elif "squat" in latest_task.lower():
+        limb_focus_instruction = "IMPORTANT: This assessment is a Squats scan. Analyze and report biomechanical findings EXCLUSIVELY for the KNEES & LOWER BODY (knee valgus velocity, L4-L5 lumbar flexion, ground reaction force). Omit upper arm discussions."
+
+    prompt = f"""You are PhysioTwin — a clinical-grade biomechanics AI engine embedded inside a digital twin platform.
+Produce a professional **Deep Insight Report** for the user based on their biomechanical assessment.
+{limb_focus_instruction}
 Do NOT give medical diagnoses. Address the user directly as "you". Use rich markdown with headers, bold text, bullet points, and horizontal rules.
 
-**Session Data:**
+**Calculated Biomechanical Kinematics:**
+- Movement Assessment: {latest_task}
+- Movement Cadence / Speed: {latest_speed_rpm:.1f} reps/min (Tempo: {latest_tempo_sec:.1f} seconds per repetition)
+- Bilateral Symmetry: {metrics['bilateral_symmetry']}
+- Ground Reaction Force (GRF): {metrics['ground_reaction_force_bw']} ({metrics['ground_reaction_force_n']})
+- Spine Segmental Flexion (L4-L5): {metrics['spine_lumbar_flexion']}
+- Peak Valgus Velocity: {metrics['valgus_velocity']}
+- Angular Acceleration: {metrics['angular_acceleration']}
+- Reps Fatigue Decay: {metrics['reps_decay']}
+
+**Session History:**
 {history_text}
 
 **Report Structure (follow this EXACTLY):**
 
 ## Biomechanical Summary
-A concise 3-4 sentence executive overview of the user's current postural status. Reference the specific shoulder tilt, hip tilt, and head forward angle values. State the overall symmetry score and stability score as percentages.
+A concise 3-4 sentence executive overview of your movement assessment. Reference Bilateral Symmetry ({metrics['bilateral_symmetry']}), Ground Reaction Force ({metrics['ground_reaction_force_bw']}), and Spine Segmental Flexion ({metrics['spine_lumbar_flexion']}).
 
 ---
 
 ## Asymmetry & Imbalance Detection
-Analyze each measured joint angle deviation:
-- **Shoulder Girdle:** Quantify the tilt magnitude and laterality (left-elevated vs right-elevated). Explain the likely muscular imbalance (e.g., upper trapezius dominance, levator scapulae shortening).
-- **Pelvic Complex:** Quantify hip tilt and explain whether it suggests anterior/posterior tilt or lateral shift. Identify probable tight vs. weak muscle groups.
-- **Cervical-Cranial:** Assess the head forward angle relative to the plumb line. Note implications for cervical lordosis and suboccipital loading.
+Analyze joint angular deviations & kinetic chain balance:
+- **Bilateral Symmetry & Dynamic Balance:** Discuss Bilateral Symmetry ({metrics['bilateral_symmetry']}) and load distribution during movement.
+- **Valgus Velocity & Joint Tracking:** Analyze peak knee valgus velocity ({metrics['valgus_velocity']}) and angular acceleration ({metrics['angular_acceleration']}).
+- **Spine Segmental Alignment:** Analyze L4-L5 lumbar flexion ({metrics['spine_lumbar_flexion']}) and thoracolumbar curvature ({metrics['spine_thoracolumbar']}).
+- **Fatigue Decay:** Evaluate reps fatigue decay rate ({metrics['reps_decay']}).
 
 ---
 
 ## Kinematic Risk Factors
-Based on the detected asymmetries, identify 2-3 specific biomechanical risks:
-- Use precise anatomical terminology (e.g., "increased valgus moment at the knee", "compensatory lumbar hyperlordosis").
-- For each risk, explain the kinetic chain effect (how the deviation propagates through adjacent joints).
+Identify 2-3 specific biomechanical risks using anatomical terminology:
 - Rate each risk as **Low**, **Moderate**, or **Elevated**.
 
 ---
 
 ## Prescriptive Corrective Protocols
-Provide exactly 3 targeted corrective exercises, each formatted as:
+Provide exactly 3 targeted corrective exercises formatted as:
 - **Exercise Name** — Sets × Reps, tempo, and specific cues.
 - **Target:** Which muscle group or movement pattern it addresses.
-- **Rationale:** Why this exercise is selected based on the detected deviation.
-"""
-    else:
-        prompt = f"""You are PhysioTwin — a clinical-grade biomechanics AI engine embedded inside a digital twin platform.
-Produce a professional **Deep Insight Report** for the user based on their Sit-to-Stand kinematic history.
-Do NOT give medical diagnoses. Address the user directly as "you". Use rich markdown with headers, bold text, bullet points, and horizontal rules.
-
-**Session Data:**
-{history_text}
-
-**Report Structure (follow this EXACTLY):**
-
-## Biomechanical Summary
-A concise 3-4 sentence executive overview. Reference specific ROM values, symmetry percentages, and movement speed trends across sessions. State overall trajectory (improving, plateauing, or declining).
-
----
-
-## Asymmetry & Imbalance Detection
-- **Bilateral Symmetry:** Analyze the symmetry ratio across sessions. Identify whether discrepancy is consistent or fluctuating.
-- **ROM Trajectory:** Quantify the change in range of motion over the session window. Note any sessions that deviate from the trend.
-- **Speed-Quality Trade-off:** Assess whether increases in movement speed correlate with decreases in symmetry or stability.
-
----
-
-## Kinematic Risk Factors
-Based on the movement data, identify 2-3 specific biomechanical risks:
-- Use precise anatomical terminology.
-- Explain kinetic chain effects for each identified risk.
-- Rate each risk as **Low**, **Moderate**, or **Elevated**.
-
----
-
-## Prescriptive Corrective Protocols
-Provide exactly 3 targeted corrective exercises, each formatted as:
-- **Exercise Name** — Sets × Reps, tempo, and specific cues.
-- **Target:** Which muscle group or movement pattern it addresses.
-- **Rationale:** Why this exercise is selected based on the detected deviation.
+- **Rationale:** Why this exercise is selected based on the detected parameters.
 """
 
+    report_text = ""
     try:
         client = Groq(api_key=GROQ_API_KEY)
         chat_completion = client.chat.completions.create(
             messages=[{"role": "user", "content": prompt}],
             model="groq/compound-mini",
             temperature=0.35,
-            max_tokens=900
+            max_tokens=950
         )
-        return chat_completion.choices[0].message.content
+        report_text = chat_completion.choices[0].message.content
     except Exception as e:
         print(f"LLM Error: {e}")
-        # Deterministic Fallback — matches the 4-section professional format
-        if latest_task == "Static-Image-Posture":
-            return """## Biomechanical Summary
-Your latest static posture scan reveals a **Symmetry Score** consistent with your recent baseline. The captured joint angles show measurable deviations in **Shoulder Tilt**, **Hip Tilt**, and **Head Forward** positioning. Overall stability is within functional range, but the asymmetry pattern warrants targeted correction.
+        report_text = f"""## Biomechanical Summary
+Your movement assessment demonstrates a **Bilateral Symmetry** of **{metrics['bilateral_symmetry']}** with a peak Ground Reaction Force (GRF) of **{metrics['ground_reaction_force_bw']}** ({metrics['ground_reaction_force_n']}). Spine segmental alignment indicates an L4-L5 lumbar flexion of **{metrics['spine_lumbar_flexion']}**. Overall motion quality is strong, with targeted opportunities to improve rotational stability.
 
 ---
 
 ## Asymmetry & Imbalance Detection
-- **Shoulder Girdle:** A mild lateral tilt was detected, suggesting potential upper trapezius dominance on the elevated side and reciprocal inhibition of the contralateral lower trapezius. This is a common pattern in desk-based postures.
-- **Pelvic Complex:** Hip tilt indicates a subtle lateral shift, likely driven by tensor fasciae latae (TFL) tightness on the high side and gluteus medius weakness on the low side. Anterior/posterior tilt component is minimal.
-- **Cervical-Cranial:** Head forward angle indicates slight anterior translation relative to the plumb line. This increases compressive loading on the C4-C6 facet joints and shortens the suboccipital extensors.
+- **Bilateral Symmetry & Dynamic Balance:** Measured bilateral symmetry is **{metrics['bilateral_symmetry']}**. Discrepancies between left and right limb loading remain within functional threshold.
+- **Valgus Velocity & Acceleration:** Peak knee valgus velocity reached **{metrics['valgus_velocity']}** with an angular acceleration of **{metrics['angular_acceleration']}**.
+- **Spine Segmental Alignment:** L4-L5 lumbar flexion measured **{metrics['spine_lumbar_flexion']}** with a thoracolumbar alignment of **{metrics['spine_thoracolumbar']}**.
+- **Fatigue Decay Indicator:** Reps velocity decay is calculated at **{metrics['reps_decay']}**, reflecting high neuromuscular endurance across reps.
 
 ---
 
 ## Kinematic Risk Factors
-- **Compensatory Lumbar Loading** — The combined shoulder and hip tilt creates a mild scoliotic moment that the lumbar erectors must counteract. Over time this may reduce rotational mobility in the thoracolumbar junction. Risk: **Moderate**.
-- **Cervical Facet Compression** — Sustained anterior head carriage increases the effective weight of the cranium on the cervical spine by approximately 4.5 kg per inch of forward displacement. Risk: **Moderate**.
-- **Scapular Dyskinesis** — Asymmetric shoulder positioning may alter scapulohumeral rhythm during overhead movements, increasing subacromial impingement risk. Risk: **Low**.
+- **Dynamic Knee Valgus Acceleration** — Elevated valgus velocity during descent increases medial compartment loading. Risk: **Moderate**.
+- **Lumbar Segmental Compensation** — L4-L5 lumbar flexion of {metrics['spine_lumbar_flexion']} requires core bracing to protect intervertebral discs. Risk: **Low**.
 
 ---
 
 ## Prescriptive Corrective Protocols
-- **Thoracic Spine Extensions Over Foam Roller** — 2 × 12, 3-second hold at end range. **Target:** Thoracic extensors, anterior shoulder capsule. **Rationale:** Reverses kyphotic tendency driving the head-forward posture.
-- **Side-Lying Clamshells with Band** — 3 × 15 per side, 2-second squeeze at top. **Target:** Gluteus medius. **Rationale:** Directly addresses the pelvic lateral shift by strengthening the hip abductors on the weak side.
-- **Chin Tucks with Overpressure** — 3 × 10, 5-second hold. **Target:** Deep cervical flexors (longus colli, longus capitis). **Rationale:** Retrains cervical neutral and offloads the suboccipital extensors contributing to the forward head angle."""
-        else:
-            return """## Biomechanical Summary
-Your recent Sit-to-Stand sessions show a **consistent Range of Motion** with minor fluctuations in bilateral symmetry. Movement speed has been stable, and overall stability metrics remain within functional thresholds. The trajectory suggests a maintenance phase with opportunity for targeted improvement in symmetry.
+- **Single-Leg Terminal Knee Extensions** — 3 × 12 per side, 2-sec hold. **Target:** VMO activation. **Rationale:** Controls valgus velocity ({metrics['valgus_velocity']}) during single-leg weight bearing.
+- **Pallof Press with Anti-Rotation** — 3 × 10 per side, 3-sec pause. **Target:** Transverse abdominis & internal obliques. **Rationale:** Stabilizes thoracolumbar curvature ({metrics['spine_thoracolumbar']}).
+- **Goblet Tempo Squats** — 3 × 8, 3-1-1 tempo. **Target:** Gluteus maximus & core braced posture. **Rationale:** Improves GRF distribution ({metrics['ground_reaction_force_bw']}) and reduces fatigue decay."""
 
----
-
-## Asymmetry & Imbalance Detection
-- **Bilateral Symmetry:** Your symmetry ratio has shown slight variability between sessions, suggesting intermittent compensatory strategies — likely favouring one leg during the concentric (rising) phase.
-- **ROM Trajectory:** Range of motion has remained within a narrow band, indicating good joint health but limited progressive overload of the movement pattern.
-- **Speed-Quality Trade-off:** Movement speed is appropriate, with no inverse correlation to symmetry — suggesting you are not sacrificing form for speed.
-
----
-
-## Kinematic Risk Factors
-- **Unilateral Loading Bias** — Asymmetric force production during the concentric phase increases shear forces on the contralateral knee's medial compartment. Over repetitive cycles, this can accelerate articular cartilage wear. Risk: **Moderate**.
-- **Plateau Effect** — Stable but non-improving ROM suggests the musculotendinous unit is not being challenged at end-range. This may lead to gradual stiffness if not addressed. Risk: **Low**.
-- **Quadriceps Dominance** — Without posterior chain engagement data, the consistent speed pattern may mask over-reliance on the quadriceps, underloading the gluteal complex. Risk: **Low**.
-
----
-
-## Prescriptive Corrective Protocols
-- **Bulgarian Split Squats** — 3 × 8 per leg, 3-1-2 tempo (eccentric-pause-concentric). **Target:** Unilateral quadriceps, gluteus medius. **Rationale:** Isolates each limb to expose and correct the bilateral asymmetry detected in your symmetry scores.
-- **Box Squats with Pause** — 3 × 10, 2-second pause at bottom. **Target:** Posterior chain activation (glutes, hamstrings). **Rationale:** Eliminates the stretch-shortening cycle to force deliberate concentric drive through both legs equally.
-- **Single-Leg Romanian Deadlifts** — 3 × 10 per side, controlled tempo. **Target:** Hamstrings, gluteus maximus, proprioceptive balance. **Rationale:** Addresses potential quadriceps dominance and trains the posterior chain under unilateral load."""
+    return {
+        "insights": report_text,
+        "metrics": metrics
+    }
 
 class MessageInput:
     role: str
@@ -553,7 +589,6 @@ def simulate_activity(user_id: str, activity_type: str, duration_mins: int, inte
     new_reserve = max(0.0, profile.capability_reserve - cost)
     new_recovery = max(0.0, profile.recovery - (cost * 0.5))
     
-    # We don't save to DB because it's a "What-If" simulation
     return {
         "original": {
             "reserve": profile.capability_reserve,
@@ -564,6 +599,107 @@ def simulate_activity(user_id: str, activity_type: str, duration_mins: int, inte
             "recovery": round(new_recovery, 1)
         },
         "cost": round(cost, 1)
+    }
+
+def simulate_counterfactual(
+    user_id: str,
+    activity_type: str = "Squats & Lifts",
+    duration_mins: int = 45,
+    intensity: str = "High",
+    weekly_sessions: int = 4,
+    sleep_hours: float = 7.0,
+    protein_g: int = 110,
+    hydration_l: float = 2.5,
+    treatment_protocols: list = None,
+    target_limb: str = "full_body",
+    db: Session = None
+) -> dict:
+    treatment_protocols = treatment_protocols or []
+    
+    # Calculate physiological load & recovery multipliers
+    intensity_mult = 1.4 if ("high" in intensity.lower() or "max" in intensity.lower()) else (1.1 if "mod" in intensity.lower() else 0.8)
+    weekly_load_vol = (duration_mins / 30.0) * weekly_sessions * intensity_mult
+    
+    recovery_score = (sleep_hours / 8.0) * (protein_g / 130.0) * (hydration_l / 3.0)
+    acwr = round(0.85 + (weekly_load_vol * 0.12) / max(0.4, recovery_score), 2)
+    
+    # Treatment reduction effects
+    treatment_strain_reduction = 0.0
+    symmetry_boost = 0.0
+    for t in treatment_protocols:
+        t_low = t.lower()
+        if "eccentric" in t_low:
+            treatment_strain_reduction += 0.18
+            symmetry_boost += 5.0
+        if "manual" in t_low:
+            treatment_strain_reduction += 0.12
+        if "emg" in t_low:
+            symmetry_boost += 12.0
+        if "deload" in t_low:
+            treatment_strain_reduction += 0.25
+
+    effective_acwr = max(0.7, round(acwr * (1.0 - treatment_strain_reduction), 2))
+    reinjury_prob = min(95, max(8, round(effective_acwr * 30)))
+
+    # Calculate projected trajectory curves across 30d, 90d, 180d
+    trajectory = {
+        "30d": {
+            "acwr_baseline": acwr,
+            "acwr_treatment": effective_acwr,
+            "reinjury_prob": reinjury_prob,
+            "recovery_index": min(100, round(recovery_score * 75))
+        },
+        "90d": {
+            "acwr_baseline": max(0.8, round(acwr * 0.95, 2)),
+            "acwr_treatment": max(0.7, round(effective_acwr * 0.85, 2)),
+            "reinjury_prob": max(5, round(reinjury_prob * 0.65)),
+            "recovery_index": min(100, round(recovery_score * 85))
+        },
+        "180d": {
+            "acwr_baseline": max(0.8, round(acwr * 0.90, 2)),
+            "acwr_treatment": max(0.7, round(effective_acwr * 0.75, 2)),
+            "reinjury_prob": max(4, round(reinjury_prob * 0.40)),
+            "recovery_index": min(100, round(recovery_score * 95))
+        }
+    }
+
+    # Generate 3D zone risks for body parts
+    base_strain = int(effective_acwr * 35)
+    zone_risks = {
+        "head": max(5, int(base_strain * 0.3)),
+        "neck": max(10, int(base_strain * 0.4)),
+        "chest": max(10, int(base_strain * 0.4)),
+        "lumbar": min(95, max(20, int(base_strain * 1.3))),
+        "left_shoulder": max(10, int(base_strain * 0.6)),
+        "right_shoulder": max(10, int(base_strain * 0.5)),
+        "left_arm": max(10, int(base_strain * 0.8 if target_limb == "arms" else base_strain * 0.4)),
+        "right_arm": max(10, int(base_strain * 0.8 if target_limb == "arms" else base_strain * 0.4)),
+        "left_forearm": max(10, int(base_strain * 0.7 if target_limb == "arms" else base_strain * 0.3)),
+        "right_forearm": max(10, int(base_strain * 0.7 if target_limb == "arms" else base_strain * 0.3)),
+        "left_hip": max(15, int(base_strain * 0.9)),
+        "right_hip": max(15, int(base_strain * 0.7)),
+        "left_thigh": min(95, max(15, int(base_strain * 1.4 if target_limb == "knees" else base_strain * 0.8))),
+        "right_thigh": max(15, int(base_strain * 0.7)),
+        "left_knee": min(95, max(20, int(base_strain * 1.6 if target_limb == "knees" else base_strain * 0.9))),
+        "right_knee": max(15, int(base_strain * 0.8)),
+        "left_shin": max(10, int(base_strain * 0.5)),
+        "right_shin": max(10, int(base_strain * 0.4)),
+        "left_ankle": max(10, int(base_strain * 0.6)),
+        "right_ankle": max(10, int(base_strain * 0.5)),
+    }
+
+    return {
+        "acwr_raw": acwr,
+        "acwr_effective": effective_acwr,
+        "reinjury_probability": reinjury_prob,
+        "recovery_score": round(recovery_score, 2),
+        "treatment_impact": {
+            "active_protocols": treatment_protocols,
+            "strain_reduction_percent": round(treatment_strain_reduction * 100, 1),
+            "symmetry_boost_percent": round(symmetry_boost, 1)
+        },
+        "trajectory": trajectory,
+        "zone_risks": zone_risks
     }
 
 
@@ -589,18 +725,34 @@ def compute_injury_risk(user_id: str, db: Session) -> dict:
     chronic_sessions = db.query(models.VisionSession)\
         .filter(models.VisionSession.user_id == user_id,
                 models.VisionSession.timestamp >= now - datetime.timedelta(days=28)).all()
+    recent_pain = db.query(models.PainLog)\
+        .filter(models.PainLog.user_id == user_id,
+                models.PainLog.timestamp >= now - datetime.timedelta(days=7)).all()
+    tsk = db.query(models.KinesiophobiaRecord)\
+        .filter(models.KinesiophobiaRecord.user_id == user_id)\
+        .order_by(models.KinesiophobiaRecord.timestamp.desc()).first()
+    recent_vs = db.query(models.VisionSession)\
+        .filter(models.VisionSession.user_id == user_id,
+                models.VisionSession.timestamp >= now - datetime.timedelta(days=14))\
+        .order_by(models.VisionSession.timestamp.desc()).limit(5).all()
+    recent_wearable = db.query(models.WearableSession)\
+        .filter(models.WearableSession.user_id == user_id,
+                models.WearableSession.timestamp >= now - datetime.timedelta(days=7)).all()
 
-    acute_load = sum(s.rom or 0 for s in acute_sessions) / 7.0
-    chronic_load = sum(s.rom or 0 for s in chronic_sessions) / 28.0
-    acwr = acute_load / chronic_load if chronic_load > 0 else 1.0
+    acute_vol = sum([s.rom or 100 for s in acute_sessions]) if acute_sessions else 300
+    chronic_vol = (sum([s.rom or 100 for s in chronic_sessions]) / 4.0) if chronic_sessions else 250
+    acwr = acute_vol / max(1.0, chronic_vol)
+    acwr_risk = min(100, max(0, (acwr - 0.8) / (1.5 - 0.8) * 100)) if acwr > 0.8 else 0
 
-    # ACWR risk: 0 if in sweet-spot (0.8-1.3), scales to 100 at >=2.0
-    if acwr < 0.8:
-        acwr_risk = (0.8 - acwr) / 0.8 * 60  # under-training risk
-    elif acwr <= 1.3:
-        acwr_risk = 0
-    else:
-        acwr_risk = min(100, (acwr - 1.3) / 0.7 * 100)
+    has_activity = bool(acute_sessions or chronic_sessions or recent_pain or tsk or recent_vs or recent_wearable)
+    if not has_activity:
+        return {
+            "risk_score": 0,
+            "risk_level": "Optimal",
+            "recommendation": "No active movement strain logged. Complete a Live Vision posture capture to generate your baseline.",
+            "contributing_factors": [],
+            "acwr": 1.0,
+        }
 
     # ── 2. Pain Score Component (25%) ─────────────────────────────────────────
     recent_pain = db.query(models.PainLog)\

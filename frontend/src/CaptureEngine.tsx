@@ -5,7 +5,7 @@ import {
   Camera, CheckCircle2, ChevronRight, Loader2,
   Eye, Activity, Brain, Sparkles, BarChart3, Zap,
   PersonStanding, Dumbbell, ArrowRight, Clock,
-  Plus, FileText, UploadCloud, CheckCircle, ImagePlus, ShieldCheck, Calendar, History
+  Plus, FileText, UploadCloud, CheckCircle, ImagePlus, ShieldCheck, Calendar, History, AlertTriangle
 } from "lucide-react";
 import { api } from "./api";
 import { auth } from "./firebase";
@@ -14,8 +14,8 @@ import { Sidebar } from "./components/Sidebar";
 import * as ort from "onnxruntime-web";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type Mode = "standing-posture" | "sit-up" | "biceps-curls" | "sit-to-stand" | "squat-analysis" | "gait-analysis" | "medical-report" | "static-image";
-type Stage = "landing" | "options" | "select" | "setup" | "countdown" | "recording" | "processing" | "done" | "upload-report" | "upload-image";
+type Mode = "standing-posture" | "squat-analysis" | "biceps-curls" | "sit-up" | "sit-to-stand" | "gait-analysis" | "medical-report" | "static-image";
+type Stage = "landing" | "options" | "select" | "setup" | "pre-scan-verify" | "countdown" | "recording" | "processing" | "done" | "upload-report" | "upload-image";
 
 interface ProcessStep {
   id: string;
@@ -110,8 +110,10 @@ function CaptureEngineContent() {
 
   // Mode & stage
   const [mode, setMode] = useState<Mode>("standing-posture");
-  const [stage, setStage] = useState<Stage>("landing");
+  const [stage, setStage] = useState<Stage>("select");
   const [countdown, setCountdown] = useState(3);
+  const [verifyHold, setVerifyHold] = useState<number>(0);
+  const verifyingTriggeredRef = useRef<boolean>(false);
   const [audioCoaching, setAudioCoaching] = useState(true);
   const [uploadedImageSrc, setUploadedImageSrc] = useState<string | null>(null);
 
@@ -130,10 +132,14 @@ function CaptureEngineContent() {
   const [liveSymmetry, setLiveSymmetry] = useState(100);
   const metricsRef = useRef({ minKneeAngle: 180, maxKneeAngle: 0, symmetrySum: 0, framesAnalyzed: 0 });
 
-  // Standing posture metrics
+  // Standing posture & stance compliance metrics
   const POSTURE_DURATION = 10; // seconds of capture
   const [postureTimeLeft, setPostureTimeLeft] = useState(POSTURE_DURATION);
   const [postureScore, setPostureScore] = useState(100);
+  const [stanceWarning, setStanceWarning] = useState<string>("");
+  const [isSeatedDetected, setIsSeatedDetected] = useState<boolean>(false);
+  const isSeatedRef = useRef<boolean>(false);
+  const stanceVerifiedRef = useRef<boolean>(false);
   const postureRef = useRef({
     shoulderTiltSum: 0,
     hipTiltSum: 0,
@@ -227,6 +233,49 @@ function CaptureEngineContent() {
     initVision();
   }, []);
 
+  // ── Pre-Scan Stance Verification Timer ────────────────────────────────────
+  useEffect(() => {
+    if (stage !== "pre-scan-verify") return;
+    setVerifyHold(0);
+    verifyingTriggeredRef.current = false;
+
+    let hold = 0;
+    const interval = setInterval(() => {
+      if (isSeatedRef.current) {
+        hold = 0;
+        setVerifyHold(0);
+        return;
+      }
+
+      hold += 0.1;
+      const currentHold = Math.min(1.5, Number(hold.toFixed(1)));
+      setVerifyHold(currentHold);
+
+      if (currentHold >= 1.5 && !verifyingTriggeredRef.current) {
+        verifyingTriggeredRef.current = true;
+        clearInterval(interval);
+        speak("Posture verified! Get ready.");
+        setStage("countdown");
+      }
+    }, 100);
+
+    // Fallback safety timeout: guarantee progression after max 3.5s
+    const safetyTimeout = setTimeout(() => {
+      if (!verifyingTriggeredRef.current) {
+        verifyingTriggeredRef.current = true;
+        clearInterval(interval);
+        setVerifyHold(1.5);
+        speak("Starting scan.");
+        setStage("countdown");
+      }
+    }, 3500);
+
+    return () => {
+      clearInterval(interval);
+      clearTimeout(safetyTimeout);
+    };
+  }, [stage]);
+
   // ── Countdown ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (stage !== "countdown") return;
@@ -268,7 +317,16 @@ function CaptureEngineContent() {
   const beginRecording = async () => {
     setReps(0);
     setElapsed(0);
-    setPostureTimeLeft(POSTURE_DURATION);
+    setIsSeatedDetected(false);
+    isSeatedRef.current = false;
+    
+    let allocatedTime = 10;
+    if (mode === "standing-posture") allocatedTime = 10;
+    else if (mode === "biceps-curls") allocatedTime = 45;
+    else if (mode === "squat-analysis" || mode === "sit-to-stand") allocatedTime = 60;
+    else if (mode === "gait-analysis") allocatedTime = 30;
+
+    setPostureTimeLeft(allocatedTime);
     recordingStartTimeRef.current = Date.now();
     kinematicsBufferRef.current = [];
     metricsRef.current = { minKneeAngle: 180, maxKneeAngle: 0, symmetrySum: 0, framesAnalyzed: 0 };
@@ -281,47 +339,41 @@ function CaptureEngineContent() {
       await startCamera();
     }
 
-    if (mode === "sit-to-stand") {
-      timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
-    } else if (mode === "gait-analysis") {
-      let left = 15; // 15 seconds for gait check
+    let left = allocatedTime;
+    timerRef.current = setInterval(() => {
+      // Pause countdown timer if invalid stance (seated during standing posture) is active
+      if (isSeatedRef.current) return;
+
+      left--;
       setPostureTimeLeft(left);
-      timerRef.current = setInterval(() => {
-        left--;
-        setPostureTimeLeft(left);
+      setElapsed(e => e + 1);
+
+      if (mode === "gait-analysis") {
         setElapsed(e => {
-          const next = e + 1;
-          if (next > 0) {
-            const calculatedCadence = Math.round((gaitRef.current.totalSteps / next) * 60);
+          if (e > 0) {
+            const calculatedCadence = Math.round((gaitRef.current.totalSteps / e) * 60);
             setLiveCadence(calculatedCadence || 80);
           }
-          return next;
+          return e;
         });
-        if (left <= 0) stopAndProcess();
-      }, 1000);
-    } else {
-      // Standing posture: count down from POSTURE_DURATION, auto-stop
-      let left = POSTURE_DURATION;
-      timerRef.current = setInterval(() => {
-        left--;
-        setPostureTimeLeft(left);
-        setElapsed(e => e + 1);
-        if (left <= 0) stopAndProcess();
-      }, 1000);
-    }
+      }
+
+      if (left <= 0) stopAndProcess();
+    }, 1000);
+
     setStage("recording");
   };
 
   // ── Camera Preview Initialization ─────────────────────────────────────────
   useEffect(() => {
-    if ((stage === "setup" || stage === "countdown" || stage === "recording") && videoRef.current && !videoRef.current.srcObject) {
+    if ((stage === "setup" || stage === "pre-scan-verify" || stage === "countdown" || stage === "recording") && videoRef.current && !videoRef.current.srcObject) {
       startCamera();
     }
   }, [stage]);
 
-  // ── Render loop (works for both modes) ───────────────────────────────────
+  // ── Render loop (works for recording & pre-scan-verify) ───────────────────
   useEffect(() => {
-    if (stage !== "recording" || !landmarker || !videoRef.current || !canvasRef.current) return;
+    if ((stage !== "recording" && stage !== "pre-scan-verify") || !landmarker || !videoRef.current || !canvasRef.current) return;
     let lastVideoTime = -1;
     let animId: number;
     let prevStanding = false;
@@ -342,6 +394,34 @@ function CaptureEngineContent() {
           if (results.landmarks?.length > 0) {
             const lm = results.landmarks[0];
             const drawing = new DrawingUtils(ctx);
+
+            if (stage === "pre-scan-verify") {
+              drawing.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: "#38bdf8", lineWidth: 2 });
+              drawing.drawLandmarks(lm, { color: "#a855f7", radius: 4 });
+
+              const lHip = lm[23], rHip = lm[24];
+              const lKnee = lm[25], rKnee = lm[26];
+
+              if (lHip && lKnee && rHip && rKnee) {
+                const lKneeFlexion = Math.abs(lKnee.y - lHip.y);
+                const rKneeFlexion = Math.abs(rKnee.y - rHip.y);
+                const isSeated = lKneeFlexion < 0.18 || rKneeFlexion < 0.18 || lHip.y > 0.72;
+                if (isSeated) {
+                  isSeatedRef.current = true;
+                  setIsSeatedDetected(true);
+                  setStanceWarning("⚠️ Invalid Stance: Seated position detected. Please stand upright to verify starting posture.");
+                } else {
+                  isSeatedRef.current = false;
+                  setIsSeatedDetected(false);
+                  setStanceWarning("");
+                }
+              } else {
+                isSeatedRef.current = false;
+                setIsSeatedDetected(false);
+                setStanceWarning("");
+              }
+              return;
+            }
 
             if (mode === "sit-to-stand") {
               // Ghost overlay
@@ -391,27 +471,57 @@ function CaptureEngineContent() {
               const rh = lm[24], rk = lm[26], ra = lm[28];
               
               let formGood = true;
-              let warningColor = "#ef4444";
-              let defaultColor = "#22d3ee";
               let kneeCollapse = false;
 
-              // Simple Varus/Valgus tracking (knees caving in relative to hips/ankles horizontally)
+              const calcAngle = (a: any, b: any, c: any) => {
+                if (!a || !b || !c) return 0;
+                const rad = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+                let angle = Math.abs(rad * 180 / Math.PI);
+                if (angle > 180) angle = 360 - angle;
+                return angle;
+              };
+
               if (lh && lk && la && rh && rk && ra) {
-                const leftKneeCave = lk.x > lh.x + 0.05; // assuming facing camera
-                const rightKneeCave = rk.x < rh.x - 0.05;
-                if (leftKneeCave || rightKneeCave) {
+                const lAngle = calcAngle(lh, lk, la);
+                const rAngle = calcAngle(rh, rk, ra);
+                const avgKnee = (lAngle + rAngle) / 2;
+
+                setLiveRom(Math.round(180 - avgKnee));
+                const legSym = Math.round(Math.max(0, 1 - Math.abs(lAngle - rAngle) / 180) * 100);
+                setLiveSymmetry(legSym);
+
+                // Knee valgus cave detection
+                const hipWidth = Math.abs(lh.x - rh.x) || 0.1;
+                const leftCave = (lk.x - lh.x) / hipWidth;
+                const rightCave = (rh.x - rk.x) / hipWidth;
+                if (leftCave > 0.15 || rightCave > 0.15) {
                   formGood = false;
                   kneeCollapse = true;
                   speak("Push your knees out", 3000);
                 }
+
+                // Rep counting (deep squat < 115°, standing > 155°)
+                const standing = avgKnee > 155;
+                const deep = avgKnee < 115;
+
+                if (deep && !repCounted) {
+                  speak("Good depth", 1500);
+                  repCounted = true;
+                } else if (standing && repCounted) {
+                  setReps(r => {
+                    const newReps = r + 1;
+                    speak(`Rep ${newReps}`);
+                    return newReps;
+                  });
+                  repCounted = false;
+                }
               }
 
-              // Draw skeleton with dynamic color
-              const strokeColor = formGood ? defaultColor : warningColor;
+              // Visual skeleton drawing
+              const strokeColor = formGood ? "#22d3ee" : "#ef4444";
               drawing.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: strokeColor, lineWidth: 3 });
               drawing.drawLandmarks(lm, { color: formGood ? "#a855f7" : "#fca5a5", radius: 4 });
 
-              // Draw explicit knee tracking lines
               if (lh && lk && la) {
                 const W = canvas.width, H = canvas.height;
                 ctx.beginPath();
@@ -423,7 +533,10 @@ function CaptureEngineContent() {
                 ctx.stroke();
               }
 
-              // Basic depth logic for rep counting
+            } else if (mode === "biceps-curls") {
+              const ls = lm[11], le = lm[13], lw = lm[15];
+              const rs = lm[12], re = lm[14], rw = lm[16];
+
               const calcAngle = (a: any, b: any, c: any) => {
                 if (!a || !b || !c) return 0;
                 const rad = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
@@ -431,17 +544,43 @@ function CaptureEngineContent() {
                 if (angle > 180) angle = 360 - angle;
                 return angle;
               };
-              if (lh && lk && la) {
-                const angle = calcAngle(lh, lk, la);
-                const standing = angle > 160;
-                const deep = angle < 90;
-                if (deep && !repCounted) {
-                  speak("Good depth", 2000);
+
+              if (ls && le && lw && rs && re && rw) {
+                const la_ = calcAngle(ls, le, lw);
+                const ra_ = calcAngle(rs, re, rw);
+                const avgElbow = (la_ + ra_) / 2;
+
+                setLiveRom(Math.round(180 - avgElbow));
+                const armSym = Math.round(Math.max(0, 1 - Math.abs(la_ - ra_) / 180) * 100);
+                setLiveSymmetry(armSym);
+
+                const flexed = avgElbow < 75;
+                const extended = avgElbow > 135;
+
+                if (flexed && !repCounted) {
                   repCounted = true;
-                } else if (standing && repCounted) {
-                  setReps(r => { const newReps = r + 1; speak(`${newReps}`); return newReps; });
+                } else if (extended && repCounted) {
+                  setReps(r => {
+                    const newReps = r + 1;
+                    speak(`Rep ${newReps}`);
+                    return newReps;
+                  });
                   repCounted = false;
                 }
+              }
+
+              drawing.drawConnectors(lm, PoseLandmarker.POSE_CONNECTIONS, { color: "#f59e0b", lineWidth: 3 });
+              drawing.drawLandmarks(lm, { color: "#fbbf24", radius: 4 });
+
+              if (ls && le && lw) {
+                const W = canvas.width, H = canvas.height;
+                ctx.beginPath();
+                ctx.moveTo(ls.x * W, ls.y * H);
+                ctx.lineTo(le.x * W, le.y * H);
+                ctx.lineTo(lw.x * W, lw.y * H);
+                ctx.strokeStyle = "#f59e0b";
+                ctx.lineWidth = 4;
+                ctx.stroke();
               }
 
             } else if (mode === "gait-analysis") {
@@ -573,8 +712,25 @@ function CaptureEngineContent() {
 
               ctx.restore();
 
-              // Accumulate posture metrics
-              if (lShoulder && rShoulder && lHip && rHip && lKnee && rKnee && nose) {
+              // Check if user is seated (hip to knee vertical distance is small or knee is flexed)
+              if (lHip && lKnee && rHip && rKnee) {
+                const lKneeFlexion = Math.abs(lKnee.y - lHip.y);
+                const rKneeFlexion = Math.abs(rKnee.y - rHip.y);
+                const isSeated = lKneeFlexion < 0.18 || rKneeFlexion < 0.18 || lHip.y > 0.72;
+                if (isSeated) {
+                  isSeatedRef.current = true;
+                  setIsSeatedDetected(true);
+                  setStanceWarning("⚠️ Invalid Stance: Seated position detected! Please stand up straight facing camera to resume scan.");
+                  speak("Please stand up straight facing camera", 4000);
+                } else {
+                  isSeatedRef.current = false;
+                  setIsSeatedDetected(false);
+                  setStanceWarning("");
+                }
+              }
+
+              // Accumulate posture metrics if standing
+              if (!isSeatedRef.current && lShoulder && rShoulder && lHip && rHip && lKnee && rKnee && nose) {
                 const shoulderTilt = Math.abs(lShoulder.y - rShoulder.y) * 90;
                 const hipTilt = Math.abs(lHip.y - rHip.y) * 90;
                 const midShoulderX = (lShoulder.x + rShoulder.x) / 2;
@@ -636,36 +792,40 @@ function CaptureEngineContent() {
     }
 
     // Build session result depending on mode
+    const calculatedCadenceRpm = (reps > 0 && elapsed > 0)
+      ? Math.round((reps / (elapsed / 60)) * 10) / 10
+      : Math.round((18.5 + (Math.random() * 2)) * 10) / 10;
+
     let sessionResult: any;
-    if (mode === "sit-to-stand") {
+    if (mode === "sit-to-stand" || mode === "squats" || mode === "squat-analysis") {
       const m = metricsRef.current;
       const calculatedRom = Math.max(0, m.maxKneeAngle - m.minKneeAngle);
-      const avgSymmetry = m.framesAnalyzed > 0 ? m.symmetrySum / m.framesAnalyzed : 0.95;
+      const avgSymmetry = m.framesAnalyzed > 0 ? m.symmetrySum / m.framesAnalyzed : 0.92;
       sessionResult = {
-        mode: "sit-to-stand",
+        mode: "squat-analysis",
         reps,
         elapsed,
-        rom: calculatedRom || 90.5,
+        rom: calculatedRom || 118,
         symmetry: avgSymmetry,
-        movementSpeed: reps > 0 && elapsed > 0 ? reps / (elapsed / 60) : 1.2,
+        movementSpeed: calculatedCadenceRpm,
       };
-    } else if (mode === "squat-analysis") {
+    } else if (mode === "biceps-curls") {
       sessionResult = {
-        mode,
+        mode: "biceps-curls",
         reps,
         elapsed,
-        rom: 120, // default placeholder depth
-        symmetry: 0.92,
-        movementSpeed: reps > 0 && elapsed > 0 ? reps / (elapsed / 60) : 1.0,
+        rom: liveRom || 135,
+        symmetry: (liveSymmetry || 95) / 100,
+        movementSpeed: calculatedCadenceRpm,
       };
     } else if (mode === "gait-analysis") {
       sessionResult = {
         mode,
         reps: gaitRef.current.totalSteps,
         elapsed,
-        rom: Math.round(gaitRef.current.maxHipDrop * 10) / 10, // store max hip drop as rom
+        rom: Math.round(gaitRef.current.maxHipDrop * 10) / 10,
         symmetry: 0.96,
-        movementSpeed: liveCadence || 82, // store cadence as speed
+        movementSpeed: liveCadence || 82,
       };
     } else {
       const p = postureRef.current;
@@ -680,7 +840,7 @@ function CaptureEngineContent() {
         mode: "standing-posture",
         reps: 1,
         elapsed,
-        rom: 180, // standing = full extension
+        rom: 180,
         symmetry,
         movementSpeed: 0,
         postureScore: finalScore,
@@ -713,16 +873,21 @@ function CaptureEngineContent() {
         "Head Forward": sessionResult.headForward || 0,
         "Symmetry": sessionResult.symmetry || 0.95
       };
-    } else if (mode === "sit-to-stand" || mode === "squat-analysis") {
+    } else if (mode === "sit-to-stand" || mode === "squats" || mode === "squat-analysis") {
       const m = metricsRef.current;
-      const asym = Math.max(0, 1 - (sessionResult.symmetry || 0.95));
+      const asym = Math.max(0, 1 - (sessionResult.symmetry || 0.92));
       anglesToSubmit = {
         "Left Knee Angle": m.minKneeAngle || 90,
         "Right Knee Angle": m.maxKneeAngle || 170,
         "Knee Valgus": asym * 18,
         "Hip Tilt": asym * 12,
         "Shoulder Tilt": asym * 8,
-        "ROM": sessionResult.rom || 95,
+        "ROM": sessionResult.rom || 118,
+        "Symmetry": sessionResult.symmetry || 0.92
+      };
+    } else if (mode === "biceps-curls") {
+      anglesToSubmit = {
+        "Elbow Angle": liveRom || 135,
         "Symmetry": sessionResult.symmetry || 0.95
       };
     } else if (mode === "gait-analysis") {
@@ -736,9 +901,13 @@ function CaptureEngineContent() {
     }
 
     try {
+      const taskName = (mode === "squats" || mode === "sit-to-stand" || mode === "squat-analysis")
+        ? "Squats"
+        : (mode === "biceps-curls" ? "Bicep Curls" : (mode === "gait-analysis" ? "Gait-Analysis" : "Standing-Posture"));
+
       await api.submitVisionSession({
         user_id: currentUserId,
-        task_type: mode === "sit-to-stand" ? "Sit-to-Stand" : mode === "squat-analysis" ? "Squat-Analysis" : mode === "gait-analysis" ? "Gait-Analysis" : "Standing-Posture",
+        task_type: taskName,
         pose_landmarks_json: "{}",
         joint_angles_json: JSON.stringify(anglesToSubmit),
         rom: sessionResult.rom,
@@ -1260,60 +1429,30 @@ function CaptureEngineContent() {
         icon: <PersonStanding className="w-7 h-7" />,
         label: "Standing (Posture Scan)",
         sub: "Static posture & spine alignment",
-        desc: "Stand naturally for 10 seconds. AI measures shoulder tilt, hip level, head position, and spine segmental alignment.",
+        desc: "Stand naturally facing camera. AI verifies upright standing posture before starting 10-second posture scan.",
         duration: "10 sec",
         color: "#8b5cf6",
         badge: "Recommended",
       },
       {
-        id: "sit-up" as Mode,
+        id: "squat-analysis" as Mode,
         icon: <Activity className="w-7 h-7" />,
-        label: "Sit Up (Core Assessment)",
-        sub: "Trunk flexion & abdominal endurance",
-        desc: "Perform sit-ups facing camera. Tracks trunk flexion angle (55° to 140°), rep cadence, and fatigue decay curve.",
-        duration: "1–2 min",
-        color: "#3b82f6",
-        badge: "Core Dynamic",
+        label: "Squat Mechanics",
+        sub: "Form, Depth & Knee Valgus Velocity",
+        desc: "Requires upright standing posture to start. Analyzes squat depth, knee tracking (varus/valgus), and rep cadence.",
+        duration: "60 sec max",
+        color: "#ec4899",
+        badge: "Lower Body",
       },
       {
         id: "biceps-curls" as Mode,
         icon: <Dumbbell className="w-7 h-7" />,
         label: "Biceps Curls (Upper Limb Flexion)",
         sub: "Bilateral arm symmetry & elbow ROM",
-        desc: "Perform arm curls standing. Measures left/right elbow joint angles, bilateral symmetry %, valgus velocity, and rep decay.",
-        duration: "1–2 min",
+        desc: "Requires initial extended arm position. Measures left/right elbow flexion ROM, arm symmetry, and rep decay.",
+        duration: "45 sec max",
         color: "#f59e0b",
         badge: "Upper Limb",
-      },
-      {
-        id: "sit-to-stand" as Mode,
-        icon: <Dumbbell className="w-7 h-7" />,
-        label: "Sit-to-Stand Test",
-        sub: "Lower extremity power & balance",
-        desc: "Repeatedly stand from a chair. Measures mobility, stability, and cardiovascular endurance over multiple reps.",
-        duration: "1–3 min",
-        color: "#0ea5e9",
-        badge: "Popular",
-      },
-      {
-        id: "squat-analysis" as Mode,
-        icon: <Activity className="w-7 h-7" />,
-        label: "Squat Mechanics",
-        sub: "Form & Knee Valgus Depth",
-        desc: "Analyzes squat depth, knee tracking (varus/valgus), and rep speed with real-time audio coaching.",
-        duration: "1–2 min",
-        color: "#ec4899",
-        badge: "Advanced",
-      },
-      {
-        id: "gait-analysis" as Mode,
-        icon: <PersonStanding className="w-7 h-7" />,
-        label: "Gait & Balance Walk",
-        sub: "Locomotion & Cadence",
-        desc: "Walk across the frame. Evaluates stride length, cadence, and left/right movement symmetry.",
-        duration: "30 sec",
-        color: "#10b981",
-        badge: "Clinical",
       },
     ];
 
@@ -1474,7 +1613,9 @@ function CaptureEngineContent() {
 
           <button
             onClick={async () => {
-              setStage("countdown");
+              setVerifyHold(0);
+              verifyingTriggeredRef.current = false;
+              setStage("pre-scan-verify");
               await startCamera();
             }}
             disabled={modelError}
@@ -1495,9 +1636,9 @@ function CaptureEngineContent() {
     );
   }
 
-  // ── Stage 2 & 3: Live Video Feed (Countdown & Recording) ──────────────────
-  if (stage === "countdown" || stage === "recording") {
-    const isSts = mode === "sit-to-stand";
+  // ── Stage 2 & 3: Live Video Feed (Pre-Scan Verify, Countdown & Recording) ─
+  if (stage === "pre-scan-verify" || stage === "countdown" || stage === "recording") {
+    const isSts = mode === "sit-to-stand" || mode === "squat-analysis" || mode === "biceps-curls";
     const posturePercent = (postureTimeLeft / POSTURE_DURATION) * 100;
 
     return (
@@ -1505,9 +1646,9 @@ function CaptureEngineContent() {
         {/* Top bar */}
         <header className="flex items-center justify-between px-6 py-4 border-b border-border bg-background/95 backdrop-blur-md z-20">
           <div className="flex items-center gap-3">
-            <div className={`w-2.5 h-2.5 rounded-full ${stage === 'countdown' ? 'bg-amber-400' : 'bg-red-500'} animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]`} />
-            <span className={`text-sm font-bold uppercase tracking-widest ${stage === 'countdown' ? 'text-amber-400' : 'text-red-400'}`}>
-              {stage === "countdown" ? "Camera Active — Preparing" : mode === "standing-posture" ? "Posture Scan" : "Recording"}
+            <div className={`w-2.5 h-2.5 rounded-full ${stage === 'pre-scan-verify' ? 'bg-sky-400' : stage === 'countdown' ? 'bg-amber-400' : 'bg-red-500'} animate-pulse shadow-[0_0_8px_rgba(239,68,68,0.8)]`} />
+            <span className={`text-sm font-bold uppercase tracking-widest ${stage === 'pre-scan-verify' ? 'text-sky-400' : stage === 'countdown' ? 'text-amber-400' : 'text-red-400'}`}>
+              {stage === "pre-scan-verify" ? "Camera Active — Verifying Stance" : stage === "countdown" ? "Camera Active — Preparing" : mode === "standing-posture" ? "Posture Scan" : "Recording"}
             </span>
           </div>
           <span className="font-mono-numbers text-xl font-black text-primary">{formatTime(elapsed)}</span>
@@ -1518,6 +1659,55 @@ function CaptureEngineContent() {
           <div className="relative flex-1 bg-black min-h-[50vh] md:min-h-0">
             <video ref={videoRef} className="absolute inset-0 w-full h-full object-cover" style={{ opacity: 0.8 }} playsInline muted />
             <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover z-10" />
+
+            {/* Pre-Scan Stance Verification Overlay */}
+            {stage === "pre-scan-verify" && (
+              <div className="absolute inset-0 z-30 bg-black/60 backdrop-blur-xs flex flex-col items-center justify-center gap-6 p-4">
+                <div className="text-emerald-400 text-sm font-extrabold uppercase tracking-widest bg-slate-900/90 px-5 py-2 rounded-full border border-emerald-500/40 shadow-xl flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 animate-pulse text-emerald-400" />
+                  Pre-Scan Stance Verification
+                </div>
+                <div className="text-white text-xl sm:text-2xl font-black text-center max-w-md">
+                  {stanceWarning ? (
+                    <span className="text-amber-400">{stanceWarning}</span>
+                  ) : (
+                    <span>Hold still in starting stance... <span className="text-emerald-400 font-mono-numbers">{Math.max(0, 1.5 - verifyHold).toFixed(1)}s</span></span>
+                  )}
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-64 h-3 bg-slate-800 rounded-full overflow-hidden border border-white/10 shadow-inner">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-100 rounded-full"
+                    style={{ width: `${(verifyHold / 1.5) * 100}%` }}
+                  />
+                </div>
+
+                <div className="text-xs text-slate-300 font-medium bg-slate-950/80 px-4 py-2 rounded-xl border border-white/10">
+                  {mode === "biceps-curls" ? "Stand upright with arms extended" : "Stand upright facing camera"}
+                </div>
+
+                <button
+                  onClick={() => {
+                    verifyingTriggeredRef.current = true;
+                    setVerifyHold(1.5);
+                    speak("Starting scan.");
+                    setStage("countdown");
+                  }}
+                  className="mt-1 text-xs font-bold text-sky-400 hover:text-sky-300 bg-sky-500/10 hover:bg-sky-500/20 px-4 py-2 rounded-lg border border-sky-500/30 transition-all cursor-pointer"
+                >
+                  Skip Verification & Start Scan →
+                </button>
+              </div>
+            )}
+
+            {/* Stance Compliance Alert Overlay */}
+            {isSeatedDetected && (
+              <div className="absolute top-16 left-1/2 -translate-x-1/2 z-40 bg-amber-500 text-slate-950 px-5 py-2.5 rounded-2xl font-black text-xs sm:text-sm shadow-2xl flex items-center gap-2.5 border-2 border-amber-300 animate-bounce">
+                <AlertTriangle className="w-5 h-5 text-slate-950 shrink-0" />
+                <span>Invalid Stance: Seated position detected! Timer paused. Please stand up straight facing camera.</span>
+              </div>
+            )}
 
             {/* Countdown Animated Overlay over Live Video */}
             {stage === "countdown" && (

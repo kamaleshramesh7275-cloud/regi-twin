@@ -231,6 +231,17 @@ export const api = {
     return res.json();
   },
 
+  /** Run what-if counterfactual simulation with backend engine */
+  async simulateWhatIf(userId: string, payload: any) {
+    const res = await fetchWithTimeout(`${API_BASE}/analytics/simulate/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error("Failed to run what-if simulation");
+    return res.json();
+  },
+
   /** Get chat history for dynamic twin */
   async getChatHistory(userId: string) {
     const res = await fetchWithTimeout(`${API_BASE}/analytics/chat/history/${userId}`);
@@ -256,12 +267,28 @@ export const api = {
     return res.json();
   },
 
-  /** Delete all vision capture sessions and kinematics for a user */
+  /** Delete all vision capture sessions, digital twin data, and dashboard logs for a user */
   async deleteCaptureHistory(userId: string) {
     const res = await fetchWithTimeout(`${API_BASE}/sessions/history/${userId}`, {
       method: "DELETE"
     });
     if (!res.ok) throw new Error("Failed to delete capture history");
+
+    // Clear local storage and offline caches
+    try {
+      sessionStorage.removeItem("lastInsights");
+      sessionStorage.removeItem("lastSession");
+      sessionStorage.removeItem("lastAnnotatedImage");
+      localStorage.removeItem("pt_user_pain_zone");
+      localStorage.removeItem("pt_user_pain_level");
+      await offlineStorage.removeCache(`dashboard_${userId}`).catch(() => {});
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("twin_data_deleted"));
+      }
+    } catch (e) {
+      console.warn("Storage wipe notice", e);
+    }
+
     return res.json();
   },
 

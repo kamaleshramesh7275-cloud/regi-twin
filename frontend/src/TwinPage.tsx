@@ -39,12 +39,6 @@ const ALL_ZONES: ZoneId[] = [
 type SessionData    = { session: number; date: string; label: string; zones: ZoneRisk };
 type ProjectionFrame = { horizon: string; months: number; zones: ZoneRisk; withTreatment: ZoneRisk };
 
-const LEADERBOARD_DATA = [
-  { rank: 1, name: "Marcus T.", mark: 890, age: 31, tier: "Platinum" },
-  { rank: 2, name: "Sarah J.", mark: 845, age: 29, tier: "Gold" },
-  { rank: 3, name: "David O.", mark: 820, age: 30, tier: "Gold" },
-  { rank: 48, name: "Elena R.", mark: 690, age: 32, tier: "Silver" },
-];
 
 // ── Zone metadata (injuries, causes, actions) ─────────────
 const DETAILED_ZONE_META: Record<ZoneId, { label:string; injuries:string[]; rootCause:string; immediateAction:string; longTermRisk:string }> = {
@@ -139,14 +133,45 @@ export default function TwinPage() {
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeletingHistory, setIsDeletingHistory] = useState(false);
+  const [scanFilter, setScanFilter] = useState<"biceps-curls" | "squats" | "all">("all");
+  const [deepMetrics, setDeepMetrics] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const uid = user?.uid || auth.currentUser?.uid || "demo_user";
+    api.getDeepInsights(uid).then(res => {
+      if (res && res.metrics) {
+        setDeepMetrics(res.metrics);
+        if (res.metrics.task_type) {
+          const t = res.metrics.task_type.toLowerCase();
+          if (t.includes("bicep") || t.includes("curl")) setScanFilter("biceps-curls");
+          else if (t.includes("squat")) setScanFilter("squats");
+        }
+      }
+    }).catch(() => {});
+  }, [user]);
 
   const handleDeleteHistory = async () => {
     setIsDeletingHistory(true);
     try {
-      const uid = user?.uid || "demo_user";
+      const uid = user?.uid || auth.currentUser?.uid || "demo_user";
       await api.deleteCaptureHistory(uid);
+      if (uid !== "demo_user") {
+        await api.deleteCaptureHistory("demo_user").catch(() => {});
+      }
+      if (uid !== "dev-athlete") {
+        await api.deleteCaptureHistory("dev-athlete").catch(() => {});
+      }
       setHistoryData([]);
-      setScanIngestSummary("All capture history wiped from database.");
+      setDynamicRisk(null);
+      setLiveRisk({
+        head: 0, neck: 0, chest: 0, lumbar: 0,
+        left_shoulder: 0, right_shoulder: 0, left_arm: 0, right_arm: 0,
+        left_forearm: 0, right_forearm: 0, left_hip: 0, right_hip: 0,
+        left_thigh: 0, right_thigh: 0, left_knee: 0, right_knee: 0,
+        left_shin: 0, right_shin: 0, left_ankle: 0, right_ankle: 0
+      });
+      setSelectedZone(null);
+      setScanIngestSummary("All capture history, digital twin metrics, and dashboard logs wiped from database.");
       setShowCaptureToast(true);
       setShowDeleteModal(false);
     } catch (err) {
@@ -328,6 +353,8 @@ export default function TwinPage() {
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         regionalInsights={regionalInsights}
+        scanFilter={scanFilter}
+        sessionMetrics={deepMetrics}
       />
       
       {/* ── Clinical Pain-Map Legend ── */}
@@ -439,6 +466,40 @@ export default function TwinPage() {
                   }`}
                 >
                   <Box className="w-3.5 h-3.5 text-blue-400" /> 3D Mesh
+                </button>
+              </div>
+
+              {/* Limb Target Scan Selector */}
+              <div className="bg-black/70 backdrop-blur-xl border border-white/10 p-1 rounded-2xl flex items-center gap-1 shadow-2xl">
+                <button
+                  onClick={() => setScanFilter("squats")}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    scanFilter === "squats"
+                      ? "bg-purple-600/30 text-purple-300 border border-purple-500/50 shadow-lg shadow-purple-500/20"
+                      : "text-muted-foreground hover:text-white"
+                  }`}
+                >
+                  🏋️ Squats (Knees)
+                </button>
+                <button
+                  onClick={() => setScanFilter("biceps-curls")}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    scanFilter === "biceps-curls"
+                      ? "bg-amber-600/30 text-amber-300 border border-amber-500/50 shadow-lg shadow-amber-500/20"
+                      : "text-muted-foreground hover:text-white"
+                  }`}
+                >
+                  💪 Bicep Curls (Arms)
+                </button>
+                <button
+                  onClick={() => setScanFilter("all")}
+                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    scanFilter === "all"
+                      ? "bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-lg shadow-cyan-500/20"
+                      : "text-muted-foreground hover:text-white"
+                  }`}
+                >
+                  🔄 All Limbs
                 </button>
               </div>
             </div>
@@ -607,13 +668,13 @@ export default function TwinPage() {
                   {zoneMeta?.rootCause && (
                     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
                       <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                        <Activity className="w-3.5 h-3.5" /> Diagnostic Reasoning (Hevy Data)
+                        <Activity className="w-3.5 h-3.5" /> Diagnostic Biomechanical Reasoning
                       </div>
                       <p className="text-xs text-slate-300 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800/80 mb-2.5">
                         {zoneMeta.rootCause}
                       </p>
                       <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs leading-relaxed">
-                        <span className="text-amber-400 font-bold">Hevy Log Correlation:</span> Your recent jump in heavy squat volume (+15% load) has outpaced tendon adaptation.
+                        <span className="text-amber-400 font-bold">Workout & Motion Correlation:</span> Your recent jump in heavy squat volume (+15% load) has outpaced tendon adaptation.
                       </div>
                     </div>
                   )}
@@ -665,27 +726,14 @@ export default function TwinPage() {
                             </div>
                             <div className="text-right font-mono">
                               <span className="font-black text-amber-400 text-sm">{zoneRisk}% Strain</span>
-                              <div className="text-[9px] text-emerald-400">Stable Trend</div>
+                              <div className="text-[9px] text-emerald-400">Recorded Session</div>
                             </div>
                           </div>
                         ))
                       ) : (
-                        [
-                          { date: "2 days ago", label: "Self-Reported Pain Score", val: `${Math.round(zoneRisk * 0.9)}% Strain`, delta: "-5% vs baseline" },
-                          { date: "5 days ago", label: "Pose Camera Kinematic Scan", val: `${Math.round(zoneRisk * 1.05)}% Strain`, delta: "+8% strain peak" },
-                          { date: "12 days ago", label: "Initial Baseline Assessment", val: `${Math.round(zoneRisk * 0.95)}% Strain`, delta: "Baseline established" },
-                        ].map((log, idx) => (
-                          <div key={idx} className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 flex justify-between items-center text-xs">
-                            <div>
-                              <div className="font-bold text-slate-200">{log.date}</div>
-                              <div className="text-[10px] text-slate-400">{log.label}</div>
-                            </div>
-                            <div className="text-right font-mono">
-                              <span className="font-black text-amber-400 text-sm">{log.val}</span>
-                              <div className="text-[9px] text-slate-400">{log.delta}</div>
-                            </div>
-                          </div>
-                        ))
+                        <div className="p-3.5 text-center bg-slate-950/60 border border-slate-800/80 rounded-xl text-slate-400 text-xs">
+                          No scan logs recorded for this zone yet. Start a camera capture to track historical trends.
+                        </div>
                       )}
                     </div>
 

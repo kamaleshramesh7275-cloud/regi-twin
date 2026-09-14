@@ -40,9 +40,9 @@ def seed():
             pose_landmarks_json="{}",
             joint_angles_json="{}",
             rom=80 + i * 5,
-            movement_speed=1.0 + i * 0.1,
-            symmetry=70 + i * 2.5,
-            stability=75 + i * 2,
+            movement_speed=18.5 + i * 0.8,
+            symmetry=88 + i * 1.2,
+            stability=85 + i * 1.5,
             camera_quality="High"
         )
         db.add(vs)
