@@ -70,55 +70,98 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Derive the best default name/email from the authenticated user
+  const defaultName = user?.displayName || user?.email?.split("@")[0] || "Athlete";
+  const defaultEmail = user?.email || "athlete@physiotwin.local";
+
   const [profile, setProfile] = useState({
-    full_name: "Alex Mercer",
-    email: user?.email || "alex.mercer@physiotwin.local",
-    age: 28,
-    height_cm: 175,
-    weight_kg: 72,
+    full_name: defaultName,
+    email: defaultEmail,
+    age: 0,
+    height_cm: 0,
+    weight_kg: 0,
     biological_sex: "Prefer not to say",
     activity_level: "Moderately Active",
     twin_mode: "General Human",
     primary_pain_zone: "None / Baseline Healthy",
     baseline_pain_level: 1,
     tsk_score: 22,
-    goals: ["General Tracking", "Rehab & Recovery"],
+    goals: ["General Tracking"],
   });
 
-  // Load stored profile from cache or backend
+  // Load stored profile — checks pt_current_user_profile (set by onboarding/AuthContext)
+  // and the per-uid seed key, then falls back to backend GET /users/{uid}
   useEffect(() => {
     const loadProfile = async () => {
-      const cached = localStorage.getItem(`pt_user_seed_${uid}`);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          setProfile(prev => ({
-            ...prev,
-            ...parsed,
-            full_name: parsed.full_name || prev.full_name,
-            email: parsed.email || user?.email || prev.email,
-            biological_sex: parsed.biological_sex || parsed.biologicalSex || prev.biological_sex,
-            height_cm: parsed.height_cm || parsed.heightCm || prev.height_cm,
-            weight_kg: parsed.weight_kg || parsed.weightKg || prev.weight_kg,
-            activity_level: parsed.activity_level || parsed.activityLevel || prev.activity_level,
-            twin_mode: parsed.twin_mode || parsed.twinMode || prev.twin_mode,
-            primary_pain_zone: parsed.primary_pain_zone || parsed.primaryPainZone || prev.primary_pain_zone,
-            baseline_pain_level: parsed.baseline_pain_level ?? parsed.baselinePainLevel ?? prev.baseline_pain_level,
-            tsk_score: parsed.tsk_score ?? prev.tsk_score,
-            goals: parsed.goals || prev.goals,
-          }));
-        } catch (e) {
-          console.warn("Failed to parse cached profile", e);
-        }
+      // 1. Check user-specific cache for THIS active user UID first
+      let localParsed: any = null;
+      const uidCached = localStorage.getItem(`pt_user_seed_${uid}`);
+      if (uidCached) {
+        try { localParsed = JSON.parse(uidCached); } catch (e) {}
       } else {
+        const globalCached = localStorage.getItem("pt_current_user_profile");
+        if (globalCached) {
+          try {
+            const parsed = JSON.parse(globalCached);
+            // Only use global cache if it belongs to this UID or has no UID attached
+            if (!parsed.uid || parsed.uid === uid) {
+              localParsed = parsed;
+            }
+          } catch (e) {}
+        }
+      }
+
+      // 2. Fetch from backend API as primary source of truth
+      try {
         const fetched = await api.getUserProfile(uid);
         if (fetched) {
-          setProfile(prev => ({ ...prev, ...fetched }));
+          setProfile(prev => ({
+            ...prev,
+            ...localParsed,
+            ...fetched,
+            full_name: fetched.full_name || localParsed?.full_name || localParsed?.fullName || user?.displayName || user?.email?.split("@")[0] || prev.full_name,
+            email: fetched.email || localParsed?.email || user?.email || prev.email,
+            biological_sex: fetched.sex || fetched.biological_sex || localParsed?.biological_sex || localParsed?.biologicalSex || prev.biological_sex,
+            height_cm: fetched.height || fetched.height_cm || localParsed?.height_cm || localParsed?.heightCm || prev.height_cm,
+            weight_kg: fetched.weight || fetched.weight_kg || localParsed?.weight_kg || localParsed?.weightKg || prev.weight_kg,
+            activity_level: localParsed?.activity_level || localParsed?.activityLevel || prev.activity_level,
+            twin_mode: fetched.mode || fetched.twin_mode || localParsed?.twin_mode || localParsed?.twinMode || prev.twin_mode,
+            primary_pain_zone: localParsed?.primary_pain_zone || localParsed?.primaryPainZone || prev.primary_pain_zone,
+            baseline_pain_level: localParsed?.baseline_pain_level ?? localParsed?.baselinePainLevel ?? prev.baseline_pain_level,
+            goals: fetched.goals || localParsed?.goals || prev.goals,
+          }));
+          return;
         }
+      } catch (e) {
+        console.warn("Backend getUserProfile warning:", e);
+      }
+
+      // 3. Fallback to local user cache if present
+      if (localParsed) {
+        setProfile(prev => ({
+          ...prev,
+          ...localParsed,
+          full_name: localParsed.full_name || localParsed.fullName || user?.displayName || user?.email?.split("@")[0] || prev.full_name,
+          email: localParsed.email || user?.email || prev.email,
+          biological_sex: localParsed.biological_sex || localParsed.biologicalSex || prev.biological_sex,
+          height_cm: localParsed.height_cm || localParsed.heightCm || prev.height_cm,
+          weight_kg: localParsed.weight_kg || localParsed.weightKg || prev.weight_kg,
+          activity_level: localParsed.activity_level || localParsed.activityLevel || prev.activity_level,
+          twin_mode: localParsed.twin_mode || localParsed.twinMode || prev.twin_mode,
+          primary_pain_zone: localParsed.primary_pain_zone || localParsed.primaryPainZone || prev.primary_pain_zone,
+          baseline_pain_level: localParsed.baseline_pain_level ?? localParsed.baselinePainLevel ?? prev.baseline_pain_level,
+          goals: localParsed.goals || prev.goals,
+        }));
+      } else {
+        setProfile(prev => ({
+          ...prev,
+          full_name: user?.displayName || user?.email?.split("@")[0] || prev.full_name,
+          email: user?.email || prev.email,
+        }));
       }
     };
     loadProfile();
-  }, [uid, user?.email]);
+  }, [uid, user?.email, user?.displayName]);
 
   const handleProfileChange = (field: string, value: any) => {
     setProfile(prev => ({ ...prev, [field]: value }));

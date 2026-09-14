@@ -1,154 +1,260 @@
 import React, { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar";
-import { Activity, Camera, History, Clock, Brain, Settings, User, Target, BarChart2 } from "lucide-react";
-import { api } from "./api";
+import { Activity, Target, BarChart2, Medal, Crown, Users, Loader2, RefreshCw, AlertTriangle } from "lucide-react";
 import { useAuth } from "./context/AuthContext";
 
-interface LeaderboardEntry {
+interface GlobalUser {
+  user_id: string;
   username: string;
-  score: number;
-  rank_change: number;
-  user_id?: string;
+  email: string;
+  health_score: number;
+  mode: string;
+  has_profile: boolean;
+  rank: number;
+}
+
+function RankBadge({ rank }: { rank: number }) {
+  if (rank === 1) return <Crown className="w-5 h-5 text-yellow-400" />;
+  if (rank === 2) return <Medal className="w-5 h-5 text-slate-300" />;
+  if (rank === 3) return <Medal className="w-5 h-5 text-amber-600" />;
+  return <span className="text-slate-500 font-black text-sm w-5 text-center">#{rank}</span>;
+}
+
+function ScoreBar({ score }: { score: number }) {
+  const pct = Math.min(100, (score / 1000) * 100);
+  const color =
+    pct >= 80 ? "bg-emerald-500" :
+    pct >= 60 ? "bg-cyan-500" :
+    pct >= 40 ? "bg-amber-500" : "bg-slate-600";
+  return (
+    <div className="w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+      <div className={`h-full rounded-full ${color} transition-all`} style={{ width: `${pct}%` }} />
+    </div>
+  );
 }
 
 export default function LeaderboardPage() {
   const { user } = useAuth();
-  const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
-  const [capabilityMark, setCapabilityMark] = useState<number>(0);
-  const [zoneRisks, setZoneRisks] = useState<any>(null);
+  const [users, setUsers] = useState<GlobalUser[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [lbData, dashboardData] = await Promise.all([
-          api.getLeaderboard(),
-          api.getDashboard(user?.uid || "")
-        ]);
-        setLeaderboardData(lbData);
-        setCapabilityMark(dashboardData.capability_mark || 0);
-        setZoneRisks(dashboardData.zone_risks || null);
-      } catch (e) {
-        console.error("Failed to load leaderboard data", e);
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadData();
-  }, [user]);
-
-  const getHighestRiskZone = () => {
-    if (!zoneRisks) return null;
-    let maxRisk = 0;
-    let maxZone = "";
-    Object.entries(zoneRisks).forEach(([zone, score]) => {
-      const num = score as number;
-      if (num > maxRisk) {
-        maxRisk = num;
-        maxZone = zone;
-      }
-    });
-    return maxRisk > 10 ? { zone: maxZone.replace('_', ' '), score: maxRisk } : null;
+  const fetchLeaderboard = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/global-leaderboard");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setUsers(data.users || []);
+      setTotal(data.total || 0);
+    } catch (e: any) {
+      setError("Failed to load leaderboard. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const highest = getHighestRiskZone();
+  useEffect(() => {
+    fetchLeaderboard();
+  }, []);
 
+  const myEntry = users.find(u => u.user_id === user?.uid);
+
+  const [tierFilter, setTierFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+
+  const filteredUsers = users.filter((u) => {
+    const matchesSearch =
+      !searchQuery ||
+      u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.mode.toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    if (tierFilter === "elite") return u.health_score >= 800;
+    if (tierFilter === "advanced") return u.health_score >= 600 && u.health_score < 800;
+    if (tierFilter === "intermediate") return u.health_score >= 400 && u.health_score < 600;
+    if (tierFilter === "beginner") return u.health_score < 400;
+    return true;
+  });
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen h-auto md:h-screen text-foreground md:overflow-hidden pb-24 md:pb-0 bg-black">
       <Sidebar />
-      
-      <main className="flex-1 overflow-y-auto p-4 md:p-10 space-y-8 max-w-4xl mx-auto w-full pt-12 md:pt-10">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Peer Benchmarking</h1>
-          <p className="text-muted-foreground mt-2">Compare your physical capability mark with peers of your age.</p>
+      <main className="flex-1 overflow-y-auto p-4 md:p-10 space-y-6 max-w-3xl mx-auto w-full pt-12 md:pt-10">
+
+        {/* Header */}
+        <header className="flex items-end justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
+                <Users className="w-3 h-3" /> Global Leaderboard
+              </span>
+            </div>
+            <h1 className="text-3xl font-black tracking-tight text-white">Global User Rankings</h1>
+            <p className="text-slate-400 text-sm mt-1">
+              All {total} users in the system ranked by PhysioTwin Health Score (0–1000).
+            </p>
+          </div>
+          <button
+            onClick={fetchLeaderboard}
+            className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-600 transition-all"
+            title="Refresh"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
         </header>
 
-        {loading ? (
-          <div className="flex justify-center items-center h-48">
-            <div className="animate-pulse flex flex-col items-center">
-              <div className="h-12 w-12 rounded-full border-4 border-t-primary border-r-primary border-b-transparent border-l-transparent animate-spin mb-4"></div>
-              <div className="text-muted-foreground">Loading global rankings...</div>
+        {/* Search & Tier Filter Bar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/60 border border-slate-800 p-3 rounded-2xl">
+          <input
+            type="text"
+            placeholder="Search users..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-3.5 py-1.5 rounded-xl bg-black border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 w-full sm:w-48"
+          />
+          <div className="flex items-center gap-1 overflow-x-auto">
+            {[
+              { id: "all", label: "All Users" },
+              { id: "elite", label: "800+ Elite" },
+              { id: "advanced", label: "600–799" },
+              { id: "intermediate", label: "400–599" },
+              { id: "beginner", label: "< 400" },
+            ].map((tier) => (
+              <button
+                key={tier.id}
+                onClick={() => setTierFilter(tier.id)}
+                className={`text-[11px] font-bold px-3 py-1.5 rounded-xl border transition-all whitespace-nowrap cursor-pointer ${
+                  tierFilter === tier.id
+                    ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                    : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {tier.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Your rank card */}
+        {myEntry && (
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-5 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+                <RankBadge rank={myEntry.rank} />
+              </div>
+              <div>
+                <div className="text-xs text-emerald-400 font-bold uppercase tracking-wider mb-0.5">Your Ranking</div>
+                <div className="text-white font-black text-lg">#{myEntry.rank} of {total}</div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-3xl font-black text-emerald-400 font-mono">{myEntry.health_score}</div>
+              <div className="text-xs text-slate-400 font-semibold mt-0.5">Health Score</div>
             </div>
           </div>
+        )}
+
+        {/* Table */}
+        {loading ? (
+          <div className="flex items-center justify-center py-20 gap-3 text-slate-400">
+            <Loader2 className="w-6 h-6 animate-spin" /> Loading rankings…
+          </div>
+        ) : error ? (
+          <div className="text-center py-16">
+            <AlertTriangle className="w-10 h-10 mx-auto mb-4 text-red-400 opacity-60" />
+            <p className="text-red-400 text-sm font-semibold mb-3">{error}</p>
+            <button onClick={fetchLeaderboard} className="text-sm text-white/40 hover:text-white border border-white/10 hover:border-white/20 px-4 py-2 rounded-xl transition-all flex items-center gap-2 mx-auto">
+              <RefreshCw className="w-4 h-4" /> Retry
+            </button>
+          </div>
+        ) : filteredUsers.length === 0 ? (
+          <div className="text-center py-20">
+            <BarChart2 className="w-12 h-12 mx-auto mb-4 text-slate-600" />
+            <p className="text-slate-400 font-semibold">No users matching filter</p>
+            <p className="text-slate-600 text-sm mt-1">Try selecting "All Users" or clearing your search.</p>
+          </div>
         ) : (
-          <>
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 mb-6 text-center relative overflow-hidden shadow-xl">
-              <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart2 className="w-24 h-24 text-emerald-400" /></div>
-              <div className="text-sm font-bold text-slate-400 mb-2 relative z-10 uppercase tracking-wider">Your Capability Mark</div>
-              <div className="text-6xl font-black text-white font-mono-numbers tracking-tighter relative z-10 drop-shadow-md">{capabilityMark}</div>
-              <div className="text-sm font-semibold text-slate-300 mt-4 relative z-10">Age 30 Baseline: <span className="text-emerald-400 font-bold">650</span> (Top 24%)</div>
+          <div className="space-y-2">
+            {/* Column headers */}
+            <div className="grid grid-cols-[40px_1fr_120px_80px] gap-3 px-4 mb-1">
+              <span className="text-[10px] text-slate-600 font-bold uppercase">Rank</span>
+              <span className="text-[10px] text-slate-600 font-bold uppercase">User</span>
+              <span className="text-[10px] text-slate-600 font-bold uppercase text-right">Score</span>
+              <span className="text-[10px] text-slate-600 font-bold uppercase hidden md:block"></span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Leaderboard Column */}
-              <div className="space-y-3">
-                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">Global Rankings</h2>
-                {leaderboardData.map((u, i) => (
-                  <a
-                    key={i}
-                    href={`/profile?id=${u.user_id || u.username}`}
-                    className="flex items-center justify-between p-4 rounded-xl bg-slate-900/90 border border-slate-800 hover:border-emerald-500/60 hover:bg-slate-900 transition-all cursor-pointer group shadow-md"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-8 text-center font-black text-lg ${i + 1 <= 3 ? 'text-amber-400 font-black' : 'text-slate-400'}`}>#{i + 1}</div>
-                      <div className="text-base font-bold text-white group-hover:text-emerald-400 transition-colors">{u.username}</div>
-                    </div>
-                    <div className="font-mono-numbers text-lg font-black text-emerald-400">{u.score}</div>
-                  </a>
-                ))}
-                {/* Current User */}
-                {(() => {
-                  const myIndex = leaderboardData.findIndex(u => u.user_id === user?.uid);
-                  const myRankDisplay = myIndex !== -1 ? `#${myIndex + 1}` : "#—";
-                  const displayUsername = user?.email ? user.email.split("@")[0] : "You";
-                  return (
-                    <div className="flex items-center justify-between p-4 rounded-xl bg-emerald-500/15 border border-emerald-500/40 mt-4 shadow-lg">
-                      <div className="flex items-center gap-4">
-                        <div className="w-8 text-center font-black text-emerald-400 text-lg">{myRankDisplay}</div>
-                        <div className="text-base font-extrabold text-white">You ({displayUsername})</div>
-                      </div>
-                      <div className="font-mono-numbers text-lg font-black text-emerald-400">{capabilityMark}</div>
-                    </div>
-                  );
-                })()}
-              </div>
+            {filteredUsers.map((u) => {
+              const isMe = u.user_id === user?.uid;
+              return (
+                <div
+                  key={u.user_id}
+                  className={`grid grid-cols-[40px_1fr_120px_80px] gap-3 items-center px-4 py-3.5 rounded-xl border transition-all ${
+                    isMe
+                      ? "bg-emerald-500/10 border-emerald-500/30 shadow-lg shadow-emerald-500/5"
+                      : u.rank <= 3
+                      ? "bg-slate-900/80 border-slate-700/80 hover:border-slate-600"
+                      : "bg-slate-900/40 border-slate-800/60 hover:border-slate-700 hover:bg-slate-900/60"
+                  }`}
+                >
+                  {/* Rank */}
+                  <div className="flex items-center justify-center">
+                    <RankBadge rank={u.rank} />
+                  </div>
 
-              {/* Insights Column */}
-              <div className="space-y-4">
-                <h2 className="text-lg font-semibold mb-4">Actionable Insights</h2>
-                
-                {highest ? (
-                  <div className="bg-secondary/20 border border-border/50 p-5 rounded-2xl shadow-sm">
-                    <div className="flex items-center gap-2 text-foreground font-medium mb-3">
-                      <Target className="w-5 h-5 text-primary" /> Priority: {highest.zone.toUpperCase()}
+                  {/* User info */}
+                  <div className="min-w-0">
+                    <div className={`font-bold truncate ${isMe ? "text-emerald-400" : "text-white"}`}>
+                      {u.username}{isMe && " (You)"}
                     </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      Your {highest.zone} risk is holding your score back (Score: {highest.score}%). Target this area in your workouts to boost your peer capability mark.
-                    </p>
+                    <div className="text-[11px] text-slate-500 truncate">{u.mode}</div>
                   </div>
-                ) : (
-                  <div className="bg-secondary/20 border border-border/50 p-5 rounded-2xl shadow-sm">
-                    <div className="flex items-center gap-2 text-foreground font-medium mb-3">
-                      <Target className="w-5 h-5 text-primary" /> Priority: Complete Capture
-                    </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      Record a movement capture session or sync external platforms to identify stability priorities and personalized quad/glute exercises.
-                    </p>
-                  </div>
-                )}
 
-                <div className="bg-secondary/20 border border-border/50 p-5 rounded-2xl shadow-sm">
-                  <div className="flex items-center gap-2 text-foreground font-medium mb-3">
-                    <Activity className="w-5 h-5 text-primary" /> Dynamic Insights
+                  {/* Score */}
+                  <div className="text-right">
+                    <div className={`text-xl font-black font-mono ${
+                      u.health_score >= 800 ? "text-emerald-400" :
+                      u.health_score >= 600 ? "text-cyan-400" :
+                      u.health_score >= 400 ? "text-amber-400" :
+                      u.health_score > 0   ? "text-slate-300" : "text-slate-600"
+                    }`}>
+                      {u.health_score > 0 ? u.health_score : "—"}
+                    </div>
+                    {!u.has_profile && (
+                      <div className="text-[10px] text-slate-600">No data yet</div>
+                    )}
                   </div>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Compare your metrics. Logging daily surveys on the Readiness page will evaluate kinesiophobia risk indices and return-to-sport indicators.
-                  </p>
+
+                  {/* Score bar */}
+                  <div className="hidden md:flex justify-end">
+                    <ScoreBar score={u.health_score} />
+                  </div>
                 </div>
-              </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Legend */}
+        {!loading && !error && users.length > 0 && (
+          <div className="flex flex-wrap gap-4 pt-2 border-t border-slate-800">
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <div className="w-3 h-1.5 rounded-full bg-emerald-500" /> 800–1000: Elite
             </div>
-          </>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <div className="w-3 h-1.5 rounded-full bg-cyan-500" /> 600–799: Advanced
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <div className="w-3 h-1.5 rounded-full bg-amber-500" /> 400–599: Intermediate
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <div className="w-3 h-1.5 rounded-full bg-slate-600" /> 0–399: Beginner
+            </div>
+          </div>
         )}
       </main>
     </div>

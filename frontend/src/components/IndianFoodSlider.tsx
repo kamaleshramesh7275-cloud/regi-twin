@@ -18,14 +18,6 @@ const CATEGORY_TABS = [
   { id: "beverage", label: "Beverages", icon: Coffee },
 ];
 
-const CATEGORY_ICONS: Record<string, string> = {
-  breakfast: "🥞",
-  lunch: "🍛",
-  dinner: "🍲",
-  snack: "🥗",
-  beverage: "☕",
-};
-
 export default function IndianFoodSlider({ onSelectFood, selectedFoodId }: IndianFoodSliderProps) {
   const [search, setSearch] = useState("");
   const [selectedCat, setSelectedCat] = useState<string>("all");
@@ -54,12 +46,14 @@ export default function IndianFoodSlider({ onSelectFood, selectedFoodId }: India
     <div className="p-4 rounded-2xl bg-slate-950/90 border border-emerald-500/20 space-y-3 shadow-inner">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-base">🍛</span>
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+            <UtensilsCrossed className="w-4 h-4" />
+          </div>
           <div>
             <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
               Quick Indian Foods &amp; Regional Staples
               <span className="text-[9px] font-normal normal-case px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                approx. macros
+                {indianFoods.length} items
               </span>
             </h4>
             <p className="text-[11px] text-slate-400">
@@ -121,8 +115,6 @@ export default function IndianFoodSlider({ onSelectFood, selectedFoodId }: India
             {filteredFoods.map((food) => {
               const isSelected = selectedFoodId === food.id;
               const isAdded = justAddedId === food.id;
-              const emoji = CATEGORY_ICONS[food.category] || "🍽️";
-
               return (
                 <div
                   key={food.id}
@@ -133,9 +125,11 @@ export default function IndianFoodSlider({ onSelectFood, selectedFoodId }: India
                   }`}
                 >
                   <div className="space-y-1.5">
-                    {/* Top Row: Category Icon & Serving */}
+                    {/* Top Row: Category Badge & Serving */}
                     <div className="flex items-center justify-between">
-                      <span className="text-lg" title={food.category}>{emoji}</span>
+                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase tracking-wider">
+                        {food.category}
+                      </span>
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
                         {food.servingSize}
                       </span>

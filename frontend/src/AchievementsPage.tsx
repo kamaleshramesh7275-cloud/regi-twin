@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { Trophy, Medal, Award, Star, Zap, Activity, Loader } from "lucide-react";
 import { api } from "./api";
-import { auth } from "./firebase";
+import { useAuth } from "./context/AuthContext";
 
 interface Achievement {
   id: string;
@@ -27,12 +27,18 @@ function getIcon(id: string, unlocked: boolean) {
 }
 
 export default function AchievementsPage() {
+  const { user } = useAuth();
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const uid = auth.currentUser?.uid || "";
+  const uid = user?.uid || "";
 
   useEffect(() => {
+    if (!uid) {
+      initFallbackAchievements();
+      setLoading(false);
+      return;
+    }
     api.getAchievements(uid)
       .then((data) => {
         if (data && data.length > 0) {

@@ -22,14 +22,14 @@ import {
 } from "./hooks/useNutrition";
 
 const FOOD_CATEGORY_FILTERS = [
-  { id: "all", label: "✨ All Foods" },
-  { id: "indian", label: "🍛 Indian Staples" },
-  { id: "breakfast", label: "🥞 Breakfast" },
-  { id: "lunch", label: "🍛 Lunch Curries" },
-  { id: "dinner", label: "🍲 Dinner & Biryanis" },
-  { id: "snack", label: "🥗 Snacks & Chaat" },
-  { id: "beverage", label: "☕ Beverages" },
-  { id: "protein", label: "🍗 Whole Foods" },
+  { id: "all", label: "All Foods" },
+  { id: "indian", label: "Indian Staples" },
+  { id: "breakfast", label: "Breakfast" },
+  { id: "lunch", label: "Lunch Curries" },
+  { id: "dinner", label: "Dinner & Biryanis" },
+  { id: "snack", label: "Snacks & Chaat" },
+  { id: "beverage", label: "Beverages" },
+  { id: "protein", label: "Whole Foods" },
 ];
 
 function MacroRing({ label, current, target, unit, color }: { label: string; current: number; target: number; unit: string; color: string }) {
@@ -194,7 +194,7 @@ export function NutritionRecovery() {
         protein_g_100g: prot100g,
         carbs_g_100g: carbs100g,
         fat_g_100g: fat100g,
-        emoji: f.emoji || "🍛",
+        micros: f.micros || {},
         tags: f.tags || ["Indian Food"]
       };
     });
@@ -215,7 +215,6 @@ export function NutritionRecovery() {
         protein_g_100g: f.protein_g_100g,
         carbs_g_100g: f.carbs_g_100g,
         fat_g_100g: f.fat_g_100g,
-        emoji: isIndian ? "🍛" : "🥗",
         tags: [f.category]
       };
     });
@@ -487,7 +486,9 @@ export function NutritionRecovery() {
         <div className="p-4 rounded-3xl bg-gradient-to-r from-emerald-950/40 via-slate-900/90 to-cyan-950/40 border border-emerald-500/30 shadow-2xl relative">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <span className="text-3xl p-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">🍛</span>
+              <div className="p-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                <Utensils className="w-6 h-6" />
+              </div>
               <div>
                 <h3 className="text-sm font-black text-white flex items-center gap-2">
                   Smart Food Search &amp; Indian Dropdown
@@ -665,16 +666,16 @@ export function NutritionRecovery() {
               {/* Micronutrient RDA */}
               <div className="p-6 rounded-3xl bg-slate-900/80 border border-slate-800 h-84 flex flex-col shadow-xl">
                 <div className="font-bold text-sm text-white mb-4 flex items-center gap-2">
-                  <HeartPulse className="w-4 h-4 text-rose-400" /> Micronutrient Recovery Coverage
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" /> Micronutrient Recovery Coverage
                 </div>
                 <div className="space-y-3.5 flex-1 overflow-y-auto pr-2 scrollbar-none">
-                  <MicronutrientBar name="Iron (O2 Transport & Fatigue)" pct={micros.iron_pct || 88} />
-                  <MicronutrientBar name="Calcium (Bone Density & Force)" pct={micros.calcium_pct || 94} />
-                  <MicronutrientBar name="Magnesium (CNS & Muscle Relaxation)" pct={micros.magnesium_pct || 90} />
-                  <MicronutrientBar name="Potassium (Electrolyte Balance)" pct={micros.potassium_pct || 84} />
-                  <MicronutrientBar name="Vitamin D (Immunity & Testosterone)" pct={micros.vitamin_d_pct || 80} />
-                  <MicronutrientBar name="Vitamin B12 (Nerve Function)" pct={micros.vitamin_b12_pct || 95} />
-                  <MicronutrientBar name="Zinc (Cell Repair & Testosterone)" pct={micros.zinc_pct || 92} />
+                  <MicronutrientBar name="Iron (O2 Transport & Fatigue)" pct={micros.iron_pct ?? 0} />
+                  <MicronutrientBar name="Calcium (Bone Density & Force)" pct={micros.calcium_pct ?? 0} />
+                  <MicronutrientBar name="Magnesium (CNS & Muscle Relaxation)" pct={micros.magnesium_pct ?? 0} />
+                  <MicronutrientBar name="Potassium (Electrolyte Balance)" pct={micros.potassium_pct ?? 0} />
+                  <MicronutrientBar name="Vitamin D (Immunity & Testosterone)" pct={micros.vitamin_d_pct ?? 0} />
+                  <MicronutrientBar name="Vitamin B12 (Nerve Function)" pct={micros.vitamin_b12_pct ?? 0} />
+                  <MicronutrientBar name="Zinc (Cell Repair & Testosterone)" pct={micros.zinc_pct ?? 0} />
                 </div>
               </div>
 
@@ -907,9 +908,9 @@ export function NutritionRecovery() {
                                 }`}
                               >
                                 <div className="flex items-center gap-3">
-                                  <span className="text-xl p-1.5 rounded-lg bg-slate-950/60 border border-slate-800/80">
-                                    {item.emoji || "🍛"}
-                                  </span>
+                                  <div className="p-2 rounded-xl bg-slate-950/60 border border-slate-800/80 text-emerald-400">
+                                    <Utensils className="w-4 h-4" />
+                                  </div>
                                   <div>
                                     <div className="font-bold text-xs md:text-sm text-white group-hover:text-emerald-300 transition-colors flex items-center gap-1.5">
                                       {item.name}
@@ -951,7 +952,9 @@ export function NutritionRecovery() {
                       {/* Selected Food Top Preview */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-slate-900/90 border border-slate-800">
                         <div className="flex items-center gap-3">
-                          <span className="text-2xl">{selectedFood.emoji || "🍛"}</span>
+                          <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                            <Utensils className="w-5 h-5" />
+                          </div>
                           <div>
                             <span className="text-[10px] uppercase font-extrabold text-emerald-400 tracking-wider">
                               Selected Food Item
