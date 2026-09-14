@@ -24,6 +24,8 @@ import { SpinalSegmentationView } from "./components/SpinalSegmentationView";
 import { ValgusVelocityAlert } from "./components/ValgusVelocityAlert";
 import { FormDecayTracker } from "./components/FormDecayTracker";
 
+import { captureHistoryStore } from "./lib/captureHistoryStore";
+
 // ── Zone risk colour helpers ───────────────────────────────
 function riskLabel(r: number) { return r < 35 ? "Healthy" : r < 55 ? "Watch" : r < 70 ? "Elevated" : "Critical"; }
 function riskColor(r: number) { return r < 35 ? "#10b981" : r < 55 ? "#f59e0b" : r < 70 ? "#f97316" : "#ef4444"; }
@@ -167,8 +169,23 @@ export default function TwinPage() {
       if (uid !== "dev-athlete") {
         await api.deleteCaptureHistory("dev-athlete").catch(() => {});
       }
+
+      // Purge session and local storage heat map & capture metrics
+      sessionStorage.removeItem("lastSession");
+      sessionStorage.removeItem("lastMetrics");
+      sessionStorage.removeItem("lastInsights");
+      sessionStorage.removeItem("lastAnnotatedImage");
+
+      localStorage.removeItem("pt_user_pain_zone");
+      localStorage.removeItem("pt_user_pain_level");
+      localStorage.removeItem("pt_self_reported_pain");
+      localStorage.removeItem("physiotwin_capture_insights_history");
+
+      captureHistoryStore.clearAll(uid);
+
       setHistoryData([]);
       setDynamicRisk(null);
+      setDeepMetrics({});
       setLiveRisk({
         head: 0, neck: 0, chest: 0, lumbar: 0,
         left_shoulder: 0, right_shoulder: 0, left_arm: 0, right_arm: 0,
@@ -177,7 +194,7 @@ export default function TwinPage() {
         left_shin: 0, right_shin: 0, left_ankle: 0, right_ankle: 0
       });
       setSelectedZone(null);
-      setScanIngestSummary("All capture history, digital twin metrics, and dashboard logs wiped from database.");
+      setScanIngestSummary("All capture history, digital twin metrics, and heat map data completely wiped.");
       setShowCaptureToast(true);
       setShowDeleteModal(false);
     } catch (err) {
@@ -440,9 +457,9 @@ export default function TwinPage() {
         {/* Main Center Area (Controls overlay) */}
         <div className="flex-1 min-w-0 flex flex-col relative pointer-events-none overflow-hidden">
           
-          <div className="pointer-events-auto flex items-center justify-between p-2.5 sm:p-3 shrink-0 mt-1 mx-2 sm:mx-4 gap-2 flex-wrap bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl">
+          <div className="pointer-events-none flex items-center justify-between p-1 sm:p-2 shrink-0 mt-1 mx-2 sm:mx-4 gap-2 flex-wrap z-30">
             {/* View Mode Switcher + Live Camera CTA */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap pointer-events-auto">
               <Link
                 href="/capture"
                 className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 border border-emerald-400/50 transition-all cursor-pointer shrink-0"
@@ -511,7 +528,7 @@ export default function TwinPage() {
             </div>
 
             {/* Twin Score & Notification */}
-            <div className="flex items-center gap-3 shrink-0 ml-auto">
+            <div className="flex items-center gap-3 shrink-0 ml-auto pointer-events-auto">
               {showCaptureToast && (
                 <div className="p-3.5 rounded-2xl bg-emerald-500/20 backdrop-blur-xl border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-3 shadow-2xl animate-in fade-in slide-in-from-top-3 max-w-md">
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
@@ -599,6 +616,20 @@ export default function TwinPage() {
           {/* ACTIVE MODE */}
           {mode === "active" && (
             <div className="p-4 sm:p-5 flex-1 overflow-y-auto min-h-0 space-y-4 pb-20 md:pb-8">
+              {/* Delete All Capture History Action Card */}
+              <div className="flex items-center justify-between gap-2 p-3 bg-red-500/10 border border-red-500/25 rounded-2xl shadow-lg">
+                <div className="flex items-center gap-2 text-xs font-bold text-red-300">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span>Capture & Heat Map Data</span>
+                </div>
+                <button
+                  onClick={() => setShowDeleteModal(true)}
+                  className="py-1.5 px-3 bg-red-500/20 hover:bg-red-500/35 border border-red-500/40 rounded-xl text-red-200 font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-md shrink-0"
+                >
+                  Delete All History
+                </button>
+              </div>
+
               {(zoneMeta || basicMeta) ? (
                 <div className="anim-up space-y-4">
                   {/* Header & Score Bar */}

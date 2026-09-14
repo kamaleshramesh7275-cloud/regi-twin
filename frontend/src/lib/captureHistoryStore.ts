@@ -49,6 +49,16 @@ export const captureHistoryStore = {
     return newRecord;
   },
 
+  clearAll(userId?: string) {
+    const key = userId ? `physiotwin_capture_insights_history_${userId}` : STORAGE_KEY;
+    try {
+      localStorage.removeItem(key);
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+      console.warn("Failed clearing capture history store:", e);
+    }
+  },
+
   getLatest(): CaptureInsightRecord | null {
     const history = this.getHistory();
     return history.length ? history[0] : null;

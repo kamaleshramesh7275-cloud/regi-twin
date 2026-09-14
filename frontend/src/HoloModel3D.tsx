@@ -608,7 +608,7 @@ export default function HoloModel3D(props: HoloModel3DProps) {
     setPreset(p => p === "ecorche" ? "clay" : p === "clay" ? "realistic" : p === "realistic" ? "anatomy" : p === "anatomy" ? "thermal" : "ecorche");
 
   // Adaptive camera position for mobile portrait vs desktop landscape
-  const cameraPos: [number, number, number] = isMobile ? [0, 0.82, 3.9] : [0, 0.95, 2.8];
+  const cameraPos: [number, number, number] = isMobile ? [0, 0.48, 4.0] : [0, 0.48, 3.1];
   const cameraFov = isMobile ? 48 : 40;
 
   return (
@@ -645,7 +645,7 @@ export default function HoloModel3D(props: HoloModel3DProps) {
             </Suspense>
 
             <OrbitControls 
-              target={[0, 0.72, 0]} 
+              target={[0, 0.38, 0]} 
               enablePan={false} 
               minPolarAngle={Math.PI / 6} 
               maxPolarAngle={Math.PI / 1.6} 
@@ -664,7 +664,7 @@ export default function HoloModel3D(props: HoloModel3DProps) {
           </Canvas>
 
           {/* Preset Controls */}
-          <div className="absolute top-16 md:top-20 left-4 md:left-6 z-20 flex flex-row md:flex-col gap-2 pointer-events-auto">
+          <div className="absolute top-16 md:top-20 left-4 md:left-[272px] z-20 flex flex-row md:flex-col gap-2 pointer-events-auto">
             <button onClick={() => setHeatMapEnabled(p => !p)} className={`px-3 py-1.5 rounded-xl text-[11px] md:text-xs font-bold flex items-center gap-1.5 backdrop-blur-xl border shadow-lg transition-all cursor-pointer ${heatMapEnabled ? "bg-orange-500/20 border-orange-400/50 text-orange-300 shadow-orange-500/15" : "bg-black/60 border-white/10 text-gray-400 hover:text-white"}`}>
               <Flame className={`w-3.5 h-3.5 ${heatMapEnabled ? "text-orange-400 animate-pulse" : "text-gray-500"}`} /> Heat Map {heatMapEnabled ? "ON" : "OFF"}
             </button>

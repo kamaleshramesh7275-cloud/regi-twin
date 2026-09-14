@@ -91,7 +91,9 @@ export function collectAllHeatSources(options: {
         m => m.latest_status === "high" || m.latest_status === "low" || m.latest_status === "flagged"
       ).length;
       
-      const intensity = flaggedCount > 0 ? Math.min(1.0, 0.45 + flaggedCount * 0.2) : 0.25;
+      if (flaggedCount === 0) continue;
+
+      const intensity = Math.min(1.0, 0.45 + flaggedCount * 0.2);
       const metricNames = group.metrics.map(m => m.canonical_name).join(", ");
 
       sources.push({
@@ -101,7 +103,7 @@ export function collectAllHeatSources(options: {
         radius: 0.28,
         source: "clinicInsight",
         label: "Clinic Lab Finding",
-        detail: `Lab metrics: ${metricNames} (${flaggedCount > 0 ? `${flaggedCount} flagged` : 'monitored'})`,
+        detail: `Lab metrics: ${metricNames} (${flaggedCount} flagged)`,
         timestamp: "Clinic Report",
       });
     }
@@ -112,22 +114,24 @@ export function collectAllHeatSources(options: {
     const rawPainZone = options.userProfile.painZone || localStorage.getItem("pt_user_pain_zone");
     const rawPainLevel = options.userProfile.painLevel || localStorage.getItem("pt_user_pain_level");
 
-    if (rawPainZone && rawPainZone !== "none") {
+    if (rawPainZone && rawPainZone !== "none" && rawPainZone !== "null") {
       const zoneKey = mapTextToZoneId(rawPainZone);
       if (zoneKey) {
-        const pLevel = typeof rawPainLevel === "number" ? rawPainLevel : parseInt(rawPainLevel || "5", 10);
-        const intensity = Math.min(1.0, Math.max(0.2, (pLevel || 5) / 10));
+        const pLevel = typeof rawPainLevel === "number" ? rawPainLevel : parseInt(rawPainLevel || "0", 10);
+        if (pLevel > 0) {
+          const intensity = Math.min(1.0, Math.max(0.2, pLevel / 10));
 
-        sources.push({
-          id: `onboarding-${zoneKey}`,
-          region: zoneKey,
-          intensity,
-          radius: 0.32,
-          source: "onboardingInjury",
-          label: "Baseline Injury History",
-          detail: `Onboarding baseline pain area (${pLevel}/10 severity)`,
-          timestamp: "Baseline Intake",
-        });
+          sources.push({
+            id: `onboarding-${zoneKey}`,
+            region: zoneKey,
+            intensity,
+            radius: 0.32,
+            source: "onboardingInjury",
+            label: "Baseline Injury History",
+            detail: `Onboarding baseline pain area (${pLevel}/10 severity)`,
+            timestamp: "Baseline Intake",
+          });
+        }
       }
     }
   }
