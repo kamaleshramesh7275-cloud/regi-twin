@@ -430,27 +430,27 @@ export default function TwinPage() {
       </div>
 
       {/* ── Floating Controls Layer ── */}
-      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col md:flex-row md:pl-64">
+      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col md:flex-row md:pl-64 overflow-hidden">
         
         {/* Main Center Area (Controls overlay) */}
-        <div className="flex-1 flex flex-col relative pointer-events-none">
+        <div className="flex-1 min-w-0 flex flex-col relative pointer-events-none overflow-hidden">
           
-          <div className="pointer-events-auto flex items-center justify-between p-3 sm:px-6 sm:py-3 shrink-0 mt-1 mx-2 sm:mx-4 gap-2 flex-wrap sm:flex-nowrap bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl">
+          <div className="pointer-events-auto flex items-center justify-between p-2.5 sm:p-3 shrink-0 mt-1 mx-2 sm:mx-4 gap-2 flex-wrap bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl shadow-xl">
             {/* View Mode Switcher + Live Camera CTA */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Link
                 href="/capture"
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 border border-emerald-400/50 transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 border border-emerald-400/50 transition-all cursor-pointer shrink-0"
               >
                 <Camera className="w-4 h-4" />
                 <span className="hidden sm:inline">Start Live Camera Scan</span>
                 <span className="sm:hidden">Camera Scan</span>
               </Link>
 
-              <div className="bg-black/70 backdrop-blur-xl border border-white/10 p-1 rounded-2xl flex items-center gap-1 shadow-2xl">
+              <div className="bg-black/70 backdrop-blur-xl border border-white/10 p-1 rounded-2xl flex items-center gap-1 shadow-2xl shrink-0">
                 <button
                   onClick={() => setViewMode("scan")}
-                  className={`px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1 sm:gap-1.5 cursor-pointer ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
                     viewMode === "scan"
                       ? "bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-lg shadow-cyan-500/20"
                       : "text-muted-foreground hover:text-white"
@@ -460,7 +460,7 @@ export default function TwinPage() {
                 </button>
                 <button
                   onClick={() => setViewMode("3d")}
-                  className={`px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center gap-1 sm:gap-1.5 cursor-pointer ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
                     viewMode === "3d"
                       ? "bg-blue-600/30 text-blue-300 border border-blue-500/50 shadow-lg shadow-blue-500/20"
                       : "text-muted-foreground hover:text-white"
@@ -471,30 +471,30 @@ export default function TwinPage() {
               </div>
 
               {/* Limb Target Scan Selector */}
-              <div className="bg-black/70 backdrop-blur-xl border border-white/10 p-1 rounded-2xl flex items-center gap-1 shadow-2xl">
+              <div className="bg-black/70 backdrop-blur-xl border border-white/10 p-1 rounded-2xl flex items-center gap-1 shadow-2xl flex-wrap">
                 <button
                   onClick={() => setScanFilter("squats")}
-                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
                     scanFilter === "squats"
                       ? "bg-purple-600/30 text-purple-300 border border-purple-500/50 shadow-lg shadow-purple-500/20"
                       : "text-muted-foreground hover:text-white"
                   }`}
                 >
-                  🏋️ Squats (Knees)
+                  🏋️ Squats
                 </button>
                 <button
                   onClick={() => setScanFilter("biceps-curls")}
-                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
                     scanFilter === "biceps-curls"
                       ? "bg-amber-600/30 text-amber-300 border border-amber-500/50 shadow-lg shadow-amber-500/20"
                       : "text-muted-foreground hover:text-white"
                   }`}
                 >
-                  💪 Bicep Curls (Arms)
+                  💪 Bicep Curls
                 </button>
                 <button
                   onClick={() => setScanFilter("all")}
-                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  className={`px-2 py-1 rounded-xl text-[10px] sm:text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
                     scanFilter === "all"
                       ? "bg-cyan-500/25 text-cyan-300 border border-cyan-500/50 shadow-lg shadow-cyan-500/20"
                       : "text-muted-foreground hover:text-white"
@@ -506,7 +506,7 @@ export default function TwinPage() {
             </div>
 
             {/* Twin Score & Notification */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 shrink-0 ml-auto">
               {showCaptureToast && (
                 <div className="p-3.5 rounded-2xl bg-emerald-500/20 backdrop-blur-xl border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-3 shadow-2xl animate-in fade-in slide-in-from-top-3 max-w-md">
                   <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
@@ -525,21 +525,21 @@ export default function TwinPage() {
                 </div>
               )}
               
-              <div className="flex items-center gap-4 bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl pr-2 pl-4 py-1.5 shadow-2xl">
+              <div className="flex items-center gap-3 bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl pr-2 pl-3 py-1 shadow-2xl shrink-0">
                 <div className="text-right">
-                  <div className="text-[11px] font-medium text-muted-foreground">{modeLabel}</div>
-                  <div className="text-sm font-black">Twin Score</div>
+                  <div className="text-[10px] font-medium text-muted-foreground">{modeLabel}</div>
+                  <div className="text-xs font-black">Twin Score</div>
                 </div>
-                <ScoreRing score={score} size={54} />
+                <ScoreRing score={score} size={48} />
               </div>
             </div>
           </div>
 
-          <div className="flex-1" />
+          <div className="flex-1 min-h-0" />
 
           {/* Bottom scrubbers */}
           {mode === "history" && (
-            <div className="pointer-events-auto m-6 p-5 bg-black/50 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl">
+            <div className="pointer-events-auto m-4 p-4 bg-black/50 backdrop-blur-2xl border border-white/10 rounded-3xl shadow-2xl">
               <div className="flex items-center justify-between text-[11px] font-bold text-muted-foreground mb-3">
                 <span>{historyData.length > 0 ? new Date(historyData[0].timestamp).toLocaleDateString() : "Start"}</span>
                 <span className="text-white text-sm bg-white/10 px-3 py-1 rounded-full">
@@ -553,7 +553,7 @@ export default function TwinPage() {
           )}
 
           {mode === "projection" && (
-            <div className="pointer-events-auto m-6 p-4 bg-background/80 backdrop-blur-2xl border border-border/50 rounded-2xl flex flex-wrap items-center gap-4 justify-center">
+            <div className="pointer-events-auto m-4 p-4 bg-background/80 backdrop-blur-2xl border border-border/50 rounded-2xl flex flex-wrap items-center gap-4 justify-center">
               <div className="flex gap-2 bg-secondary/30 rounded-xl p-1 border border-border/40">
                 {activeProjections.map((p, i) => (
                   <button key={i} onClick={() => setProjIdx(i)}
@@ -577,9 +577,9 @@ export default function TwinPage() {
         </div>
 
         {/* ── Right Panel ── */}
-        <aside className={`pointer-events-auto ${mobileDrawerOpen ? 'fixed inset-x-0 bottom-0 max-h-[75vh] z-40 rounded-t-3xl border-t' : 'hidden'} md:flex md:relative md:max-h-none md:rounded-none md:border-t-0 w-full md:w-[380px] bg-[#070A12]/95 backdrop-blur-2xl md:border-l border-white/10 flex-col overflow-y-auto shrink-0 shadow-2xl pb-24 md:pb-6`}>
+        <aside className={`pointer-events-auto ${mobileDrawerOpen ? 'fixed inset-x-0 bottom-0 max-h-[85vh] z-40 rounded-t-3xl border-t' : 'hidden'} md:flex md:relative md:max-h-none md:rounded-none md:border-t-0 w-full md:w-[340px] xl:w-[380px] bg-[#070A12]/95 backdrop-blur-2xl md:border-l border-white/10 flex-col h-full overflow-hidden shrink-0 min-w-0 shadow-2xl`}>
           {/* Mobile Drawer Handle & Close */}
-          <div className="md:hidden flex items-center justify-between px-5 py-3.5 border-b border-white/10 sticky top-0 bg-[#070A12] z-10">
+          <div className="md:hidden flex items-center justify-between px-5 py-3.5 border-b border-white/10 sticky top-0 bg-[#070A12] z-10 shrink-0">
             <div className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
               <Sparkles className="w-3.5 h-3.5 text-cyan-400" /> Biomechanical Insights
             </div>
@@ -593,21 +593,21 @@ export default function TwinPage() {
 
           {/* ACTIVE MODE */}
           {mode === "active" && (
-            <div className="p-4 sm:p-6 flex-1 overflow-y-auto scrollbar-hide">
+            <div className="p-4 sm:p-5 flex-1 overflow-y-auto min-h-0 space-y-4 pb-20 md:pb-8">
               {(zoneMeta || basicMeta) ? (
                 <div className="anim-up space-y-4">
                   {/* Header & Score Bar */}
-                  <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-xl">
-                    <div className="flex items-start justify-between">
-                      <div>
+                  <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-xl">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
                         <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-1">Anatomical Region</div>
-                        <h2 className="font-black text-2xl tracking-tight text-white">{zoneMeta?.label || basicMeta?.label || selectedZone}</h2>
-                        <div className="flex items-center gap-2 mt-2.5">
+                        <h2 className="font-black text-xl sm:text-2xl tracking-tight text-white break-words">{zoneMeta?.label || basicMeta?.label || selectedZone}</h2>
+                        <div className="flex items-center gap-2 mt-2.5 flex-wrap">
                           <span className={`text-[11px] font-black px-3 py-1 rounded-full border ${riskBg(zoneRisk)}`}>{riskLabel(zoneRisk)}</span>
-                          <span className="font-mono text-xl font-black" style={{ color: riskColor(zoneRisk) }}>{zoneRisk}% Strain</span>
+                          <span className="font-mono text-lg sm:text-xl font-black shrink-0" style={{ color: riskColor(zoneRisk) }}>{zoneRisk}% Strain</span>
                         </div>
                       </div>
-                      <button onClick={() => setSelectedZone(null)} className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer">✕</button>
+                      <button onClick={() => setSelectedZone(null)} className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer shrink-0 mt-0.5">✕</button>
                     </div>
                     <div className="h-2 bg-slate-950 rounded-full mt-4 overflow-hidden border border-white/5">
                       <div className="h-full rounded-full transition-all duration-700" style={{ width:`${zoneRisk}%`, background:riskColor(zoneRisk) }} />
@@ -627,15 +627,15 @@ export default function TwinPage() {
                         {aggregatedSummary[selectedZone].sources.map(src => (
                           <div key={src.id} className="bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs">
                             <div className="flex justify-between items-center mb-1">
-                              <span className="font-bold text-white flex items-center gap-1.5">
-                                <span className={`w-2 h-2 rounded-full ${src.source === 'clinicInsight' ? 'bg-purple-400' : src.source === 'selfReportedPain' ? 'bg-amber-400 animate-pulse' : src.source === 'postureScan' ? 'bg-cyan-400' : 'bg-emerald-400'}`} />
+                              <span className="font-bold text-white flex items-center gap-1.5 break-words">
+                                <span className={`w-2 h-2 rounded-full shrink-0 ${src.source === 'clinicInsight' ? 'bg-purple-400' : src.source === 'selfReportedPain' ? 'bg-amber-400 animate-pulse' : src.source === 'postureScan' ? 'bg-cyan-400' : 'bg-emerald-400'}`} />
                                 {src.label}
                               </span>
-                              <span className="font-mono font-black text-amber-400">
+                              <span className="font-mono font-black text-amber-400 shrink-0 ml-2">
                                 {Math.round(src.intensity * 100)}%
                               </span>
                             </div>
-                            <div className="text-[11px] text-slate-300 leading-snug">{src.detail}</div>
+                            <div className="text-[11px] text-slate-300 leading-snug break-words">{src.detail}</div>
                             <div className="text-[9px] text-slate-500 mt-1 font-mono">{src.timestamp}</div>
                           </div>
                         ))}
@@ -656,9 +656,9 @@ export default function TwinPage() {
                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2.5">Active Anatomical Issues</div>
                       <div className="space-y-2">
                         {zoneMeta.injuries.map(inj => (
-                          <div key={inj} className="flex items-center gap-3 text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-3.5 py-2.5 rounded-xl">
+                          <div key={inj} className="flex items-center gap-3 text-xs font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-3.5 py-2.5 rounded-xl break-words">
                             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                            <span>{inj}</span>
+                            <span className="break-words min-w-0 flex-1">{inj}</span>
                           </div>
                         ))}
                       </div>
@@ -669,13 +669,13 @@ export default function TwinPage() {
                   {zoneMeta?.rootCause && (
                     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
                       <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                        <Activity className="w-3.5 h-3.5" /> Diagnostic Biomechanical Reasoning
+                        <Activity className="w-3.5 h-3.5 shrink-0" /> Diagnostic Biomechanical Reasoning
                       </div>
-                      <p className="text-xs text-slate-300 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800/80 mb-2.5">
+                      <p className="text-xs text-slate-300 leading-relaxed bg-slate-950 p-3 rounded-xl border border-slate-800/80 mb-2.5 break-words">
                         {zoneMeta.rootCause}
                       </p>
-                      <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs leading-relaxed">
-                        <span className="text-amber-400 font-bold">Workout & Motion Correlation:</span> Your recent jump in heavy squat volume (+15% load) has outpaced tendon adaptation.
+                      <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-xs leading-relaxed break-words">
+                        <span className="text-amber-400 font-bold">Workout &amp; Motion Correlation:</span> Your recent jump in heavy squat volume (+15% load) has outpaced tendon adaptation.
                       </div>
                     </div>
                   )}
@@ -686,7 +686,7 @@ export default function TwinPage() {
                       <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                         <Brain className="w-3.5 h-3.5" /> Clinical Immediate Action
                       </div>
-                      <p className="text-xs text-cyan-100/90 bg-cyan-500/10 border border-cyan-500/20 p-3 rounded-xl leading-relaxed">
+                      <p className="text-xs text-cyan-100/90 bg-cyan-500/10 border border-cyan-500/20 p-3 rounded-xl leading-relaxed break-words">
                         {zoneMeta.immediateAction}
                       </p>
                     </div>
@@ -696,9 +696,9 @@ export default function TwinPage() {
                   {zoneMeta?.longTermRisk && (
                     <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-xl">
                       <div className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                        <ShieldAlert className="w-3.5 h-3.5" /> Long-Term Risk if Ignored
+                        <ShieldAlert className="w-3.5 h-3.5 shrink-0" /> Long-Term Risk if Ignored
                       </div>
-                      <p className="text-xs text-red-200/80 bg-red-500/10 border border-red-500/20 p-3 rounded-xl leading-relaxed">
+                      <p className="text-xs text-red-200/80 bg-red-500/10 border border-red-500/20 p-3 rounded-xl leading-relaxed break-words">
                         {zoneMeta.longTermRisk}
                       </p>
                     </div>
