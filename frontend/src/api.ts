@@ -256,6 +256,15 @@ export const api = {
     return res.json();
   },
 
+  /** Delete all vision capture sessions and kinematics for a user */
+  async deleteCaptureHistory(userId: string) {
+    const res = await fetchWithTimeout(`${API_BASE}/sessions/history/${userId}`, {
+      method: "DELETE"
+    });
+    if (!res.ok) throw new Error("Failed to delete capture history");
+    return res.json();
+  },
+
   /** Log dynamic daily pain intensity */
   async logPain(userId: string, data: { zone: string, score: number }) {
     const res = await fetchWithTimeout(`${API_BASE}/pain/log/${userId}`, {

@@ -137,6 +137,25 @@ export default function TwinPage() {
   const [selfReportModalZone, setSelfReportModalZone] = useState<ZoneId | null>(null);
   const [selfReportTrigger, setSelfReportTrigger] = useState(0);
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeletingHistory, setIsDeletingHistory] = useState(false);
+
+  const handleDeleteHistory = async () => {
+    setIsDeletingHistory(true);
+    try {
+      const uid = user?.uid || "demo_user";
+      await api.deleteCaptureHistory(uid);
+      setHistoryData([]);
+      setScanIngestSummary("All capture history wiped from database.");
+      setShowCaptureToast(true);
+      setShowDeleteModal(false);
+    } catch (err) {
+      console.error("Failed to delete capture history:", err);
+    } finally {
+      setIsDeletingHistory(false);
+    }
+  };
+
   // Collect and aggregate all continuous heat sources
   const lastSessionObj = JSON.parse(sessionStorage.getItem("lastSession") || "null");
   const activeHeatSources = collectAllHeatSources({
@@ -669,6 +688,13 @@ export default function TwinPage() {
                         ))
                       )}
                     </div>
+
+                    <button
+                      onClick={() => setShowDeleteModal(true)}
+                      className="w-full mt-3 py-2 px-3 bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 rounded-xl text-red-300 font-extrabold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5 text-red-400" /> Delete All Capture History
+                    </button>
                   </div>
 
                   {!zoneMeta && basicMeta && (
@@ -803,6 +829,37 @@ export default function TwinPage() {
           onClose={() => setSelfReportModalZone(null)}
           onSaved={() => setSelfReportTrigger(prev => prev + 1)}
         />
+      )}
+
+      {/* ── Delete All Capture History Confirmation Modal ── */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
+          <div className="bg-slate-900 border border-red-500/30 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="w-12 h-12 rounded-2xl bg-red-500/20 text-red-400 flex items-center justify-center mx-auto mb-2">
+              <AlertTriangle className="w-6 h-6 text-red-400" />
+            </div>
+            <h3 className="text-xl font-black text-white text-center">Delete All Capture History?</h3>
+            <p className="text-xs text-slate-300 text-center leading-relaxed">
+              This action will permanently wipe all markerless kinematic captures, posture scans, and biomechanical session logs from your Digital Twin database.
+            </p>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={isDeletingHistory}
+                className="flex-1 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteHistory}
+                disabled={isDeletingHistory}
+                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-red-600/30"
+              >
+                {isDeletingHistory ? "Deleting..." : "Yes, Delete All"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

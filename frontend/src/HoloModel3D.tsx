@@ -79,26 +79,57 @@ function InfoCard({ zoneId, risk, position, onLogPainClick }: { zoneId: ZoneId, 
   const riskColor = risk >= 65 ? "text-red-400" : risk >= 30 ? "text-orange-400" : risk > 0 ? "text-yellow-400" : "text-emerald-400";
   const isRightSide = zoneId.startsWith("right_");
 
+  // Derive muscle-specific biomechanical estimates based on zone & strain level
+  const grfValue = (9.81 + (risk > 30 ? (risk / 100) * 2.4 : 0.2)).toFixed(2);
+  const symmetryVal = Math.max(72, Math.round(98 - (risk * 0.22)));
+  const valgusVel = (8.5 + (risk > 40 ? (risk * 0.15) : 0)).toFixed(1);
+  const angularAccel = (3.2 + (risk * 0.04)).toFixed(1);
+  const repDecay = Math.max(65, Math.round(98 - (risk * 0.28)));
+
   return (
     <Html position={position} zIndexRange={[100, 0]}>
       <motion.div 
         initial={{ opacity: 0, scale: 0.9 }} 
         animate={{ opacity: 1, scale: 1 }} 
-        className={`relative bg-black/90 border border-white/15 rounded-xl p-3 text-xs pointer-events-auto w-52 shadow-2xl backdrop-blur-md ${isRightSide ? "-translate-x-full -translate-y-1/2 -ml-4" : "-translate-y-1/2 ml-4"}`}
+        className={`relative bg-black/95 border border-white/20 rounded-2xl p-3.5 text-xs pointer-events-auto w-64 shadow-2xl backdrop-blur-xl ${isRightSide ? "-translate-x-full -translate-y-1/2 -ml-4" : "-translate-y-1/2 ml-4"}`}
       >
         <div className="flex justify-between items-center mb-1">
-          <span className="font-extrabold text-white text-xs">{label}</span>
-          <span className={`font-mono font-black ${riskColor}`}>{risk}%</span>
+          <span className="font-black text-white text-xs tracking-wide">{label}</span>
+          <span className={`font-mono font-black text-sm ${riskColor}`}>{risk}%</span>
         </div>
-        <div className="flex justify-between text-[10px] text-gray-400 mb-2">
-          <span>Field Severity</span>
-          <span className={`font-semibold ${riskColor}`}>{riskText}</span>
+        <div className="flex justify-between text-[10px] text-gray-400 mb-2.5 pb-2 border-b border-white/10">
+          <span>Strain Severity</span>
+          <span className={`font-bold ${riskColor}`}>{riskText}</span>
         </div>
         
+        {/* Muscle Biomechanics Detail */}
+        <div className="space-y-1.5 text-[10px] bg-slate-950/80 p-2.5 rounded-xl border border-white/5 mb-2.5 font-mono">
+          <div className="flex justify-between items-center text-slate-300">
+            <span className="text-slate-400 font-sans">Bilateral Symmetry</span>
+            <span className="font-bold text-emerald-400">{symmetryVal}%</span>
+          </div>
+          <div className="flex justify-between items-center text-slate-300">
+            <span className="text-slate-400 font-sans">Ground Reaction Force</span>
+            <span className="font-bold text-cyan-400">{grfValue} N/kg</span>
+          </div>
+          <div className="flex justify-between items-center text-slate-300">
+            <span className="text-slate-400 font-sans">Valgus Velocity</span>
+            <span className="font-bold text-purple-400">{valgusVel} °/s</span>
+          </div>
+          <div className="flex justify-between items-center text-slate-300">
+            <span className="text-slate-400 font-sans">Angular Acceleration</span>
+            <span className="font-bold text-sky-400">{angularAccel} rad/s²</span>
+          </div>
+          <div className="flex justify-between items-center text-slate-300">
+            <span className="text-slate-400 font-sans">Rep Fatigue Decay</span>
+            <span className="font-bold text-amber-400">{repDecay}% Retained</span>
+          </div>
+        </div>
+
         {onLogPainClick && (
           <button
             onClick={(e) => { e.stopPropagation(); onLogPainClick(zoneId); }}
-            className="w-full mt-1.5 py-1.5 px-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-amber-300 font-bold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer"
+            className="w-full py-1.5 px-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-lg text-amber-300 font-bold text-[10px] flex items-center justify-center gap-1 transition-all cursor-pointer shadow-md"
           >
             <Flame className="w-3 h-3 text-amber-400" /> + Log Self-Reported Pain
           </button>

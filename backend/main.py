@@ -1402,6 +1402,21 @@ def get_session_history(user_id: str, db: Session = Depends(get_db), min_hours_a
     return history
 
 
+@app.delete("/sessions/history/{user_id}")
+def delete_session_history(user_id: str, db: Session = Depends(get_db)):
+    """Delete all markerless vision capture sessions, kinematics, and anomaly events for a user."""
+    vision_sessions = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).all()
+    session_ids = [s.session_id for s in vision_sessions]
+    
+    if session_ids:
+        db.query(models.KinematicsData).filter(models.KinematicsData.vision_session_id.in_(session_ids)).delete(synchronize_session=False)
+        db.query(models.AnomalyEvent).filter(models.AnomalyEvent.vision_session_id.in_(session_ids)).delete(synchronize_session=False)
+    
+    deleted_count = db.query(models.VisionSession).filter(models.VisionSession.user_id == user_id).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "success", "message": "All capture history deleted", "deleted_count": deleted_count}
+
+
 @app.get("/analytics/dashboard/{user_id}", response_model=AnalyticsDashboardResponse)
 def get_dashboard(user_id: str, db: Session = Depends(get_db), min_hours_ago: Optional[int] = None, max_hours_ago: Optional[int] = None):
     # Provide default fallback for zone risks and trend data if the profile lacks them

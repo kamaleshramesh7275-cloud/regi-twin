@@ -14,7 +14,7 @@ import { Sidebar } from "./components/Sidebar";
 import * as ort from "onnxruntime-web";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-type Mode = "sit-to-stand" | "standing-posture" | "squat-analysis" | "gait-analysis" | "medical-report" | "static-image";
+type Mode = "standing-posture" | "sit-up" | "biceps-curls" | "sit-to-stand" | "squat-analysis" | "gait-analysis" | "medical-report" | "static-image";
 type Stage = "landing" | "options" | "select" | "setup" | "countdown" | "recording" | "processing" | "done" | "upload-report" | "upload-image";
 
 interface ProcessStep {
@@ -761,7 +761,7 @@ function CaptureEngineContent() {
 
     setStage("done");
     await delay(800);
-    setLocation("/twin?captured=true");
+    setLocation("/insights?captured=true");
   };
 
   const formatTime = (s: number) =>
@@ -1025,7 +1025,7 @@ function CaptureEngineContent() {
                   setProcessSteps(prev => prev.map(s => s.id === "sync" ? { ...s, status: "done" } : s));
                   setStage("done");
                   await delay(1500);
-                  setLocation("/dashboard");
+                  setLocation("/insights?captured=true");
                 };
                 runMock();
               }}
@@ -1205,7 +1205,7 @@ function CaptureEngineContent() {
 
       setStage("done");
       await delay(800);
-      setLocation("/twin?captured=true");
+      setLocation("/insights?captured=true");
     };
 
     return (
@@ -1256,43 +1256,63 @@ function CaptureEngineContent() {
   if (stage === "select") {
     const modes = [
       {
+        id: "standing-posture" as Mode,
+        icon: <PersonStanding className="w-7 h-7" />,
+        label: "Standing (Posture Scan)",
+        sub: "Static posture & spine alignment",
+        desc: "Stand naturally for 10 seconds. AI measures shoulder tilt, hip level, head position, and spine segmental alignment.",
+        duration: "10 sec",
+        color: "#8b5cf6",
+        badge: "Recommended",
+      },
+      {
+        id: "sit-up" as Mode,
+        icon: <Activity className="w-7 h-7" />,
+        label: "Sit Up (Core Assessment)",
+        sub: "Trunk flexion & abdominal endurance",
+        desc: "Perform sit-ups facing camera. Tracks trunk flexion angle (55° to 140°), rep cadence, and fatigue decay curve.",
+        duration: "1–2 min",
+        color: "#3b82f6",
+        badge: "Core Dynamic",
+      },
+      {
+        id: "biceps-curls" as Mode,
+        icon: <Dumbbell className="w-7 h-7" />,
+        label: "Biceps Curls (Upper Limb Flexion)",
+        sub: "Bilateral arm symmetry & elbow ROM",
+        desc: "Perform arm curls standing. Measures left/right elbow joint angles, bilateral symmetry %, valgus velocity, and rep decay.",
+        duration: "1–2 min",
+        color: "#f59e0b",
+        badge: "Upper Limb",
+      },
+      {
         id: "sit-to-stand" as Mode,
         icon: <Dumbbell className="w-7 h-7" />,
         label: "Sit-to-Stand Test",
-        sub: "Dynamic movement",
+        sub: "Lower extremity power & balance",
         desc: "Repeatedly stand from a chair. Measures mobility, stability, and cardiovascular endurance over multiple reps.",
         duration: "1–3 min",
         color: "#0ea5e9",
-        badge: "Most popular",
-      },
-      {
-        id: "standing-posture" as Mode,
-        icon: <PersonStanding className="w-7 h-7" />,
-        label: "Standing Posture Scan",
-        sub: "Static analysis",
-        desc: "Stand naturally for 10 seconds. AI analyses your shoulder alignment, hip balance, head position, and spine curvature.",
-        duration: "10 sec",
-        color: "#8b5cf6",
-        badge: "New",
+        badge: "Popular",
       },
       {
         id: "squat-analysis" as Mode,
         icon: <Activity className="w-7 h-7" />,
         label: "Squat Mechanics",
-        sub: "Form & Depth",
+        sub: "Form & Knee Valgus Depth",
         desc: "Analyzes squat depth, knee tracking (varus/valgus), and rep speed with real-time audio coaching.",
         duration: "1–2 min",
-        color: "#ec4899", // pink
+        color: "#ec4899",
         badge: "Advanced",
       },
       {
         id: "gait-analysis" as Mode,
         icon: <PersonStanding className="w-7 h-7" />,
         label: "Gait & Balance Walk",
-        sub: "Locomotion",
+        sub: "Locomotion & Cadence",
         desc: "Walk across the frame. Evaluates stride length, cadence, and left/right movement symmetry.",
         duration: "30 sec",
-        color: "#10b981", // green
+        color: "#10b981",
         badge: "Clinical",
       },
     ];
