@@ -297,32 +297,38 @@ export const api = {
     try {
       const res = await fetchWithTimeout(`${API_BASE}/users/${userId}`);
       if (res.ok) return await res.json();
-    } catch {
-      return null;
+    } catch (err) {
+      console.warn("Backend getUserProfile fallback to cache:", err);
     }
+    const cached = localStorage.getItem(`pt_user_seed_${userId}`);
+    if (cached) return JSON.parse(cached);
     return null;
   },
 
   /** Save/upsert user baseline profile to backend */
   async saveUserProfile(userId: string, profileData: any) {
-    const payload = {
-      user_id: userId,
-      email: profileData.email || "",
-      age: Number(profileData.age) || 0,
-      sex: profileData.biological_sex || profileData.sex || "Prefer not to say",
-      height: Number(profileData.height_cm || profileData.height) || 0,
-      weight: Number(profileData.weight_kg || profileData.weight) || 0,
-      mode: profileData.twin_mode || profileData.mode || "General Human",
-      goals: Array.isArray(profileData.goals) ? profileData.goals.join(", ") : (profileData.goals || ""),
-      consent: true
-    };
-    const res = await fetchWithTimeout(`${API_BASE}/users/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error("Failed to save profile");
-    return res.json();
+    try {
+      const payload = {
+        user_id: userId,
+        email: profileData.email || `${userId}@physiotwin.local`,
+        age: Number(profileData.age) || profileData.age,
+        sex: profileData.biologicalSex || profileData.biological_sex || profileData.sex || "Prefer not to say",
+        height: Number(profileData.heightCm || profileData.height_cm || profileData.height) || 0,
+        weight: Number(profileData.weightKg || profileData.weight_kg || profileData.weight) || 0,
+        mode: profileData.twinMode || profileData.twin_mode || profileData.mode || "General Human",
+        goals: Array.isArray(profileData.goals) ? profileData.goals.join(", ") : (profileData.goals || ""),
+        consent: profileData.consent ?? true
+      };
+      const res = await fetchWithTimeout(`${API_BASE}/users/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (res.ok) return res.json();
+    } catch (err) {
+      console.warn("Backend saveUserProfile fallback:", err);
+    }
+    return profileData;
   },
 
   /** Fetch computed achievement badges from backend */
@@ -361,43 +367,6 @@ export const api = {
     return res.json();
   },
 
-  /** Save/update comprehensive user baseline profile */
-  async saveUserProfile(userId: string, profile: any) {
-    try {
-      const res = await fetchWithTimeout(`${API_BASE}/users/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          user_id: userId,
-          email: profile.email || `${userId}@physiotwin.local`,
-          age: profile.age,
-          sex: profile.biologicalSex || profile.biological_sex,
-          height: profile.heightCm || profile.height_cm,
-          weight: profile.weightKg || profile.weight_kg,
-          mode: profile.twinMode || profile.twin_mode,
-          goals: profile.goals || [],
-          consent: profile.consent ?? true
-        })
-      });
-      if (res.ok) return res.json();
-    } catch (err) {
-      console.warn("Backend saveUserProfile fallback:", err);
-    }
-    return profile;
-  },
-
-  /** Get user profile details from backend or local cache fallback */
-  async getUserProfile(userId: string) {
-    try {
-      const res = await fetchWithTimeout(`${API_BASE}/users/${userId}`);
-      if (res.ok) return res.json();
-    } catch (err) {
-      console.warn("Backend getUserProfile fallback to cache:", err);
-    }
-    const cached = localStorage.getItem(`pt_user_seed_${userId}`);
-    if (cached) return JSON.parse(cached);
-    return null;
-  },
 
   /** Fetch professional clinical case notes */
   async getCaseNotes(userId: string) {
@@ -771,13 +740,6 @@ export const api = {
     return res.json();
   },
 
-  // ── ACHIEVEMENTS ─────────────────────────────────────────────────────────────
-
-  async getAchievements(userId: string) {
-    const res = await fetchWithTimeout(`${API_BASE}/analytics/achievements/${userId}`);
-    if (!res.ok) throw new Error("Failed to fetch achievements");
-    return res.json();
-  },
 
   // ── READINESS SURVEYS ────────────────────────────────────────────────────────
   async getReadinessSurvey(userId: string) {

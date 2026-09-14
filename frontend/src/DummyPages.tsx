@@ -806,7 +806,7 @@ export function InsightsPage() {
           <div className="metric-card p-4 border border-border/80 bg-card rounded-2xl flex flex-col justify-between shadow-md hover:border-pink-500/40 transition-colors">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                {isBicepCurl ? "Biceps Angular Accel" : isSquats ? "Knee Angular Accel" : "Angular Accel"}
+                {isBicepCurl ? "Biceps Angular Accel" : isSquat ? "Knee Angular Accel" : "Angular Accel"}
               </span>
               <TrendingUp className="w-4 h-4 text-pink-400" />
             </div>

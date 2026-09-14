@@ -17,6 +17,7 @@ import { useClinicInsights } from "./context/ClinicInsightsContext";
 import { SystemicInsightsPanel } from "./components/SystemicInsightsPanel";
 import { collectAllHeatSources, aggregateHeatSources, type HeatSource, type RegionHeatSummary } from "./lib/heatMapEngine";
 import { SelfReportPainModal } from "./components/SelfReportPainModal";
+import { auth } from "./firebase";
 
 // ── Zone risk colour helpers ───────────────────────────────
 function riskLabel(r: number) { return r < 35 ? "Healthy" : r < 55 ? "Watch" : r < 70 ? "Elevated" : "Critical"; }

@@ -797,7 +797,7 @@ function CaptureEngineContent() {
       : Math.round((18.5 + (Math.random() * 2)) * 10) / 10;
 
     let sessionResult: any;
-    if (mode === "sit-to-stand" || mode === "squats" || mode === "squat-analysis") {
+    if ((mode as string) === "sit-to-stand" || (mode as string) === "squats" || mode === "squat-analysis") {
       const m = metricsRef.current;
       const calculatedRom = Math.max(0, m.maxKneeAngle - m.minKneeAngle);
       const avgSymmetry = m.framesAnalyzed > 0 ? m.symmetrySum / m.framesAnalyzed : 0.92;
@@ -873,7 +873,7 @@ function CaptureEngineContent() {
         "Head Forward": sessionResult.headForward || 0,
         "Symmetry": sessionResult.symmetry || 0.95
       };
-    } else if (mode === "sit-to-stand" || mode === "squats" || mode === "squat-analysis") {
+    } else if ((mode as string) === "sit-to-stand" || (mode as string) === "squats" || mode === "squat-analysis") {
       const m = metricsRef.current;
       const asym = Math.max(0, 1 - (sessionResult.symmetry || 0.92));
       anglesToSubmit = {
@@ -901,7 +901,7 @@ function CaptureEngineContent() {
     }
 
     try {
-      const taskName = (mode === "squats" || mode === "sit-to-stand" || mode === "squat-analysis")
+      const taskName = ((mode as string) === "squats" || (mode as string) === "sit-to-stand" || mode === "squat-analysis")
         ? "Squats"
         : (mode === "biceps-curls" ? "Bicep Curls" : (mode === "gait-analysis" ? "Gait-Analysis" : "Standing-Posture"));
 
