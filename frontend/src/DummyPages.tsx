@@ -13,6 +13,11 @@ import { api } from "./api";
 import { auth } from "./firebase";
 import { Sidebar } from "./components/Sidebar";
 import { useAuth } from "./context/AuthContext";
+import { BilateralSymmetryRadar } from "./components/BilateralSymmetryRadar";
+import { GRFEstimatorPanel } from "./components/GRFEstimatorPanel";
+import { SpinalSegmentationView } from "./components/SpinalSegmentationView";
+import { ValgusVelocityAlert } from "./components/ValgusVelocityAlert";
+import { FormDecayTracker } from "./components/FormDecayTracker";
 
 // Note: DEMO_* constants below are used only for Timeline/Insights loading fallbacks
 // and will be replaced by empty-states once real data exists.
@@ -825,6 +830,21 @@ export function InsightsPage() {
             <div className="text-xl font-black font-mono-numbers text-blue-400">{displayMetrics.reps_decay}</div>
             <div className="text-[11px] text-muted-foreground mt-1">Velocity Drop Rate</div>
           </div>
+        </section>
+
+        {/* ── Interactive Biomechanical Sub-Features Stack (Exact structure from What-If Simulator) ── */}
+        <section className="space-y-4 max-w-5xl mx-auto pt-4 border-t border-border/60">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles className="w-4 h-4 text-cyan-400" />
+            <h2 className="text-sm font-black uppercase tracking-wider text-muted-foreground">
+              Interactive Biomechanical Telemetry Breakdown
+            </h2>
+          </div>
+          <BilateralSymmetryRadar />
+          <GRFEstimatorPanel />
+          <SpinalSegmentationView />
+          <ValgusVelocityAlert />
+          <FormDecayTracker />
         </section>
 
         {/* ── Report Section ── */}

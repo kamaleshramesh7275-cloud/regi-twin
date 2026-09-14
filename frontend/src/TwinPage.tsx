@@ -18,6 +18,11 @@ import { SystemicInsightsPanel } from "./components/SystemicInsightsPanel";
 import { collectAllHeatSources, aggregateHeatSources, type HeatSource, type RegionHeatSummary } from "./lib/heatMapEngine";
 import { SelfReportPainModal } from "./components/SelfReportPainModal";
 import { auth } from "./firebase";
+import { BilateralSymmetryRadar } from "./components/BilateralSymmetryRadar";
+import { GRFEstimatorPanel } from "./components/GRFEstimatorPanel";
+import { SpinalSegmentationView } from "./components/SpinalSegmentationView";
+import { ValgusVelocityAlert } from "./components/ValgusVelocityAlert";
+import { FormDecayTracker } from "./components/FormDecayTracker";
 
 // ── Zone risk colour helpers ───────────────────────────────
 function riskLabel(r: number) { return r < 35 ? "Healthy" : r < 55 ? "Watch" : r < 70 ? "Elevated" : "Critical"; }
@@ -770,6 +775,18 @@ export default function TwinPage() {
                         <ChevronRight className="w-4 h-4 text-muted-foreground" />
                       </button>
                     ))}
+                  </div>
+
+                  {/* 5 Biomechanical Capture Sub-Feature Panels */}
+                  <div className="space-y-4 border-t border-slate-800/80 pt-4 mt-6">
+                    <div className="text-[10px] font-black text-cyan-400 uppercase tracking-widest flex items-center gap-1.5 mb-2">
+                      <Sparkles className="w-3.5 h-3.5" /> Biomechanical Telemetry Panels
+                    </div>
+                    <BilateralSymmetryRadar />
+                    <GRFEstimatorPanel />
+                    <SpinalSegmentationView />
+                    <ValgusVelocityAlert />
+                    <FormDecayTracker />
                   </div>
                 </>
               )}
