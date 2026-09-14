@@ -84,10 +84,37 @@ def _init_firebase():
 # ──────────────────────────────────────────────────────────────────────────────
 _bearer = HTTPBearer(auto_error=False)
 
+# Known mock tokens issued by the frontend for dev/admin-code sessions.
+# These bypass Firebase verification ONLY in non-production environments.
+# Keep this in sync with AuthContext.tsx mock token values.
+_DEV_TOKEN_MAP: dict[str, str] = {
+    "admin-code-token": "superadmin",
+    "dev-bypass-token": "superadmin",
+    "athlete-token": "client",
+    "persisted-token": "client",
+}
+
 
 def _verify_token(token: str) -> Optional[dict]:
-    """Verify a Firebase ID token and return the decoded claims dict, or None on failure."""
+    """Verify a Firebase ID token and return the decoded claims dict, or None on failure.
+
+    In non-production environments, known mock tokens (admin-code-token, etc.) are
+    accepted directly without Firebase verification so that admin-code and dev-bypass
+    logins work end-to-end.
+    """
     _init_firebase()
+
+    # ── Dev/admin-code token bypass (non-production only) ─────────────────────
+    environment = os.environ.get("ENVIRONMENT", "development")
+    if environment != "production" and token in _DEV_TOKEN_MAP:
+        role = _DEV_TOKEN_MAP[token]
+        logger.debug(f"[role_auth] Dev token bypass: token='{token}' → role='{role}'")
+        return {
+            "uid": f"mock-{role}-user",
+            "email": f"{role}@physiotwin.local",
+            "role": role,
+        }
+
     if not _firebase_available:
         return None
 

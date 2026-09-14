@@ -137,6 +137,7 @@ function ClinicianView() {
     enabled: !!idToken,
     staleTime: 30_000,
     refetchInterval: 60_000,
+    retry: 1,
   });
 
   const clients: any[] = data?.clients ?? [];
@@ -297,6 +298,7 @@ function SuperadminView() {
     queryFn: () => apiFetch("/api/admin/stats", idToken),
     refetchInterval: 30_000,
     enabled: !!idToken,
+    retry: 1,
   });
 
   const { data: users = [] } = useQuery({
@@ -304,6 +306,7 @@ function SuperadminView() {
     queryFn: () => apiFetch("/api/admin/users", idToken),
     refetchInterval: 60_000,
     enabled: !!idToken,
+    retry: 1,
   });
 
   const roleBreakdown = stats

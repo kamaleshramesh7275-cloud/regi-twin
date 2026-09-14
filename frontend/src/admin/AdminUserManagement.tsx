@@ -280,6 +280,7 @@ export default function AdminUserManagement() {
     queryFn: () => apiFetch("/api/admin/users", idToken),
     refetchInterval: 60_000,
     enabled: !!idToken,
+    retry: 1,
   });
 
   const {
@@ -291,6 +292,7 @@ export default function AdminUserManagement() {
       apiFetch("/api/admin/clinician-assignments", idToken),
     refetchInterval: 60_000,
     enabled: !!idToken,
+    retry: 1,
   });
 
   const handleMutationSuccess = () => {

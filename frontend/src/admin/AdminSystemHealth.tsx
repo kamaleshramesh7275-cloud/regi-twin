@@ -91,6 +91,8 @@ export default function AdminSystemHealth() {
   const {
     data: stats,
     isLoading,
+    isError,
+    error,
     refetch,
     dataUpdatedAt,
   } = useQuery({
@@ -98,6 +100,7 @@ export default function AdminSystemHealth() {
     queryFn: () => apiFetch("/api/admin/stats", idToken),
     refetchInterval: 30_000,
     enabled: !!idToken,
+    retry: 1,
   });
 
   const {
@@ -109,6 +112,7 @@ export default function AdminSystemHealth() {
       apiFetch("/api/admin/system-health", idToken).catch(() => null),
     refetchInterval: 30_000,
     enabled: !!idToken,
+    retry: 1,
   });
 
   const ocrTotal = stats?.clinic_reports?.total ?? 0;
@@ -164,6 +168,18 @@ export default function AdminSystemHealth() {
       {isLoading || healthLoading ? (
         <div className="flex items-center gap-3 text-white/40 py-12 justify-center">
           <Loader2 className="w-6 h-6 animate-spin" /> Loading health data…
+        </div>
+      ) : isError ? (
+        <div className="text-center py-16">
+          <AlertTriangle className="w-12 h-12 mx-auto mb-4 text-red-400 opacity-60" />
+          <p className="text-red-400 text-sm font-semibold mb-1">Failed to load system health</p>
+          <p className="text-white/30 text-xs">{(error as Error)?.message || "Authentication error — check your session."}</p>
+          <button
+            onClick={() => refetch()}
+            className="mt-4 flex items-center gap-2 text-sm font-bold text-white/40 hover:text-white border border-white/10 hover:border-white/20 px-4 py-2 rounded-xl transition-all mx-auto"
+          >
+            <RefreshCw className="w-4 h-4" /> Retry
+          </button>
         </div>
       ) : (
         <>

@@ -76,6 +76,7 @@ export default function AdminClinicReports() {
     enabled: !!idToken,
     staleTime: 30_000,
     refetchInterval: 60_000,
+    retry: 1,
   });
 
   const reports: any[] = data?.reports ?? [];
