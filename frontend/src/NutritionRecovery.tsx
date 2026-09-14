@@ -4,7 +4,7 @@ import {
   Apple, Droplets, TrendingUp, Sparkles, Plus, Trash2, 
   Camera, Clock, Flame, Beef, Wheat, Droplet, HeartPulse, 
   CheckCircle2, Search, Utensils, Scale, ChevronRight,
-  Filter, ChevronDown, Check, X, AlertTriangle, RefreshCw
+  Filter, ChevronDown, Check, X, AlertTriangle, RefreshCw, ShieldCheck
 } from "lucide-react";
 import { 
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, 
