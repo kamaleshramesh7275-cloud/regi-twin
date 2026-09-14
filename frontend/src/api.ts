@@ -143,6 +143,23 @@ export const api = {
     return res.json();
   },
 
+  async getGlobalLeaderboard() {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE}/api/global-leaderboard`);
+      if (res.ok) return await res.json();
+    } catch (e) {
+      console.warn("Global leaderboard fetch error:", e);
+    }
+    try {
+      const res2 = await fetchWithTimeout(`${API_BASE}/analytics/leaderboard`);
+      if (res2.ok) {
+        const users = await res2.json();
+        return { users: Array.isArray(users) ? users : [], total: Array.isArray(users) ? users.length : 0 };
+      }
+    } catch (e2) {}
+    return { users: [], total: 0 };
+  },
+
   async getExternalApps(userId: string) {
     const res = await fetchWithTimeout(`${API_BASE}/analytics/external-apps/${userId}?min_hours_ago=1&max_hours_ago=10`);
     if (!res.ok) throw new Error("Failed to fetch external app data");

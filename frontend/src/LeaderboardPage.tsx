@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Sidebar } from "./components/Sidebar";
 import { Activity, Target, BarChart2, Medal, Crown, Users, Loader2, RefreshCw, AlertTriangle } from "lucide-react";
 import { useAuth } from "./context/AuthContext";
+import { api } from "./api";
 
 interface GlobalUser {
   user_id: string;
@@ -44,11 +45,14 @@ export default function LeaderboardPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/global-leaderboard");
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setUsers(data.users || []);
-      setTotal(data.total || 0);
+      const data = await api.getGlobalLeaderboard();
+      if (data && Array.isArray(data.users)) {
+        setUsers(data.users);
+        setTotal(data.total || data.users.length);
+      } else {
+        setUsers([]);
+        setTotal(0);
+      }
     } catch (e: any) {
       setError("Failed to load leaderboard. Please try again.");
     } finally {
